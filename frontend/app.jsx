@@ -1,0 +1,3431 @@
+
+// ─── Config ───────────────────────────────────────────────────────────────────
+const WS_BASE  = (location.protocol === "https:" ? "wss:" : "ws:") + "//" + location.host;
+const API_BASE = location.protocol + "//" + location.host + "/api/v1";
+
+
+// ─── Theme system ─────────────────────────────────────────────────────────────
+// To add a new theme: add an entry to THEMES with the same keys.
+const THEMES = {
+  dark: {
+    name:        "dark",
+    label:       "☀",
+    bg:          "#080f1e",
+    bgSide:      "#090e1c",
+    bgPanel:     "#0d1f38",
+    bgInput:     "#0d1f38",
+    bgInputWrap: "#090e1c",
+    border:      "#ffffff07",
+    borderMid:   "#ffffff0a",
+    borderFaint: "#ffffff08",
+    text:        "#c8d8f0",
+    textBright:  "#e8f4ff",
+    textDim:     "#8baac8",
+    textFaint:   "#ffffff35",
+    textGhost:   "#ffffff20",
+    textMono:    "#ffffff45",
+    accent:      "#7eb8f7",
+    accentDim:   "#7eb8f720",
+    accentBg:    "#7eb8f710",
+    accentBg2:   "#7eb8f716",
+    accentBg3:   "#7eb8f715",
+    green:       "#4af7a0",
+    greenBg:     "#4af7a010",
+    greenBorder: "#4af7a025",
+    amber:       "#f7d07e",
+    amberBg:     "#f7d07e10",
+    amberBorder: "#f7d07e20",
+    red:         "#f7a07e",
+    redBg:       "#f7a07e14",
+    redBorder:   "#f7a07e40",
+    msgHover:    "#ffffff05",
+    mentionBg:   "#f7a07e07",
+    mentionBg2:  "#f7a07e0d",
+    mentionBdr:  "#f7a07e44",
+    scrollThumb: "#ffffff18",
+  },
+  light: {
+    name:        "light",
+    label:       "☾",
+    bg:          "#f0f4fa",
+    bgSide:      "#e4ecf7",
+    bgPanel:     "#ffffff",
+    bgInput:     "#ffffff",
+    bgInputWrap: "#e8eef8",
+    border:      "#d0daea",
+    borderMid:   "#ccd6e8",
+    borderFaint: "#d8e2f0",
+    text:        "#2a3a54",
+    textBright:  "#0d1e36",
+    textDim:     "#4a6080",
+    textFaint:   "#8098b8",
+    textGhost:   "#a0b0c8",
+    textMono:    "#7090b0",
+    accent:      "#2a7fce",
+    accentDim:   "#2a7fce25",
+    accentBg:    "#2a7fce10",
+    accentBg2:   "#2a7fce16",
+    accentBg3:   "#2a7fce12",
+    green:       "#1a9e5c",
+    greenBg:     "#1a9e5c10",
+    greenBorder: "#1a9e5c30",
+    amber:       "#b07000",
+    amberBg:     "#b0700010",
+    amberBorder: "#b0700025",
+    red:         "#c04020",
+    redBg:       "#c0402010",
+    redBorder:   "#c0402040",
+    msgHover:    "#00000005",
+    mentionBg:   "#c0402007",
+    mentionBg2:  "#c040200e",
+    mentionBdr:  "#c0402045",
+    scrollThumb: "#00000015",
+  },
+};
+const _savedTheme = sessionStorage.getItem("kc_theme") || "dark";
+const ThemeCtx = React.createContext(THEMES[_savedTheme] || THEMES.dark);
+function useTheme() { return React.useContext(ThemeCtx); }
+
+// ─── IRCv3 Parser ─────────────────────────────────────────────────────────────
+function parseIRC(raw) {
+  let pos = 0;
+  const msg = { tags: {}, prefix: "", command: "", params: [] };
+  if (raw[pos] === "@") {
+    pos++;
+    const end = raw.indexOf(" ", pos);
+    if (end === -1) return msg;
+    raw.slice(pos, end).split(";").forEach(t => {
+      const eq = t.indexOf("=");
+      const k = eq === -1 ? t : t.slice(0, eq);
+      const v = eq === -1 ? "" : t.slice(eq + 1)
+        .replace(/\\:/g,";").replace(/\\s/g," ")
+        .replace(/\\r/g,"\r").replace(/\\n/g,"\n").replace(/\\\\/g,"\\");
+      if (k) msg.tags[k] = v;
+    });
+    pos = end + 1;
+  }
+  if (raw[pos] === ":") {
+    pos++;
+    const end = raw.indexOf(" ", pos);
+    if (end === -1) { msg.prefix = raw.slice(pos); return msg; }
+    msg.prefix = raw.slice(pos, end);
+    pos = end + 1;
+  }
+  const ce = raw.indexOf(" ", pos);
+  if (ce === -1) { msg.command = raw.slice(pos).toUpperCase(); return msg; }
+  msg.command = raw.slice(pos, ce).toUpperCase();
+  pos = ce + 1;
+  while (pos < raw.length) {
+    if (raw[pos] === ":") { msg.params.push(raw.slice(pos + 1)); break; }
+    const end = raw.indexOf(" ", pos);
+    if (end === -1) { msg.params.push(raw.slice(pos)); break; }
+    msg.params.push(raw.slice(pos, end));
+    pos = end + 1;
+  }
+  return msg;
+}
+
+function nickOf(prefix) {
+  if (!prefix) return "";
+  const i = prefix.indexOf("!");
+  return i === -1 ? prefix : prefix.slice(0, i);
+}
+
+// ─── Networks REST API ────────────────────────────────────────────────────────
+const API = {
+  listNetworks:      ()     => fetch(`${API_BASE}/networks`,{credentials:"include"}).then(r => r.json()),
+  createNetwork:     (b)    => fetch(`${API_BASE}/networks`, {
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(b), credentials:"include"
+  }).then(r => r.json()),
+  deleteNetwork:     (id)   => fetch(`${API_BASE}/networks/${id}`, { method:"DELETE", credentials:"include" }),
+  updateNetwork:     (id,b) => fetch(`${API_BASE}/networks/${id}`, {
+    method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify(b), credentials:"include"
+  }).then(r => r.json()),
+  disconnectNetwork: (id)   => fetch(`${API_BASE}/networks/${id}/disconnect`, { method:"POST", credentials:"include" }),
+  connectNetwork:    (id)   => fetch(`${API_BASE}/networks/${id}/connect`,    { method:"POST", credentials:"include" }),
+  updateProfile:     (b)    => fetch(`${API_BASE.replace("/networks","")}/profile`, {
+    method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify(b), credentials:"include"
+  }).then(r => r.json()),
+  uploadAvatar:      (file) => {
+    const fd = new FormData(); fd.append("avatar", file);
+    return fetch(`${API_BASE.replace("/networks","")}/profile/avatar`, {
+      method:"POST", body:fd, credentials:"include"
+    }).then(r => r.json());
+  },
+  getAvatarByUsername: (username) => fetch(`${API_BASE.replace("/networks","")}/users/avatar/${encodeURIComponent(username)}`, {
+    credentials:"include"
+  }).then(r => r.ok ? r.json() : null),
+};
+
+// ─── WebSocket factory ────────────────────────────────────────────────────────
+function openWS({ networkId, onLine, onClose }) {
+  const url = `${WS_BASE}/ws?network=${networkId}`;
+  const ws  = new WebSocket(url);
+  let dead  = false;
+
+  // Send an application-level data frame every 4 minutes so nginx's
+  // proxy_read_timeout is reset by real traffic, not just WS control frames.
+  // The BNC forwards this as a PING to the IRC server, which is harmless.
+  const heartbeatInterval = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(`PING :kc-heartbeat\r\n`);
+    }
+  }, 4 * 60 * 1000);
+
+  ws.onmessage = e => e.data.split("\n").forEach(l => { l = l.trimEnd(); if (l) onLine(l); });
+  ws.onclose   = () => { clearInterval(heartbeatInterval); if (!dead) onClose?.(); };
+  ws.onerror   = () => {};
+  return {
+    send:        (raw) => { if (ws.readyState === WebSocket.OPEN) ws.send(raw + "\r\n"); },
+    close:       ()    => { dead = true; clearInterval(heartbeatInterval); ws.close(); },
+    get ready()        { return ws.readyState === WebSocket.OPEN; },
+  };
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function fmtTime(iso) {
+  try { return new Date(iso).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" }); }
+  catch { return ""; }
+}
+function nickColor(nick) {
+  const p = ["#7eb8f7","#f7a07e","#a0f77e","#f7d07e","#d07ef7","#7ef7d0","#f77ea0","#7ea0f7","#f7f77e","#f77ef7"];
+  let h = 0;
+  for (let i = 0; i < nick.length; i++) h = (h * 31 + nick.charCodeAt(i)) & 0x7fffffff;
+  return p[h % p.length];
+}
+function renderText(text, myNick, T) {
+  if (!text) return "";
+  const accent  = T?.accent || "#7eb8f7";
+  const red     = T?.red    || "#f7a07e";
+  const URL_RE = /(https?:\/\/[^\s<>"]+)/g;
+  const parts = []; let key = 0, last = 0, m;
+  URL_RE.lastIndex = 0;
+  while ((m = URL_RE.exec(text)) !== null) {
+    if (m.index > last) parts.push(<span key={key++}>{text.slice(last, m.index)}</span>);
+    parts.push(<a key={key++} href={m[1]} target="_blank" rel="noreferrer"
+      style={{color:accent,textDecoration:"underline dotted"}}>{m[1]}</a>);
+    last = m.index + m[1].length;
+  }
+  const rest = text.slice(last);
+  if (rest) {
+    const mp = []; let ml = 0, mm; const MR = /@(\w+)/g;
+    while ((mm = MR.exec(rest)) !== null) {
+      if (mm.index > ml) mp.push(<span key={key++}>{rest.slice(ml, mm.index)}</span>);
+      const isMe = mm[1] === myNick;
+      mp.push(<mark key={key++} style={{background:isMe?red+"22":accent+"22",
+        color:isMe?red:accent,borderRadius:3,padding:"0 3px"}}>{mm[0]}</mark>);
+      ml = mm.index + mm[0].length;
+    }
+    if (ml < rest.length) mp.push(<span key={key++}>{rest.slice(ml)}</span>);
+    parts.push(...mp);
+  }
+  return parts.length ? parts : text;
+}
+
+const CHAN_KEY    = (netId, chan) => `${netId}::${chan}`;
+const STATUS_CHAN = "__status__";
+
+// ─── Reducer ──────────────────────────────────────────────────────────────────
+const INIT = {
+  networks:{}, networkOrder:[],
+  channels:{}, messages:{}, unread:{},
+  activeNet:null, activeChan:{}, myNick:{},
+  seenMsgIds:{}, // msgid→true for dedup of server history replay
+};
+
+function reducer(s, a) {
+  switch (a.type) {
+    case "NET_ADD":
+      return { ...s,
+        networks: { ...s.networks, [a.net.id]: { ...a.net, status: a.net.status||"disconnected" } },
+        networkOrder: s.networkOrder.includes(a.net.id) ? s.networkOrder : [...s.networkOrder, a.net.id],
+      };
+    case "NET_UPDATE":
+      if (!s.networks[a.net.id]) return s;
+      return { ...s, networks: { ...s.networks, [a.net.id]: { ...s.networks[a.net.id], ...a.net } } };
+    case "NET_REMOVE": {
+      const nets2={...s.networks}; delete nets2[a.id];
+      const order2=s.networkOrder.filter(x=>x!==a.id);
+      const chans2=Object.fromEntries(Object.entries(s.channels).filter(([k])=>!k.startsWith(a.id+"::")));
+      const msgs2=Object.fromEntries(Object.entries(s.messages).filter(([k])=>!k.startsWith(a.id+"::")));
+      const unr2=Object.fromEntries(Object.entries(s.unread).filter(([k])=>!k.startsWith(a.id+"::")));
+      const ac2={...s.activeChan}; delete ac2[a.id];
+      return { ...s, networks:nets2, networkOrder:order2, channels:chans2, messages:msgs2, unread:unr2, activeChan:ac2,
+        activeNet: s.activeNet===a.id?(order2[0]||null):s.activeNet };
+    }
+    case "NET_STATUS": {
+      if (!s.networks[a.id]) return s;
+      return { ...s, networks: { ...s.networks, [a.id]: { ...s.networks[a.id], status:a.status, status_msg:a.msg||"" } } };
+    }
+    case "NET_DEL": {
+      const nets={...s.networks}; delete nets[a.id];
+      const order=s.networkOrder.filter(x=>x!==a.id);
+      const channels=Object.fromEntries(Object.entries(s.channels).filter(([k])=>!k.startsWith(a.id+"::")));
+      const messages=Object.fromEntries(Object.entries(s.messages).filter(([k])=>!k.startsWith(a.id+"::")));
+      const unread  =Object.fromEntries(Object.entries(s.unread  ).filter(([k])=>!k.startsWith(a.id+"::")));
+      const activeChan={...s.activeChan}; delete activeChan[a.id];
+      return { ...s, networks:nets, networkOrder:order, channels, messages, unread, activeChan,
+        activeNet: s.activeNet===a.id?(order[0]||null):s.activeNet };
+    }
+    case "SET_NICK":        return { ...s, myNick:{...s.myNick,[a.netId]:a.nick} };
+    case "SET_ACTIVE_NET":  return { ...s, activeNet:a.id };
+    case "SET_ACTIVE_CHAN": return { ...s, activeChan:{...s.activeChan,[a.netId]:a.chan} };
+    case "CHAN_JOIN": {
+      const k=CHAN_KEY(a.netId,a.chan);
+      return { ...s,
+        channels:   {...s.channels,  [k]: s.channels[k]  || {topic:"",members:{}}},
+        messages:   {...s.messages,  [k]: s.messages[k]  || []},
+        unread:     {...s.unread,    [k]: s.unread[k]    || 0},
+        activeChan: s.activeChan[a.netId] ? s.activeChan : {...s.activeChan,[a.netId]:a.chan},
+        activeNet:  s.activeNet || a.netId,
+      };
+    }
+    case "CHAN_PART": {
+      const k=CHAN_KEY(a.netId,a.chan);
+      const channels={...s.channels}; delete channels[k];
+      const messages={...s.messages}; delete messages[k];
+      const unread  ={...s.unread};   delete unread[k];
+      const rem=Object.keys(channels).filter(x=>x.startsWith(a.netId+"::"));
+      const newChan=rem.length ? rem[rem.length-1].split("::")[1] : null;
+      return { ...s, channels, messages, unread, activeChan:{...s.activeChan,[a.netId]:newChan} };
+    }
+    case "SET_TOPIC": {
+      const k=CHAN_KEY(a.netId,a.chan);
+      if (!s.channels[k]) return s;
+      return { ...s, channels:{...s.channels,[k]:{...s.channels[k],topic:a.topic}} };
+    }
+    case "SET_MEMBERS": {
+      const k=CHAN_KEY(a.netId,a.chan);
+      return { ...s, channels:{...s.channels,[k]:{...(s.channels[k]||{topic:""}),
+        members:{...(s.channels[k]?.members||{}),...a.members}}} };
+    }
+    case "REPLACE_MEMBERS": {
+      // Atomically replace the full member list (called on 366 end-of-names)
+      const k=CHAN_KEY(a.netId,a.chan);
+      return { ...s, channels:{...s.channels,[k]:{...(s.channels[k]||{topic:""}),
+        members:a.members}} };
+    }
+    case "SET_MEMBER_PREFIX": {
+      // Update a single member's prefix (e.g. MODE +o/-o)
+      const k=CHAN_KEY(a.netId,a.chan);
+      if (!s.channels[k]?.members) return s;
+      const members={...s.channels[k].members};
+      if (!(a.nick in members)) return s; // nick not in list, ignore
+      members[a.nick]=a.prefix;
+      return { ...s, channels:{...s.channels,[k]:{...s.channels[k],members}} };
+    }
+    case "DEL_MEMBER": {
+      const k=CHAN_KEY(a.netId,a.chan);
+      if (!s.channels[k]) return s;
+      const members={...s.channels[k].members}; delete members[a.nick];
+      return { ...s, channels:{...s.channels,[k]:{...s.channels[k],members}} };
+    }
+    case "ADD_MSG": {
+      const k=CHAN_KEY(a.netId,a.chan);
+      // Deduplicate by msgid — prevents server history replay from re-adding
+      // messages already in our ring buffer or already shown this session
+      if (a.msg.id && s.seenMsgIds[a.msg.id]) return s;
+      const msgs=[...(s.messages[k]||[]),a.msg].slice(-1000);
+      const isActive=s.activeNet===a.netId&&s.activeChan[a.netId]===a.chan;
+      return { ...s,
+        messages:   {...s.messages,  [k]:msgs},
+        seenMsgIds: a.msg.id ? {...s.seenMsgIds, [a.msg.id]:true} : s.seenMsgIds,
+        unread:     {...s.unread,    [k]:isActive?0:(s.unread[k]||0)+1},
+      };
+    }
+    case "PREPEND_MSGS": {
+      // Insert historical messages before existing ones, deduplicating by id.
+      // Used when server delivers chathistory batch.
+      const k=CHAN_KEY(a.netId,a.chan);
+      const existing=s.messages[k]||[];
+      let newSeen={...s.seenMsgIds};
+      const fresh=a.msgs.filter(m=>{
+        if (m.id && newSeen[m.id]) return false;
+        if (m.id) newSeen[m.id]=true;
+        return true;
+      });
+      if (!fresh.length) return s;
+      // Sort combined chronologically
+      const combined=[...fresh,...existing]
+        .sort((a,b)=>new Date(a.time)-new Date(b.time))
+        .slice(-1000);
+      return { ...s,
+        messages:   {...s.messages,  [k]:combined},
+        seenMsgIds: newSeen,
+      };
+    }
+    case "CLEAR_UNREAD": {
+      const k=CHAN_KEY(a.netId,a.chan);
+      return { ...s, unread:{...s.unread,[k]:0} };
+    }
+    default: return s;
+  }
+}
+
+// ─── Avatar ───────────────────────────────────────────────────────────────────
+// Avatar cache: nick → {url, ts}
+// url=null means "no avatar found" but will retry after TTL
+const _avatarCache = {};
+const AVATAR_HIT_TTL  = 300_000; // 5 min for successful hits
+const AVATAR_MISS_TTL =  30_000; // 30 sec retry for misses
+
+function useAvatar(nick) {
+  const [url, setUrl] = React.useState(() => _avatarCache[nick]?.url ?? undefined);
+  React.useEffect(() => {
+    if (!nick) return;
+    const cached = _avatarCache[nick];
+    const ttl = cached?.url ? AVATAR_HIT_TTL : AVATAR_MISS_TTL;
+    // Fetch if: never fetched, or cache was deleted (undefined), or TTL expired
+    if (cached === undefined || (Date.now() - (cached.ts || 0) > ttl)) {
+      API.getAvatarByUsername(nick).then(data => {
+        const avatarUrl = data?.avatar_url || null;
+        _avatarCache[nick] = { url: avatarUrl, ts: Date.now() };
+        setUrl(avatarUrl);
+      }).catch(() => {
+        _avatarCache[nick] = { url: null, ts: Date.now() };
+        setUrl(null);
+      });
+    } else if (cached.url !== url) {
+      // Cache has a value but state is stale (e.g. after bust+re-fetch in another component)
+      setUrl(cached.url);
+    }
+  }, [nick]);
+  return url;
+}
+
+function Avatar({ nick, size=28 }) {
+  const c = nickColor(nick);
+  const avatarUrl = useAvatar(nick);
+  if (avatarUrl) {
+    return (
+      <img src={avatarUrl} alt={nick}
+        style={{width:size,height:size,borderRadius:"50%",objectFit:"cover",flexShrink:0,
+          border:`1.5px solid ${c}44`}}
+        onError={e => { _avatarCache[nick] = { url: null, ts: Date.now() }; e.target.style.display="none"; }}
+      />
+    );
+  }
+  return (
+    <div style={{width:size,height:size,borderRadius:"50%",background:c+"18",border:`1.5px solid ${c}33`,
+      display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*0.44,
+      fontWeight:700,color:c,flexShrink:0,fontFamily:"'JetBrains Mono',monospace"}}>
+      {(nick[0]||"?").toUpperCase()}
+    </div>
+  );
+}
+
+// ─── StatusDot ────────────────────────────────────────────────────────────────
+function StatusDot({ status }) {
+  const T=useTheme();
+  const C={connected:T.green,connecting:T.amber,disconnected:T.textGhost,error:T.red};
+  const G={connected:`0 0 6px ${T.green}88`,connecting:`0 0 6px ${T.amber}66`};
+  const c=C[status]||C.disconnected;
+  return <div style={{width:7,height:7,borderRadius:"50%",background:c,boxShadow:G[status]||"none",flexShrink:0}} />;
+}
+
+// ─── Message row ──────────────────────────────────────────────────────────────
+function MsgRow({ msg, prev, myNick }) {
+  const T=useTheme();
+  if (msg.type==="system") return (
+    <div style={{padding:"2px 16px 2px 58px",userSelect:"text"}}>
+      <span style={{fontSize:13,color:T.textDim,fontStyle:"italic",fontFamily:"'JetBrains Mono',monospace"}}>{msg.text}</span>
+      {msg.time&&<span style={{fontSize:11,color:T.textFaint,marginLeft:6,fontFamily:"'JetBrains Mono',monospace"}}>{fmtTime(msg.time)}</span>}
+    </div>
+  );
+  const cont=prev?.type==="message"&&prev.nick===msg.nick&&(new Date(msg.time)-new Date(prev.time))<300000;
+  const mentioned=msg.nick!==myNick&&msg.text?.includes("@"+myNick);
+  return (
+    <div style={{display:"flex",gap:12,padding:cont?"2px 16px":"8px 16px 3px",
+      background:mentioned?T.mentionBg:"transparent",
+      borderLeft:mentioned?`2px solid ${T.mentionBdr}`:"2px solid transparent"}}
+      onMouseEnter={e=>e.currentTarget.style.background=mentioned?T.mentionBg2:T.msgHover}
+      onMouseLeave={e=>e.currentTarget.style.background=mentioned?T.mentionBg:"transparent"}>
+      <div style={{width:32,flexShrink:0,paddingTop:cont?0:2}}>{!cont&&<Avatar nick={msg.nick} size={32}/>}</div>
+      <div style={{flex:1,minWidth:0,userSelect:"text"}}>
+        {!cont&&(
+          <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:2}}>
+            <span style={{fontWeight:700,fontSize:14,color:nickColor(msg.nick),fontFamily:"'JetBrains Mono',monospace"}}>{msg.nick}</span>
+            <span style={{fontSize:11,color:T.textFaint,fontFamily:"'JetBrains Mono',monospace"}}>{fmtTime(msg.time)}</span>
+          </div>
+        )}
+        <div style={{fontSize:15,color:T.text,lineHeight:1.6,wordBreak:"break-word"}}>
+          {renderText(msg.text,myNick,T)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Network Settings Modal ───────────────────────────────────────────────────
+function NetworkSettingsModal({ net, onClose, onSaved, onDelete }) {
+  const T = useTheme();
+  const MONO = { fontFamily:"'JetBrains Mono',monospace" };
+  const [form, setForm] = useState({
+    name:           net.name       || "",
+    host:           net.host       || "",
+    port:           String(net.port || 6667),
+    tls:            net.tls        || false,
+    nick:           net.nick       || "",
+    alt_nick:       net.alt_nick   || "",
+    username:       net.username   || "",
+    realname:       net.realname   || "",
+    password:       net.password   || "",
+    auto_join:      (net.auto_join||[]).join(", "),
+    sasl_mechanism: net.sasl_mechanism || "",
+    sasl_username:  net.sasl_username  || "",
+    sasl_password:  net.sasl_password  || "",
+    on_connect:     net.on_connect  || [],  // array of raw IRC commands
+  });
+  const [newCmd, setNewCmd] = useState("");
+  const [saving, setSaving]   = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [err, setErr]         = useState("");
+
+  const set = k => e => setForm(f => ({...f, [k]: e.target.value}));
+
+  const IS = { width:"100%", padding:"8px 10px", borderRadius:5, fontSize:13,
+    background:T.bgPanel, border:`1px solid ${T.border}`, color:T.text,
+    fontFamily:"'Inter var','Inter',sans-serif", outline:"none", boxSizing:"border-box" };
+  const LS = { display:"block", fontSize:11, color:T.textDim, marginBottom:4,
+    fontFamily:"'JetBrains Mono',monospace", textTransform:"uppercase", letterSpacing:"0.05em" };
+
+  const save = async () => {
+    setErr(""); setSaving(true);
+    try {
+      const body = {
+        name:           form.name.trim(),
+        host:           form.host.trim(),
+        port:           parseInt(form.port)||6667,
+        tls:            form.tls,
+        nick:           form.nick.trim(),
+        alt_nick:       form.alt_nick.trim() || form.nick.trim()+"_",
+        username:       form.username.trim() || form.nick.trim(),
+        realname:       form.realname.trim() || form.nick.trim(),
+        password:       form.password,
+        auto_join:      form.auto_join ? form.auto_join.split(",").map(s=>s.trim()).filter(Boolean) : [],
+        on_connect:     form.on_connect,
+        sasl_mechanism: form.sasl_mechanism,
+        sasl_username:  form.sasl_username.trim(),
+        sasl_password:  form.sasl_password,
+      };
+      const updated = await API.updateNetwork(net.id, body);
+      if (updated.error) { setErr(updated.error); return; }
+      onSaved(updated);
+    } catch(e) { setErr(String(e)); }
+    finally { setSaving(false); }
+  };
+
+  const del = async () => {
+    if (!confirm(`Delete "${net.name}"? This will disconnect and remove it permanently.`)) return;
+    setDeleting(true);
+    try { await API.deleteNetwork(net.id); onDelete(net.id); }
+    catch(e) { setErr(String(e)); setDeleting(false); }
+  };
+
+  const overlay = { position:"fixed",inset:0,background:"#00000088",zIndex:200,
+    display:"flex",alignItems:"center",justifyContent:"center" };
+  const box = { background:T.bgPanel,border:`1px solid ${T.border}`,borderRadius:10,
+    width:520,maxHeight:"88vh",overflowY:"auto",padding:24,boxShadow:"0 8px 40px #0008" };
+
+  return (
+    <div style={overlay} onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={box}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+          <span style={{...MONO,fontWeight:700,fontSize:15,color:T.textBright}}>
+            ⚙ {net.name} — Settings
+          </span>
+          <button onClick={onClose} style={{background:"none",border:"none",color:T.textDim,
+            fontSize:18,cursor:"pointer",padding:"0 4px",lineHeight:1}}>✕</button>
+        </div>
+
+        {err&&<div style={{background:T.redBg,border:`1px solid ${T.redBorder}`,borderRadius:5,
+          padding:"8px 12px",color:T.red,fontSize:12,marginBottom:14,...MONO}}>{err}</div>}
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          {/* Name */}
+          <div style={{gridColumn:"1/-1"}}>
+            <label style={LS}>Network Name</label>
+            <input value={form.name} onChange={set("name")} style={IS} />
+          </div>
+
+          {/* Host + Port/TLS */}
+          <div>
+            <label style={LS}>Server Host</label>
+            <input value={form.host} onChange={set("host")} style={IS} />
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+            <div style={{flex:1}}>
+              <label style={LS}>Port</label>
+              <input value={form.port} onChange={set("port")} type="number" style={IS} />
+            </div>
+            <div>
+              <label style={LS}>TLS</label>
+              <button onClick={()=>setForm(f=>({...f,tls:!f.tls,port:!f.tls?"6697":f.port==="6697"?"6667":f.port}))}
+                style={{...IS,width:"auto",padding:"8px 14px",cursor:"pointer",
+                  background:form.tls?T.greenBg:T.bg,
+                  border:`1px solid ${form.tls?T.green:T.border}`,
+                  color:form.tls?T.green:T.textDim,fontWeight:form.tls?700:400}}>
+                {form.tls?"🔒 ON":"🔓 OFF"}
+              </button>
+            </div>
+          </div>
+
+          {/* Identity */}
+          <div>
+            <label style={LS}>Nickname</label>
+            <input value={form.nick} onChange={set("nick")} style={IS} />
+          </div>
+          <div>
+            <label style={LS}>Alt Nickname</label>
+            <input value={form.alt_nick} onChange={set("alt_nick")} style={IS} />
+          </div>
+          <div>
+            <label style={LS}>Username</label>
+            <input value={form.username} onChange={set("username")} style={IS} />
+          </div>
+          <div>
+            <label style={LS}>Real Name</label>
+            <input value={form.realname} onChange={set("realname")} style={IS} />
+          </div>
+
+          {/* Server password */}
+          <div style={{gridColumn:"1/-1"}}>
+            <label style={LS}>Server Password <span style={{opacity:0.6}}>(optional)</span></label>
+            <input value={form.password} onChange={set("password")} type="password"
+              placeholder="Leave blank if not required" style={IS} />
+          </div>
+
+          {/* Auto-join */}
+          <div style={{gridColumn:"1/-1"}}>
+            <label style={LS}>Auto-join Channels <span style={{opacity:0.6}}>(comma separated)</span></label>
+            <input value={form.auto_join} onChange={set("auto_join")}
+              placeholder="#linux, #python, #chat" style={IS} />
+          </div>
+
+          {/* SASL */}
+          <div style={{gridColumn:"1/-1",borderTop:`1px solid ${T.borderFaint}`,paddingTop:12,marginTop:2}}>
+            <div style={{...LS,marginBottom:8}}>SASL Authentication <span style={{opacity:0.6}}>(optional)</span></div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div style={{gridColumn:"1/-1"}}>
+                <label style={LS}>Mechanism</label>
+                <select value={form.sasl_mechanism} onChange={set("sasl_mechanism")}
+                  style={{...IS,cursor:"pointer"}}>
+                  <option value="">Disabled</option>
+                  <option value="PLAIN">PLAIN</option>
+                </select>
+              </div>
+              {form.sasl_mechanism&&(<>
+                <div>
+                  <label style={LS}>SASL Username</label>
+                  <input value={form.sasl_username} onChange={set("sasl_username")}
+                    placeholder="account name" style={IS} />
+                </div>
+                <div>
+                  <label style={LS}>SASL Password</label>
+                  <input value={form.sasl_password} onChange={set("sasl_password")}
+                    type="password" style={IS} />
+                </div>
+              </>)}
+            </div>
+          </div>
+
+          {/* Perform / on-connect commands */}
+          <div style={{gridColumn:"1/-1",borderTop:`1px solid ${T.borderFaint}`,paddingTop:12,marginTop:2}}>
+            <div style={{...LS,marginBottom:4}}>
+              On-Connect Commands
+              <span style={{opacity:0.6,textTransform:"none",letterSpacing:0,marginLeft:6,fontSize:11}}>
+                (executed after connecting, before auto-join)
+              </span>
+            </div>
+            <div style={{fontSize:11,color:T.textFaint,marginBottom:8,...MONO}}>
+              Examples:&nbsp;
+              <span style={{color:T.textDim}}>/msg NickServ IDENTIFY mypass</span>
+              &nbsp;·&nbsp;<span style={{color:T.textDim}}>/oper admin secret</span>
+              &nbsp;·&nbsp;<span style={{color:T.textDim}}>/mode +x</span>
+              &nbsp;·&nbsp;<span style={{color:T.textDim}}>/umode +i</span>
+            </div>
+            {/* Existing commands list */}
+            {form.on_connect.length > 0 && (
+              <div style={{marginBottom:8,display:"flex",flexDirection:"column",gap:4}}>
+                {form.on_connect.map((cmd,i) => (
+                  <div key={i} style={{display:"flex",gap:6,alignItems:"center"}}>
+                    <span style={{...MONO,fontSize:11,color:T.textFaint,minWidth:18,textAlign:"right",userSelect:"none"}}>
+                      {i+1}.
+                    </span>
+                    <div style={{flex:1,background:T.bg,border:`1px solid ${T.border}`,borderRadius:4,
+                      padding:"5px 8px",...MONO,fontSize:12,color:T.text,overflow:"hidden",
+                      textOverflow:"ellipsis",whiteSpace:"nowrap"}}
+                      title={cmd}>
+                      {cmd}
+                    </div>
+                    <button
+                      onClick={()=>setForm(f=>({...f,on_connect:f.on_connect.filter((_,j)=>j!==i)}))}
+                      style={{background:"none",border:`1px solid ${T.border}`,borderRadius:4,
+                        color:T.textDim,cursor:"pointer",padding:"4px 7px",fontSize:12,
+                        lineHeight:1,flexShrink:0}}
+                      title="Remove">✕</button>
+                    <button
+                      onClick={()=>{if(i>0){const a=[...form.on_connect];[a[i-1],a[i]]=[a[i],a[i-1]];setForm(f=>({...f,on_connect:a}));}}}
+                      disabled={i===0}
+                      style={{background:"none",border:`1px solid ${T.border}`,borderRadius:4,
+                        color:i===0?T.textGhost:T.textDim,cursor:i===0?"default":"pointer",
+                        padding:"4px 7px",fontSize:11,lineHeight:1,flexShrink:0}}
+                      title="Move up">↑</button>
+                    <button
+                      onClick={()=>{if(i<form.on_connect.length-1){const a=[...form.on_connect];[a[i],a[i+1]]=[a[i+1],a[i]];setForm(f=>({...f,on_connect:a}));}}}
+                      disabled={i===form.on_connect.length-1}
+                      style={{background:"none",border:`1px solid ${T.border}`,borderRadius:4,
+                        color:i===form.on_connect.length-1?T.textGhost:T.textDim,
+                        cursor:i===form.on_connect.length-1?"default":"pointer",
+                        padding:"4px 7px",fontSize:11,lineHeight:1,flexShrink:0}}
+                      title="Move down">↓</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Add new command */}
+            <div style={{display:"flex",gap:6}}>
+              <input
+                value={newCmd}
+                onChange={e=>setNewCmd(e.target.value)}
+                onKeyDown={e=>{
+                  if(e.key==="Enter"&&newCmd.trim()){
+                    setForm(f=>({...f,on_connect:[...f.on_connect,newCmd.trim()]}));
+                    setNewCmd("");
+                  }
+                }}
+                placeholder="/msg NickServ IDENTIFY password"
+                style={{...IS,flex:1,...MONO,fontSize:12}}
+              />
+              <button
+                onClick={()=>{
+                  if(newCmd.trim()){
+                    setForm(f=>({...f,on_connect:[...f.on_connect,newCmd.trim()]}));
+                    setNewCmd("");
+                  }
+                }}
+                style={{...MONO,padding:"8px 14px",borderRadius:5,fontSize:12,cursor:"pointer",
+                  background:T.accentBg2,border:`1px solid ${T.accent}`,color:T.accent,
+                  flexShrink:0,whiteSpace:"nowrap"}}>
+                + Add
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:20,gap:10}}>
+          <button onClick={del} disabled={deleting}
+            style={{...MONO,padding:"8px 14px",borderRadius:5,fontSize:12,cursor:"pointer",
+              background:T.redBg,border:`1px solid ${T.redBorder}`,color:T.red,opacity:deleting?0.5:1}}>
+            {deleting?"Deleting…":"Delete Network"}
+          </button>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={onClose}
+              style={{...MONO,padding:"8px 16px",borderRadius:5,fontSize:12,cursor:"pointer",
+                background:"transparent",border:`1px solid ${T.border}`,color:T.textDim}}>
+              Cancel
+            </button>
+            <button onClick={save} disabled={saving}
+              style={{...MONO,padding:"8px 20px",borderRadius:5,fontSize:12,cursor:"pointer",
+                background:T.accentBg2,border:`1px solid ${T.accent}`,color:T.accent,
+                fontWeight:700,opacity:saving?0.6:1}}>
+              {saving?"Saving…":"Save Changes"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Add Network Modal ────────────────────────────────────────────────────────
+const PRESETS = [
+  { label:"Ameth",       host:"irc.ameth.org",      port:6697, tls:true  },
+  { label:"Libera.Chat", host:"irc.libera.chat",    port:6697, tls:true  },
+  { label:"OFTC",        host:"irc.oftc.net",       port:6697, tls:true  },
+  { label:"EFnet",       host:"irc.efnet.org",      port:6667, tls:false },
+  { label:"Undernet",    host:"irc.undernet.org",   port:6667, tls:false },
+  { label:"DALnet",      host:"irc.dal.net",        port:6697, tls:true  },
+  { label:"QuakeNet",    host:"irc.quakenet.org",   port:6667, tls:false },
+  { label:"Custom",      host:"",                   port:6667, tls:false },
+];
+const BLANK = { name:"", host:"", port:"6667", tls:false, nick:"", alt_nick:"", username:"", realname:"", password:"", auto_join:"", sasl_mechanism:"", sasl_username:"", sasl_password:"" };
+
+function AddNetworkModal({ onClose, onAdded }) {
+  const [form, setForm] = useState(BLANK);
+  const [err, setErr]   = useState("");
+  const [busy, setBusy] = useState(false);
+  const set = k => e => setForm(f => ({...f, [k]:e.target.value}));
+
+  const applyPreset = p => setForm(f => ({
+    ...f,
+    name: f.name || (p.label!=="Custom" ? p.label : ""),
+    host: p.host,
+    port: String(p.port),
+    tls:  p.tls ?? false,
+  }));
+
+  const submit = async () => {
+    setErr("");
+    if (!form.name.trim()) { setErr("Network name is required."); return; }
+    if (!form.host.trim()) { setErr("Server host is required."); return; }
+    if (!form.nick.trim()) { setErr("Nickname is required."); return; }
+    setBusy(true);
+    try {
+      const body = {
+        name:           form.name.trim(),
+        host:           form.host.trim(),
+        port:           parseInt(form.port)||6667,
+        tls:            form.tls,
+        nick:           form.nick.trim(),
+        alt_nick:       form.alt_nick.trim() || form.nick.trim()+"_",
+        username:       form.username.trim() || form.nick.trim(),
+        realname:       form.realname.trim() || form.nick.trim(),
+        password:       form.password,
+        auto_join:      form.auto_join ? form.auto_join.split(",").map(s=>s.trim()).filter(Boolean) : [],
+        sasl_mechanism: form.sasl_mechanism,
+        sasl_username:  form.sasl_username.trim(),
+        sasl_password:  form.sasl_password,
+      };
+      const result = await API.createNetwork(body);
+      if (result?.error) { setErr(result.error); return; }
+      if (!result?.id)   { setErr("Unexpected response from server. Check backend logs."); return; }
+      onAdded(result);
+    } catch(e) {
+      setErr("Could not reach server: "+e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const T=useTheme();
+  const IS = {background:T.bg,border:`1px solid ${T.border}`,borderRadius:6,
+    color:T.text,padding:"9px 12px",fontSize:14,outline:"none",
+    width:"100%",boxSizing:"border-box",fontFamily:"inherit"};
+  const LS = {fontSize:11,color:T.textMono,display:"block",marginBottom:5,
+    fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.07em"};
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"#000000cc",zIndex:300,
+      display:"flex",alignItems:"center",justifyContent:"center"}}
+      onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{background:T.bgPanel,border:`1px solid ${T.accentDim}`,borderRadius:12,width:500,
+        maxHeight:"92vh",display:"flex",flexDirection:"column",boxShadow:"0 32px 96px #000e"}}>
+
+        <div style={{padding:"18px 20px 14px",borderBottom:`1px solid ${T.borderFaint}`,
+          display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <span style={{fontSize:15,fontWeight:800,color:T.textBright,fontFamily:"'JetBrains Mono',monospace"}}>Add IRC Network</span>
+          <button onClick={onClose} style={{background:"none",border:"none",color:T.textFaint,fontSize:22,cursor:"pointer"}}>×</button>
+        </div>
+
+        <div style={{flex:1,overflowY:"auto",padding:"16px 20px"}}>
+          <div style={{marginBottom:14}}>
+            <div style={LS}>Quick Select</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+              {PRESETS.map(p=>(
+                <button key={p.label} onClick={()=>applyPreset(p)}
+                  style={{background:form.host===p.host&&p.host?T.accentBg:T.border,
+                    border:`1px solid ${form.host===p.host&&p.host?T.accentDim:T.borderFaint}`,
+                    borderRadius:5,color:form.host===p.host&&p.host?T.accent:T.textDim,
+                    padding:"5px 11px",fontSize:13,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace"}}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {err&&<div style={{background:T.redBg,border:`1px solid ${T.redBorder}`,borderRadius:6,
+            padding:"8px 12px",fontSize:13,color:T.red,marginBottom:14}}>{err}</div>}
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <div style={{gridColumn:"1/-1"}}>
+              <label style={LS}>Network Name *</label>
+              <input value={form.name} onChange={set("name")} placeholder="e.g. Libera.Chat" style={IS} autoFocus />
+            </div>
+            <div>
+              <label style={LS}>Server Host *</label>
+              <input value={form.host} onChange={set("host")} placeholder="irc.libera.chat" style={IS} />
+            </div>
+            <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+              <div style={{flex:1}}>
+                <label style={LS}>Port</label>
+                <input value={form.port} onChange={set("port")} type="number" style={IS} />
+              </div>
+              <div style={{paddingBottom:1}}>
+                <label style={LS}>TLS / SSL</label>
+                <button onClick={()=>setForm(f=>({...f,tls:!f.tls,port:!f.tls?"6697":f.port==="6697"?"6667":f.port}))}
+                  style={{...IS,width:"auto",padding:"9px 14px",cursor:"pointer",
+                    background:form.tls?T.greenBg:T.bg,
+                    border:`1px solid ${form.tls?T.green:T.border}`,
+                    color:form.tls?T.green:T.textDim,fontWeight:form.tls?700:400}}>
+                  {form.tls?"🔒 ON":"🔓 OFF"}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label style={LS}>Nickname *</label>
+              <input value={form.nick} onChange={set("nick")} placeholder="YourNick" style={IS} />
+            </div>
+            <div>
+              <label style={LS}>Alt Nickname</label>
+              <input value={form.alt_nick} onChange={set("alt_nick")} placeholder="YourNick_" style={IS} />
+            </div>
+            <div>
+              <label style={LS}>Username</label>
+              <input value={form.username} onChange={set("username")} placeholder="yournick" style={IS} />
+            </div>
+            <div>
+              <label style={LS}>Real Name</label>
+              <input value={form.realname} onChange={set("realname")} placeholder="Your Name" style={IS} />
+            </div>
+            <div style={{gridColumn:"1/-1"}}>
+              <label style={LS}>Server Password <span style={{opacity:0.6}}>(optional)</span></label>
+              <input value={form.password} onChange={set("password")} type="password"
+                placeholder="Leave blank if not required" style={IS} />
+            </div>
+            <div style={{gridColumn:"1/-1"}}>
+              <label style={LS}>Auto-join Channels <span style={{opacity:0.6}}>(comma separated)</span></label>
+              <input value={form.auto_join} onChange={set("auto_join")} placeholder="#linux, #python, #chat" style={IS} />
+            </div>
+
+            {/* SASL section */}
+            <div style={{gridColumn:"1/-1",borderTop:`1px solid ${T.borderFaint}`,paddingTop:12,marginTop:2}}>
+              <div style={{...LS,marginBottom:8}}>SASL Authentication <span style={{opacity:0.6}}>(optional)</span></div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <div style={{gridColumn:"1/-1"}}>
+                  <label style={LS}>Mechanism</label>
+                  <select value={form.sasl_mechanism} onChange={set("sasl_mechanism")}
+                    style={{...IS,cursor:"pointer"}}>
+                    <option value="">Disabled</option>
+                    <option value="PLAIN">PLAIN</option>
+                  </select>
+                </div>
+                {form.sasl_mechanism&&(<>
+                  <div>
+                    <label style={LS}>SASL Username</label>
+                    <input value={form.sasl_username} onChange={set("sasl_username")}
+                      placeholder="your account name" style={IS} />
+                  </div>
+                  <div>
+                    <label style={LS}>SASL Password</label>
+                    <input value={form.sasl_password} onChange={set("sasl_password")}
+                      type="password" placeholder="your account password" style={IS}
+                      onKeyDown={e=>e.key==="Enter"&&submit()} />
+                  </div>
+                </>)}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{padding:"14px 20px",borderTop:`1px solid ${T.borderFaint}`,display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={onClose}
+            style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,
+              color:T.textDim,padding:"9px 18px",fontSize:14,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace"}}>
+            Cancel
+          </button>
+          <button onClick={submit} disabled={busy}
+            style={{background:T.accent,border:"none",borderRadius:6,color:T.bg,
+              fontWeight:700,padding:"9px 20px",fontSize:14,cursor:busy?"wait":"pointer",
+              fontFamily:"'JetBrains Mono',monospace",opacity:busy?0.6:1}}>
+            {busy?"Saving…":"Add & Connect"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Command definitions ──────────────────────────────────────────────────────
+const CMDS = {
+  "/join":        "Join a channel:  /join #channel",
+  "/part":        "Leave current channel:  /part [reason]",
+  "/close":       "Close current channel/query tab",
+  "/msg":         "Private message:  /msg <nick> <text>",
+  "/query":       "Open DM with nick:  /query <nick>",
+  "/me":          "Action message:  /me <text>",
+  "/nick":        "Change nickname:  /nick <newnick>",
+  "/topic":       "Get/set topic:  /topic [new topic]",
+  "/kick":        "Kick user:  /kick <nick> [reason]",
+  "/ban":         "Ban mask:  /ban <nick!user@host>",
+  "/unban":       "Unban mask:  /unban <mask>",
+  "/mode":        "Get/set modes:  /mode [target] [flags]",
+  "/invite":      "Invite user:  /invite <nick> [#channel]",
+  "/whois":       "User info:  /whois <nick>",
+  "/who":         "Channel member details:  /who [#channel]",
+  "/names":       "Refresh member list",
+  "/list":        "List channels:  /list [pattern]",
+  "/oper":        "IRC operator login:  /oper <name> <password>",
+  "/away":        "Set away:  /away [message]",
+  "/back":        "Clear away status",
+  "/notice":      "Send NOTICE:  /notice <nick|#chan> <text>",
+  "/raw":         "Send raw IRC:  /raw <command>",
+  "/quote":       "Send raw IRC:  /quote <command>",
+  "/connect":     "Connect to active network",
+  "/disconnect":  "Disconnect from active network",
+  "/reconnect":   "Reconnect to active network",
+  "/clear":       "Clear message view",
+  "/help":        "Show commands:  /help [command]",
+};
+
+// ─── User context menu popup ──────────────────────────────────────────────────
+// myPrefix: my own prefix in this channel ("~","&","@","%","+" or "")
+function UserMenuPopup({ menu, onClose, onSend, myPrefix, currentNick }) {
+  const T = useTheme();
+  const MONO = { fontFamily:"'JetBrains Mono',monospace" };
+  const { nick, pfx, x, y, chan, netId } = menu;
+
+  // Prefix rank: higher = more privileged
+  const RANK = { "~":5, "&":4, "@":3, "%":2, "+":1, "":0 };
+  const myRank   = RANK[myPrefix] ?? 0;
+  const theirRank = RANK[pfx]    ?? 0;
+
+  // What I can do:
+  const canSeeOps   = myRank >= 2; // half-op or above sees the section
+  const canKick     = myRank >= 2;
+  const canVoice    = myRank >= 2; // half-ops can typically give/take voice
+  const canHop      = myRank >= 3; // ops can give/take half-op
+  const canOp       = myRank >= 3; // ops can give/take op
+  const canAdmin    = myRank >= 4; // admins (&) can give/take admin (+a)
+  const canOwner    = myRank >= 5; // owners (~) can give/take owner (+q)
+  // Can only act on users strictly below my rank
+  const outranks    = myRank > theirRank;
+
+  // Target's current modes
+  const hasOwner = pfx==="~";
+  const hasAdmin = pfx==="&";
+  const hasOp    = pfx==="@";
+  const hasHop   = pfx==="%";
+  const hasVoice = pfx==="+";
+
+  // Keep popup on screen — taller now to accommodate more rows
+  const menuW = 220, menuH = 420;
+  const left = Math.min(x, window.innerWidth  - menuW - 8);
+  const top  = Math.min(y, window.innerHeight - menuH - 8);
+
+  const send = (cmd) => { onSend(netId, cmd); onClose(); };
+
+  const Row = ({ icon, label, sub, onClick, danger, dim }) => (
+    <div onClick={dim ? undefined : onClick}
+      style={{display:"flex",alignItems:"center",gap:9,padding:"7px 12px",
+        cursor:dim?"default":"pointer",borderRadius:4,margin:"1px 4px",
+        userSelect:"none",opacity:dim?0.3:1,color:danger?T.red:T.text}}
+      onMouseEnter={e=>{ if(!dim) e.currentTarget.style.background=danger?T.redBg:T.border; }}
+      onMouseLeave={e=>{ e.currentTarget.style.background="transparent"; }}>
+      <span style={{width:16,textAlign:"center",fontSize:13,flexShrink:0}}>{icon}</span>
+      <span style={{flex:1,fontSize:13}}>{label}</span>
+      {sub&&<span style={{...MONO,fontSize:10,color:T.textFaint}}>{sub}</span>}
+    </div>
+  );
+
+  const ModeRow = ({ has, label, sub, canDo }) => {
+    const active = has;
+    const dim    = !canDo || !outranks;
+    return (
+      <div onClick={dim ? undefined : ()=>send(`/mode ${chan} ${active?"-":"+"}${sub.replace(/[+-]/g,"")} ${nick}`)}
+        style={{display:"flex",alignItems:"center",gap:9,padding:"6px 12px",
+          cursor:dim?"default":"pointer",borderRadius:4,margin:"1px 4px",
+          userSelect:"none",opacity:dim?0.3:1,color:T.text}}
+        onMouseEnter={e=>{ if(!dim) e.currentTarget.style.background=T.border; }}
+        onMouseLeave={e=>{ e.currentTarget.style.background="transparent"; }}>
+        {/* mode badge */}
+        <span style={{...MONO,fontSize:11,fontWeight:700,width:26,textAlign:"center",
+          borderRadius:3,padding:"1px 3px",flexShrink:0,
+          background: active ? T.accentBg3 : T.bgInput,
+          color:      active ? T.accent    : T.textFaint,
+          border:`1px solid ${active?T.accent:T.borderFaint}`}}>
+          {active ? sub.replace("+","") : sub}
+        </span>
+        <span style={{flex:1,fontSize:13}}>{label}</span>
+        <span style={{...MONO,fontSize:10,color:active?T.accent:T.textFaint}}>
+          {active?"active":"—"}
+        </span>
+      </div>
+    );
+  };
+
+  const Divider = () => <div style={{height:1,background:T.borderFaint,margin:"4px 0"}}/>;
+
+  const PREFIX_LABEL = {"~":"Owner","&":"Admin","@":"Op","%":"Half-op","+":"Voiced"};
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:300}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()}
+        style={{position:"fixed",left,top,width:menuW,background:T.bgPanel,
+          border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 0",
+          boxShadow:"0 8px 32px #0006",zIndex:301,minWidth:menuW}}>
+
+        {/* Header */}
+        <div style={{padding:"8px 12px 6px",borderBottom:`1px solid ${T.borderFaint}`}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <Avatar nick={nick} size={26}/>
+            <div>
+              <div style={{fontWeight:700,fontSize:14,color:T.textBright}}>{nick}</div>
+              {pfx
+                ? <div style={{...MONO,fontSize:10,color:T.accent}}>{PREFIX_LABEL[pfx]||pfx}</div>
+                : <div style={{...MONO,fontSize:10,color:T.textFaint}}>Member</div>
+              }
+            </div>
+          </div>
+        </div>
+
+        <div style={{padding:"4px 0"}}>
+          {/* Always-available actions */}
+          <Row icon="ℹ" label="User Info (WHOIS)"  onClick={()=>send(`/whois ${nick}`)} />
+          <Row icon="✉" label="Send Message"        onClick={()=>send(`/msg ${nick}`)} />
+
+          {/* Mode section — visible to half-op and above, hidden for self */}}
+          {canSeeOps && nick !== currentNick && (<>
+            <Divider/>
+            <div style={{...MONO,padding:"4px 12px 2px",fontSize:10,color:T.textFaint,
+              textTransform:"uppercase",letterSpacing:"0.08em"}}>Channel Modes</div>
+
+            {canOwner  && <ModeRow has={hasOwner} label="Owner"    sub="+q" canDo={canOwner} />}
+            {canAdmin  && <ModeRow has={hasAdmin} label="Admin"    sub="+a" canDo={canAdmin} />}
+                          <ModeRow has={hasOp}    label="Op"       sub="+o" canDo={canOp}    />
+                          <ModeRow has={hasHop}   label="Half-op"  sub="+h" canDo={canHop}   />
+                          <ModeRow has={hasVoice} label="Voice"    sub="+v" canDo={canVoice} />
+
+            <Divider/>
+
+            <Row icon="🔇" label="Kick" danger dim={!canKick||!outranks}
+              onClick={()=>{
+                onClose();
+                const reason = window.prompt(`Kick reason for ${nick}:`,"");
+                if (reason !== null) onSend(netId, `/kick ${chan} ${nick} ${reason||"Kicked"}`);
+              }} />
+            <Row icon="🔨" label="Ban (host mask)" danger dim={!canKick||!outranks}
+              onClick={()=>send(`/mode ${chan} +b ${nick}!*@*`)} />
+            <Row icon="🚫" label="Kick & Ban" danger dim={!canKick||!outranks}
+              onClick={()=>{
+                onClose();
+                const reason = window.prompt(`Kick+ban reason for ${nick}:`,"");
+                if (reason !== null) {
+                  onSend(netId, `/mode ${chan} +b ${nick}!*@*`);
+                  onSend(netId, `/kick ${chan} ${nick} ${reason||"Banned"}`);
+                }
+              }} />
+          </>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Profile modal ────────────────────────────────────────────────────────────
+function ProfileModal({ currentUser, onClose, onUpdated }) {
+  const T = useTheme();
+  const MONO = { fontFamily:"'JetBrains Mono',monospace" };
+  const IS = { width:"100%", padding:"8px 10px", borderRadius:5, fontSize:13,
+    background:T.bgPanel, border:`1px solid ${T.border}`, color:T.text,
+    fontFamily:"'Inter var','Inter',sans-serif", outline:"none", boxSizing:"border-box" };
+  const LS = { display:"block", fontSize:11, color:T.textDim, marginBottom:4,
+    ...MONO, textTransform:"uppercase", letterSpacing:"0.05em" };
+
+  const [tab, setTab]               = React.useState("avatar"); // "avatar" | "password"
+  const [preview, setPreview]       = React.useState(currentUser.avatar_url || null);
+  const [file, setFile]             = React.useState(null);
+  const [uploading, setUploading]   = React.useState(false);
+  const [uploadErr, setUploadErr]   = React.useState("");
+  const [curPw, setCurPw]           = React.useState("");
+  const [newPw, setNewPw]           = React.useState("");
+  const [newPw2, setNewPw2]         = React.useState("");
+  const [pwSaving, setPwSaving]     = React.useState(false);
+  const [pwErr, setPwErr]           = React.useState("");
+  const [pwOk, setPwOk]             = React.useState(false);
+  const fileRef = React.useRef();
+
+  const handleFileChange = e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    setFile(f);
+    setPreview(URL.createObjectURL(f));
+    setUploadErr("");
+  };
+
+  const handleUpload = async () => {
+    if (!file) return;
+    setUploading(true); setUploadErr("");
+    try {
+      const updated = await API.uploadAvatar(file);
+      if (updated.error) { setUploadErr(updated.error); return; }
+      // Bust the avatar cache for this user's nick
+      delete _avatarCache[currentUser.username];
+      onUpdated(updated);
+      setFile(null);
+    } catch(e) { setUploadErr(String(e)); }
+    finally { setUploading(false); }
+  };
+
+  const handlePassword = async () => {
+    setPwErr(""); setPwOk(false);
+    if (newPw !== newPw2) { setPwErr("Passwords do not match"); return; }
+    if (newPw.length < 8) { setPwErr("Password must be at least 8 characters"); return; }
+    setPwSaving(true);
+    try {
+      const updated = await API.updateProfile({ current_password: curPw, new_password: newPw });
+      if (updated.error) { setPwErr(updated.error); return; }
+      setCurPw(""); setNewPw(""); setNewPw2("");
+      setPwOk(true);
+      onUpdated(updated);
+    } catch(e) { setPwErr(String(e)); }
+    finally { setPwSaving(false); }
+  };
+
+  const tabStyle = active => ({
+    ...MONO, padding:"7px 16px", fontSize:12, cursor:"pointer", borderRadius:5,
+    background: active ? T.accentBg2 : "transparent",
+    border: `1px solid ${active ? T.accent : T.borderFaint}`,
+    color: active ? T.accent : T.textDim,
+  });
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"#00000088",zIndex:400,
+      display:"flex",alignItems:"center",justifyContent:"center"}}
+      onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{background:T.bgPanel,border:`1px solid ${T.border}`,borderRadius:10,
+        width:420,padding:24,boxShadow:"0 8px 40px #0008"}}>
+
+        {/* Header */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+          <span style={{...MONO,fontWeight:700,fontSize:15,color:T.textBright}}>👤 My Profile</span>
+          <button onClick={onClose} style={{background:"none",border:"none",color:T.textDim,
+            fontSize:18,cursor:"pointer",padding:"0 4px"}}>✕</button>
+        </div>
+
+        {/* Current user info */}
+        <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:20,
+          padding:14,borderRadius:8,background:T.bg,border:`1px solid ${T.borderFaint}`}}>
+          <div style={{position:"relative"}}>
+            {preview
+              ? <img src={preview} alt="avatar"
+                  style={{width:52,height:52,borderRadius:"50%",objectFit:"cover",
+                    border:`2px solid ${T.accent}44`}}/>
+              : <Avatar nick={currentUser.username} size={52}/>
+            }
+          </div>
+          <div>
+            <div style={{fontWeight:700,fontSize:15,color:T.textBright}}>{currentUser.display_name||currentUser.username}</div>
+            <div style={{...MONO,fontSize:11,color:T.textFaint}}>@{currentUser.username}</div>
+            <div style={{...MONO,fontSize:10,color:T.textFaint,marginTop:2,
+              background:currentUser.role==="admin"?T.amberBg:"transparent",
+              border:`1px solid ${currentUser.role==="admin"?T.amber:T.borderFaint}`,
+              borderRadius:3,padding:"1px 5px",display:"inline-block",
+              color:currentUser.role==="admin"?T.amber:T.textFaint}}>
+              {currentUser.role}
+            </div>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div style={{display:"flex",gap:8,marginBottom:18}}>
+          <button style={tabStyle(tab==="avatar")} onClick={()=>setTab("avatar")}>Avatar</button>
+          <button style={tabStyle(tab==="password")} onClick={()=>{setTab("password");setPwOk(false);}}>Password</button>
+        </div>
+
+        {/* Avatar tab */}
+        {tab==="avatar" && (
+          <div>
+            <input type="file" accept="image/jpeg,image/png,image/gif,image/webp"
+              ref={fileRef} style={{display:"none"}} onChange={handleFileChange}/>
+            <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:14}}>
+              <div style={{width:72,height:72,borderRadius:8,overflow:"hidden",flexShrink:0,
+                background:T.bg,border:`1px solid ${T.border}`,display:"flex",
+                alignItems:"center",justifyContent:"center"}}>
+                {preview
+                  ? <img src={preview} alt="preview"
+                      style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                  : <span style={{fontSize:11,color:T.textFaint,...MONO}}>No avatar</span>
+                }
+              </div>
+              <div style={{flex:1}}>
+                <button onClick={()=>fileRef.current.click()}
+                  style={{...IS,cursor:"pointer",textAlign:"left",marginBottom:6,
+                    color:file?T.text:T.textDim}}>
+                  {file ? file.name : "Choose image…"}
+                </button>
+                <div style={{fontSize:11,color:T.textFaint,...MONO}}>
+                  JPEG, PNG, GIF, or WebP · max 4 MB
+                </div>
+              </div>
+            </div>
+            {uploadErr&&<div style={{background:T.redBg,border:`1px solid ${T.redBorder}`,
+              borderRadius:5,padding:"7px 10px",color:T.red,fontSize:12,marginBottom:10,...MONO}}>
+              {uploadErr}</div>}
+            <button onClick={handleUpload} disabled={!file||uploading}
+              style={{...MONO,width:"100%",padding:"9px 0",borderRadius:5,fontSize:13,
+                cursor:(!file||uploading)?"default":"pointer",fontWeight:700,
+                background:(!file||uploading)?T.bg:T.accentBg2,
+                border:`1px solid ${(!file||uploading)?T.border:T.accent}`,
+                color:(!file||uploading)?T.textFaint:T.accent,
+                opacity:uploading?0.6:1}}>
+              {uploading ? "Uploading…" : "Save Avatar"}
+            </button>
+          </div>
+        )}
+
+        {/* Password tab */}
+        {tab==="password" && (
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div>
+              <label style={LS}>Current Password</label>
+              <input type="password" value={curPw} onChange={e=>setCurPw(e.target.value)}
+                style={IS} autoComplete="current-password"/>
+            </div>
+            <div>
+              <label style={LS}>New Password</label>
+              <input type="password" value={newPw} onChange={e=>{setNewPw(e.target.value);setPwOk(false);}}
+                style={IS} autoComplete="new-password"/>
+            </div>
+            <div>
+              <label style={LS}>Confirm New Password</label>
+              <input type="password" value={newPw2} onChange={e=>{setNewPw2(e.target.value);setPwOk(false);}}
+                style={IS} autoComplete="new-password"
+                onKeyDown={e=>e.key==="Enter"&&handlePassword()}/>
+            </div>
+            {pwErr&&<div style={{background:T.redBg,border:`1px solid ${T.redBorder}`,
+              borderRadius:5,padding:"7px 10px",color:T.red,fontSize:12,...MONO}}>{pwErr}</div>}
+            {pwOk&&<div style={{background:T.greenBg,border:`1px solid ${T.green}`,
+              borderRadius:5,padding:"7px 10px",color:T.green,fontSize:12,...MONO}}>
+              ✓ Password updated successfully</div>}
+            <button onClick={handlePassword} disabled={!curPw||!newPw||!newPw2||pwSaving}
+              style={{...MONO,width:"100%",padding:"9px 0",borderRadius:5,fontSize:13,
+                cursor:(!curPw||!newPw||!newPw2||pwSaving)?"default":"pointer",fontWeight:700,
+                background:(!curPw||!newPw||!newPw2||pwSaving)?T.bg:T.accentBg2,
+                border:`1px solid ${(!curPw||!newPw||!newPw2||pwSaving)?T.border:T.accent}`,
+                color:(!curPw||!newPw||!newPw2||pwSaving)?T.textFaint:T.accent,
+                opacity:pwSaving?0.6:1}}>
+              {pwSaving ? "Saving…" : "Change Password"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Input bar ────────────────────────────────────────────────────────────────
+function InputBar({ onSend, label, nick, disabled }) {
+  const [val,      setVal]      = useState("");
+  const [hist,     setHist]     = useState([]);
+  const [histIdx,  setHistIdx]  = useState(-1);
+  const [suggest,  setSuggest]  = useState([]);
+  const [sugIdx,   setSugIdx]   = useState(0);
+  const inputRef = useRef(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, [label]);
+
+  const updateSuggest = v => {
+    if (v.startsWith("/")) {
+      const q = v.toLowerCase();
+      setSuggest(Object.keys(CMDS).filter(c => c.startsWith(q) && c !== q));
+    } else {
+      setSuggest([]);
+    }
+    setSugIdx(0);
+  };
+
+  const submit = () => {
+    const v = val.trim();
+    if (!v || disabled) return;
+    onSend(v);
+    setHist(h => [v,...h.slice(0,99)]);
+    setHistIdx(-1); setVal(""); setSuggest([]);
+  };
+
+  const T=useTheme();
+  return (
+    <div style={{padding:"10px 14px 12px",borderTop:`1px solid ${T.borderMid}`,background:T.bgInputWrap,flexShrink:0}}>
+      {suggest.length>0&&(
+        <div style={{background:T.bgPanel,border:`1px solid ${T.accentDim}`,borderRadius:6,
+          padding:"4px 0",marginBottom:8,maxHeight:200,overflowY:"auto"}}>
+          {suggest.map((cmd,i)=>(
+            <div key={cmd} onClick={()=>{setVal(cmd+" ");setSuggest([]);inputRef.current?.focus();}}
+              style={{padding:"5px 14px",fontSize:13,cursor:"pointer",display:"flex",gap:12,
+                background:i===sugIdx?T.accentBg:"transparent",
+                color:i===sugIdx?T.accent:T.textDim}}
+              onMouseEnter={()=>setSugIdx(i)}>
+              <span style={{fontFamily:"'JetBrains Mono',monospace",minWidth:130,flexShrink:0}}>{cmd}</span>
+              <span style={{fontSize:12,color:T.textFaint,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{CMDS[cmd]}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{display:"flex",alignItems:"center",gap:10,background:T.bgInput,
+        borderRadius:9,border:`1px solid ${T.borderFaint}`,padding:"9px 14px",opacity:disabled?0.45:1}}>
+        <span style={{fontSize:13,color:T.textMono,fontFamily:"'JetBrains Mono',monospace",
+          flexShrink:0,userSelect:"none"}}>{label}</span>
+        <span style={{color:T.textFaint,flexShrink:0,fontSize:15}}>›</span>
+        <input ref={inputRef} value={val} disabled={disabled}
+          onChange={e=>{setVal(e.target.value);updateSuggest(e.target.value);}}
+          onKeyDown={e=>{
+            if (e.key==="Enter") {
+              if (suggest.length>0&&val.trim()!==suggest[sugIdx]) { setVal(suggest[sugIdx]+" "); setSuggest([]); return; }
+              submit();
+            } else if (e.key==="ArrowUp") {
+              e.preventDefault();
+              if (suggest.length>0) { setSugIdx(i=>Math.max(0,i-1)); return; }
+              const ni=Math.min(histIdx+1,hist.length-1); setHistIdx(ni); setVal(hist[ni]||"");
+            } else if (e.key==="ArrowDown") {
+              e.preventDefault();
+              if (suggest.length>0) { setSugIdx(i=>Math.min(suggest.length-1,i+1)); return; }
+              const ni=Math.max(histIdx-1,-1); setHistIdx(ni); setVal(ni===-1?"":hist[ni]||"");
+            } else if (e.key==="Tab") {
+              e.preventDefault();
+              if (suggest.length>0) { setVal(suggest[sugIdx]+" "); setSuggest([]); }
+            } else if (e.key==="Escape") { setSuggest([]); }
+          }}
+          placeholder={disabled?"Not connected — type /connect to reconnect":`Message ${label} as ${nick}…`}
+          style={{flex:1,background:"transparent",border:"none",outline:"none",
+            color:T.text,fontSize:15,caretColor:T.accent,fontFamily:"inherit"}}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ─── Sidebar item (channel, DM, or server tab) ───────────────────────────────
+// kind: "channel" | "dm" | "server"
+function SidebarItem({ chanName, kind, active, unread, onClick }) {
+  const T=useTheme();
+  const [hov, setHov] = useState(false);
+
+  let icon, label;
+  if (kind==="server") {
+    icon = <span style={{fontSize:11,opacity:0.6,flexShrink:0}}>⚡</span>;
+    label = "server";
+  } else if (kind==="dm") {
+    icon = <Avatar nick={chanName} size={16}/>;
+    label = chanName;
+  } else {
+    // channel
+    icon = <span style={{fontSize:12,opacity:0.7,flexShrink:0,fontFamily:"'JetBrains Mono',monospace"}}>#</span>;
+    label = chanName.replace(/^#/,"");
+  }
+
+  return (
+    <div onClick={onClick} onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
+      style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+        padding:"4px 10px 4px 24px",margin:"1px 6px",borderRadius:4,cursor:"pointer",
+        background:active?T.accentBg2:hov?T.border:"transparent",
+        color:active?T.text:unread>0?T.accent:T.textDim,
+        fontWeight:active||unread>0?600:400,fontSize:14,gap:6}}>
+      <span style={{display:"flex",alignItems:"center",gap:5,overflow:"hidden",minWidth:0}}>
+        {icon}
+        <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</span>
+      </span>
+      {unread>0&&!active&&(
+        <span style={{background:T.accent,color:T.bg,fontSize:10,fontWeight:800,
+          borderRadius:10,padding:"1px 5px",minWidth:16,textAlign:"center",
+          fontFamily:"'JetBrains Mono',monospace",flexShrink:0,lineHeight:"14px"}}>{unread>99?"99+":unread}</span>
+      )}
+    </div>
+  );
+}
+
+// ─── Collapsible section header ───────────────────────────────────────────────
+function SectionHeader({ label, count, open, onToggle }) {
+  const T=useTheme();
+  return (
+    <div onClick={onToggle}
+      style={{display:"flex",alignItems:"center",gap:4,padding:"5px 10px 2px 12px",
+        cursor:"pointer",userSelect:"none"}}
+      onMouseEnter={e=>e.currentTarget.style.background=T.border}
+      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+      <span style={{fontSize:9,color:T.textFaint,transition:"transform 0.15s",
+        display:"inline-block",transform:open?"rotate(90deg)":"rotate(0deg)"}}>▶</span>
+      <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10,fontWeight:700,
+        color:T.textDim,textTransform:"uppercase",letterSpacing:"0.08em",flex:1}}>
+        {label}
+      </span>
+      {count>0&&<span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:9,
+        color:T.textFaint}}>{count}</span>}
+    </div>
+  );
+}
+
+// ─── Logs Modal ───────────────────────────────────────────────────────────────
+function LogsModal({ onClose }) {
+  const T = useTheme();
+  const MONO = { fontFamily:"'JetBrains Mono',monospace" };
+  const IS = {
+    width:"100%", padding:"7px 10px", borderRadius:5, fontSize:13,
+    border:`1px solid ${T.border}`, background:T.bgInput||T.bg, color:T.text,
+    outline:"none", boxSizing:"border-box",
+  };
+
+  // ── tab state ────────────────────────────────────────────────────────────
+  const [tab, setTab] = React.useState("browse"); // "browse" | "settings"
+
+  // ── settings state ───────────────────────────────────────────────────────
+  const [settings, setSettings]     = React.useState(null);
+  const [settingsSaving, setSS]     = React.useState(false);
+  const [settingsMsg, setSettingsMsg]= React.useState("");
+
+  // ── browse state ─────────────────────────────────────────────────────────
+  const [logNets,   setLogNets]   = React.useState([]);
+  const [logChans,  setLogChans]  = React.useState([]);
+  const [filters, setFilters] = React.useState({
+    network_id:"", channel:"", nick:"", search:"", type:"", date_from:"", date_to:"",
+  });
+  const [results,  setResults]  = React.useState(null); // QueryResult
+  const [loading,  setLoading]  = React.useState(false);
+  const [page,     setPage]     = React.useState(0);
+  const [exporting, setExporting] = React.useState(false);
+  const [deleteConfirm, setDeleteConfirm] = React.useState(false);
+  const LIMIT = 50;
+
+  // ── load settings + networks on mount ───────────────────────────────────
+  React.useEffect(() => {
+    fetch("/api/v1/logs/settings", { credentials:"include" })
+      .then(r=>r.json()).then(s=>setSettings(s)).catch(()=>{});
+    fetch("/api/v1/logs/networks", { credentials:"include" })
+      .then(r=>r.json()).then(n=>setLogNets(Array.isArray(n)?n:[])).catch(()=>{});
+  }, []);
+
+  // ── load channels when network filter changes ────────────────────────────
+  React.useEffect(() => {
+    if (!filters.network_id) { setLogChans([]); return; }
+    fetch(`/api/v1/logs/channels?network_id=${encodeURIComponent(filters.network_id)}`,
+      { credentials:"include" })
+      .then(r=>r.json()).then(c=>setLogChans(Array.isArray(c)?c:[]))
+      .catch(()=>setLogChans([]));
+  }, [filters.network_id]);
+
+  // ── search ───────────────────────────────────────────────────────────────
+  const search = React.useCallback((pg=0) => {
+    setLoading(true);
+    const p = new URLSearchParams();
+    p.set("limit", LIMIT);
+    p.set("offset", pg * LIMIT);
+    Object.entries(filters).forEach(([k,v])=>{ if(v) p.set(k,v); });
+    fetch(`/api/v1/logs?${p}`, { credentials:"include" })
+      .then(r=>r.json())
+      .then(res=>{ setResults(res); setPage(pg); })
+      .catch(()=>setResults(null))
+      .finally(()=>setLoading(false));
+  }, [filters]);
+
+  // initial load
+  React.useEffect(()=>{ search(0); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleFilter = (key, val) => {
+    setFilters(f=>({...f, [key]:val}));
+    if (key==="network_id") setFilters(f=>({...f, network_id:val, channel:""}));
+  };
+
+  const runSearch = (e) => { e.preventDefault(); search(0); };
+
+  // ── export ───────────────────────────────────────────────────────────────
+  const doExport = () => {
+    setExporting(true);
+    const p = new URLSearchParams();
+    Object.entries(filters).forEach(([k,v])=>{ if(v) p.set(k,v); });
+    fetch(`/api/v1/logs/export?${p}`, { credentials:"include" })
+      .then(async r=>{
+        const blob = await r.blob();
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement("a");
+        a.href = url;
+        a.download = `korechat-logs-${new Date().toISOString().slice(0,10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }).catch(()=>{}).finally(()=>setExporting(false));
+  };
+
+  // ── delete all ───────────────────────────────────────────────────────────
+  const doDelete = () => {
+    fetch("/api/v1/logs", { method:"DELETE", credentials:"include" })
+      .then(()=>{ setDeleteConfirm(false); search(0); }).catch(()=>{});
+  };
+
+  // ── save settings ────────────────────────────────────────────────────────
+  const saveSettings = () => {
+    setSS(true);
+    fetch("/api/v1/logs/settings", {
+      method:"PATCH", credentials:"include",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(settings),
+    }).then(r=>r.json()).then(s=>{ setSettings(s); setSettingsMsg("Saved!"); setTimeout(()=>setSettingsMsg(""),2000); })
+      .catch(()=>setSettingsMsg("Error saving."))
+      .finally(()=>setSS(false));
+  };
+
+  // ── helpers ───────────────────────────────────────────────────────────────
+  const typeColor = (type) => {
+    switch(type) {
+      case "PRIVMSG": return T.text;
+      case "NOTICE":  return T.amber||"#d4a72c";
+      case "JOIN":    return T.green;
+      case "PART":    return T.textFaint;
+      case "QUIT":    return T.red||"#e55";
+      case "KICK":    return T.red||"#e55";
+      case "TOPIC":   return T.accent||T.blue||"#58a6ff";
+      case "MODE":    return T.textDim;
+      default:        return T.text;
+    }
+  };
+
+  const fmtTime = (ts) => {
+    const d = new Date(ts);
+    return d.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})
+      + " " + d.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  };
+
+  const totalPages = results ? Math.ceil(results.total / LIMIT) : 0;
+
+  // ── overlay ───────────────────────────────────────────────────────────────
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:600,background:"rgba(0,0,0,0.55)",
+      display:"flex",alignItems:"center",justifyContent:"center"}}
+      onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div style={{background:T.bgSide,borderRadius:10,border:`1px solid ${T.border}`,
+        width:"min(900px,95vw)",height:"min(720px,90vh)",display:"flex",flexDirection:"column",
+        boxShadow:"0 20px 60px rgba(0,0,0,0.4)",overflow:"hidden"}}>
+
+        {/* Header */}
+        <div style={{padding:"16px 20px 0",borderBottom:`1px solid ${T.border}`,flexShrink:0}}>
+          <div style={{display:"flex",alignItems:"center",marginBottom:14}}>
+            <span style={{...MONO,fontSize:15,fontWeight:700,color:T.textBright}}>📋 Message Logs</span>
+            <button onClick={onClose} style={{marginLeft:"auto",background:"transparent",
+              border:"none",color:T.textFaint,fontSize:18,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>
+          </div>
+          <div style={{display:"flex",gap:0}}>
+            {[["browse","Browse"],["settings","Settings"]].map(([id,label])=>(
+              <button key={id} onClick={()=>setTab(id)}
+                style={{...MONO,fontSize:12,padding:"7px 16px",border:"none",cursor:"pointer",
+                  borderBottom: tab===id ? `2px solid ${T.accent||T.blue||"#58a6ff"}` : "2px solid transparent",
+                  background:"transparent",
+                  color: tab===id ? T.textBright : T.textFaint,
+                  fontWeight: tab===id ? 700 : 400}}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+
+          {/* ── Browse tab ── */}
+          {tab==="browse"&&(
+            <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+
+              {/* Filter bar */}
+              <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.borderFaint}`,
+                flexShrink:0,display:"flex",flexWrap:"wrap",gap:8,alignItems:"flex-end"}}>
+
+                {/* Network */}
+                <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                  <label style={{...MONO,fontSize:10,color:T.textFaint}}>NETWORK</label>
+                  <select value={filters.network_id}
+                    onChange={e=>{ handleFilter("network_id",e.target.value); }}
+                    style={{...IS,width:130,padding:"5px 8px"}}>
+                    <option value="">All networks</option>
+                    {logNets.map(n=>(
+                      <option key={n.id} value={n.id}>{n.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Channel */}
+                <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                  <label style={{...MONO,fontSize:10,color:T.textFaint}}>CHANNEL</label>
+                  {logChans.length > 0 ? (
+                    <select value={filters.channel}
+                      onChange={e=>handleFilter("channel",e.target.value)}
+                      style={{...IS,width:140,padding:"5px 8px"}}>
+                      <option value="">All channels</option>
+                      {logChans.map(c=>(
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input placeholder="e.g. #general" value={filters.channel}
+                      onChange={e=>handleFilter("channel",e.target.value)}
+                      style={{...IS,width:130}} />
+                  )}
+                </div>
+
+                {/* Nick */}
+                <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                  <label style={{...MONO,fontSize:10,color:T.textFaint}}>NICK</label>
+                  <input placeholder="nick…" value={filters.nick}
+                    onChange={e=>handleFilter("nick",e.target.value)}
+                    style={{...IS,width:110}} />
+                </div>
+
+                {/* Type */}
+                <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                  <label style={{...MONO,fontSize:10,color:T.textFaint}}>TYPE</label>
+                  <select value={filters.type} onChange={e=>handleFilter("type",e.target.value)}
+                    style={{...IS,width:115,padding:"5px 8px"}}>
+                    <option value="">All types</option>
+                    {["PRIVMSG","NOTICE","JOIN","PART","QUIT","KICK","TOPIC","MODE"].map(t=>(
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Date from */}
+                <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                  <label style={{...MONO,fontSize:10,color:T.textFaint}}>FROM</label>
+                  <input type="date" value={filters.date_from}
+                    onChange={e=>handleFilter("date_from",e.target.value)}
+                    style={{...IS,width:130}} />
+                </div>
+
+                {/* Date to */}
+                <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                  <label style={{...MONO,fontSize:10,color:T.textFaint}}>TO</label>
+                  <input type="date" value={filters.date_to}
+                    onChange={e=>handleFilter("date_to",e.target.value)}
+                    style={{...IS,width:130}} />
+                </div>
+
+                {/* Search text */}
+                <div style={{display:"flex",flexDirection:"column",gap:3,flex:1,minWidth:160}}>
+                  <label style={{...MONO,fontSize:10,color:T.textFaint}}>SEARCH TEXT</label>
+                  <input placeholder="search messages…" value={filters.search}
+                    onChange={e=>handleFilter("search",e.target.value)}
+                    onKeyDown={e=>{ if(e.key==="Enter") search(0); }}
+                    style={{...IS}} />
+                </div>
+
+                <button onClick={runSearch}
+                  style={{...MONO,padding:"6px 14px",borderRadius:5,border:"none",
+                    background:T.accent||T.blue||"#238636",color:"#fff",fontSize:12,
+                    cursor:"pointer",alignSelf:"flex-end",whiteSpace:"nowrap"}}>
+                  🔍 Search
+                </button>
+              </div>
+
+              {/* Results table */}
+              <div style={{flex:1,overflowY:"auto",padding:"0"}}>
+                {loading&&(
+                  <div style={{textAlign:"center",padding:32,color:T.textFaint,
+                    ...MONO,fontSize:13}}>Loading…</div>
+                )}
+                {!loading&&results&&results.entries.length===0&&(
+                  <div style={{textAlign:"center",padding:32,color:T.textFaint,
+                    ...MONO,fontSize:13}}>No log entries found.</div>
+                )}
+                {!loading&&results&&results.entries.length>0&&(
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                    <thead>
+                      <tr style={{borderBottom:`1px solid ${T.border}`,background:T.bgSide,
+                        position:"sticky",top:0,zIndex:1}}>
+                        {["Timestamp","Network","Channel","Nick","Type","Message"].map(h=>(
+                          <th key={h} style={{...MONO,padding:"7px 12px",textAlign:"left",
+                            fontSize:10,fontWeight:700,color:T.textFaint,
+                            textTransform:"uppercase",letterSpacing:"0.06em",
+                            whiteSpace:"nowrap",borderBottom:`1px solid ${T.border}`}}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {results.entries.map(e=>(
+                        <tr key={e.id} style={{borderBottom:`1px solid ${T.borderFaint}`}}
+                          onMouseEnter={ev=>ev.currentTarget.style.background=T.bgHover||T.border+"44"}
+                          onMouseLeave={ev=>ev.currentTarget.style.background="transparent"}>
+                          <td style={{...MONO,padding:"6px 12px",color:T.textFaint,
+                            fontSize:11,whiteSpace:"nowrap"}}>{fmtTime(e.timestamp)}</td>
+                          <td style={{...MONO,padding:"6px 12px",color:T.textDim,
+                            fontSize:11,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",
+                            whiteSpace:"nowrap"}}>{e.network_name}</td>
+                          <td style={{...MONO,padding:"6px 12px",color:T.accent||T.blue||"#58a6ff",
+                            fontSize:11,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",
+                            whiteSpace:"nowrap"}}>{e.channel||<span style={{color:T.textFaint}}>—</span>}</td>
+                          <td style={{...MONO,padding:"6px 12px",color:T.textBright,
+                            fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>{e.nick}</td>
+                          <td style={{padding:"6px 12px",whiteSpace:"nowrap"}}>
+                            <span style={{...MONO,fontSize:10,fontWeight:700,
+                              color:typeColor(e.type),background:typeColor(e.type)+"18",
+                              borderRadius:3,padding:"1px 6px"}}>{e.type}</span>
+                          </td>
+                          <td style={{padding:"6px 12px",color:T.text,
+                            maxWidth:320,overflow:"hidden",textOverflow:"ellipsis",
+                            whiteSpace:"nowrap"}}
+                            title={e.text}>{e.text}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* Footer: pagination + export */}
+              <div style={{borderTop:`1px solid ${T.border}`,padding:"10px 16px",
+                flexShrink:0,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                {results&&(
+                  <span style={{...MONO,fontSize:11,color:T.textFaint}}>
+                    {results.total.toLocaleString()} result{results.total!==1?"s":""} · page {page+1}/{Math.max(1,totalPages)}
+                  </span>
+                )}
+                <div style={{display:"flex",gap:6}}>
+                  <button disabled={page===0} onClick={()=>search(page-1)}
+                    style={{...MONO,fontSize:11,padding:"4px 10px",borderRadius:4,
+                      border:`1px solid ${T.border}`,background:"transparent",
+                      color:page===0?T.textFaint:T.text,cursor:page===0?"default":"pointer"}}>
+                    ← Prev
+                  </button>
+                  <button disabled={page+1>=totalPages} onClick={()=>search(page+1)}
+                    style={{...MONO,fontSize:11,padding:"4px 10px",borderRadius:4,
+                      border:`1px solid ${T.border}`,background:"transparent",
+                      color:page+1>=totalPages?T.textFaint:T.text,cursor:page+1>=totalPages?"default":"pointer"}}>
+                    Next →
+                  </button>
+                </div>
+                <div style={{marginLeft:"auto",display:"flex",gap:8}}>
+                  <button onClick={doExport} disabled={exporting}
+                    style={{...MONO,fontSize:11,padding:"5px 12px",borderRadius:5,
+                      border:`1px solid ${T.greenBorder||T.border}`,
+                      background:T.greenBg||"transparent",
+                      color:T.green||"#3fb950",cursor:"pointer"}}>
+                    {exporting ? "Exporting…" : "⬇ Export CSV"}
+                  </button>
+                  {!deleteConfirm ? (
+                    <button onClick={()=>setDeleteConfirm(true)}
+                      style={{...MONO,fontSize:11,padding:"5px 12px",borderRadius:5,
+                        border:`1px solid ${T.border}`,background:"transparent",
+                        color:T.red||"#f85149",cursor:"pointer"}}>
+                      🗑 Clear All Logs
+                    </button>
+                  ) : (
+                    <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                      <span style={{...MONO,fontSize:11,color:T.red||"#f85149"}}>
+                        Delete all logs?
+                      </span>
+                      <button onClick={doDelete}
+                        style={{...MONO,fontSize:11,padding:"4px 10px",borderRadius:4,
+                          border:`1px solid ${T.red||"#f85149"}`,
+                          background:T.red+"22"||"transparent",
+                          color:T.red||"#f85149",cursor:"pointer"}}>
+                        Yes, delete
+                      </button>
+                      <button onClick={()=>setDeleteConfirm(false)}
+                        style={{...MONO,fontSize:11,padding:"4px 10px",borderRadius:4,
+                          border:`1px solid ${T.border}`,background:"transparent",
+                          color:T.textFaint,cursor:"pointer"}}>
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Settings tab ── */}
+          {tab==="settings"&&(
+            <div style={{flex:1,overflowY:"auto",padding:"24px 28px"}}>
+              {!settings ? (
+                <div style={{color:T.textFaint,...MONO,fontSize:13}}>Loading…</div>
+              ) : (
+                <div style={{maxWidth:440,display:"flex",flexDirection:"column",gap:20}}>
+
+                  {/* Enable/disable toggle */}
+                  <div style={{background:T.bg,borderRadius:8,border:`1px solid ${T.border}`,
+                    padding:"16px 18px"}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                      <div>
+                        <div style={{...MONO,fontSize:13,fontWeight:700,color:T.textBright,
+                          marginBottom:4}}>Enable Logging</div>
+                        <div style={{fontSize:12,color:T.textFaint,lineHeight:1.5}}>
+                          When enabled, IRC messages are saved to your personal log history.
+                        </div>
+                      </div>
+                      <button
+                        onClick={()=>setSettings(s=>({...s,enabled:!s.enabled}))}
+                        style={{...MONO,flexShrink:0,marginLeft:16,padding:"5px 16px",
+                          borderRadius:20,border:"none",cursor:"pointer",fontSize:12,
+                          fontWeight:700,
+                          background: settings.enabled ? (T.green||"#3fb950") : T.border,
+                          color: settings.enabled ? "#fff" : T.textFaint}}>
+                        {settings.enabled ? "ON" : "OFF"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Retention */}
+                  <div style={{background:T.bg,borderRadius:8,border:`1px solid ${T.border}`,
+                    padding:"16px 18px",opacity:settings.enabled?1:0.5}}>
+                    <div style={{...MONO,fontSize:13,fontWeight:700,color:T.textBright,marginBottom:4}}>
+                      Log Retention
+                    </div>
+                    <div style={{fontSize:12,color:T.textFaint,lineHeight:1.5,marginBottom:14}}>
+                      Logs older than this many days are automatically deleted.
+                      Set to <strong style={{color:T.text}}>0</strong> to keep logs forever.
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:12}}>
+                      <input
+                        type="number" min="0" max="3650"
+                        disabled={!settings.enabled}
+                        value={settings.retention_days}
+                        onChange={e=>setSettings(s=>({...s,retention_days:parseInt(e.target.value)||0}))}
+                        style={{...IS,width:100,textAlign:"right"}}
+                      />
+                      <span style={{fontSize:13,color:T.textFaint}}>days</span>
+                      {settings.retention_days===0&&(
+                        <span style={{...MONO,fontSize:11,color:T.amber||"#d4a72c",
+                          background:(T.amber||"#d4a72c")+"18",borderRadius:4,padding:"2px 8px"}}>
+                          keep forever
+                        </span>
+                      )}
+                    </div>
+                    {settings.retention_days > 0 && (
+                      <div style={{marginTop:10,fontSize:12,color:T.textFaint}}>
+                        Logs older than <strong style={{color:T.text}}>{settings.retention_days} days</strong> will be
+                        automatically purged daily.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* What gets logged */}
+                  <div style={{background:T.bg,borderRadius:8,border:`1px solid ${T.border}`,
+                    padding:"16px 18px"}}>
+                    <div style={{...MONO,fontSize:13,fontWeight:700,color:T.textBright,marginBottom:10}}>
+                      What Gets Logged
+                    </div>
+                    {[
+                      ["PRIVMSG","Channel and direct messages"],
+                      ["NOTICE","Server and user notices"],
+                      ["JOIN / PART / QUIT","Join, leave, and quit events"],
+                      ["KICK","Kick events"],
+                      ["TOPIC","Topic changes"],
+                      ["MODE","Mode changes"],
+                    ].map(([type,desc])=>(
+                      <div key={type} style={{display:"flex",alignItems:"center",
+                        gap:10,marginBottom:7}}>
+                        <span style={{...MONO,fontSize:10,fontWeight:700,
+                          color:typeColor(type.split(" ")[0]),
+                          background:typeColor(type.split(" ")[0])+"18",
+                          borderRadius:3,padding:"1px 6px",minWidth:60,textAlign:"center"}}>
+                          {type}
+                        </span>
+                        <span style={{fontSize:12,color:T.textFaint}}>{desc}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Save button */}
+                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                    <button onClick={saveSettings} disabled={settingsSaving}
+                      style={{...MONO,padding:"8px 20px",borderRadius:6,border:"none",
+                        background:T.accent||T.blue||"#238636",color:"#fff",
+                        fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                      {settingsSaving ? "Saving…" : "Save Settings"}
+                    </button>
+                    {settingsMsg&&(
+                      <span style={{fontSize:12,color:T.green||"#3fb950"}}>{settingsMsg}</span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
+function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appToggleTheme }) {
+  const [state, dispatch] = useReducer(reducer, INIT);
+  const [me, setMe]        = useState(_currentUser); // local copy updated on profile save
+  const [showAddNet,   setShowAddNet]   = useState(false);
+  const [netSettings,  setNetSettings]  = useState(null); // network object being edited
+  const [showUsers,    setShowUsers]    = useState(true);
+  const [collapsed,    setCollapsed]    = useState({}); // key: netId+"::channels" | netId+"::dms"
+  const [userMenu,     setUserMenu]     = useState(null); // {nick, pfx, x, y, chan, netId}
+  const [showProfile,  setShowProfile]  = useState(false);
+  const [showLogs,     setShowLogs]     = useState(false);
+
+  const [ctxMenu, setCtxMenu] = useState(null); // {x,y,net} for right-click menu
+  const connections  = useRef({});  // networkId → WS handle
+  const networksRef  = useRef({});  // always-current mirror of state.networks
+  const myNickRef    = useRef({});  // always-current mirror of state.myNick
+  const channelsRef  = useRef({});  // always-current mirror of state.channels
+  const batchBufRef  = useRef({});  // netId+batchId → {type, chan, msgs[]}
+  const namesBufRef  = useRef({});  // netId+chan → {nick: prefix} accumulator for 353/366
+  const bottomRef    = useRef(null);
+
+  const { networks, networkOrder, channels, messages, unread,
+          activeNet, activeChan, myNick } = state;
+
+  // Keep refs in sync with state so callbacks never close over stale values
+  useEffect(() => { networksRef.current = networks; },  [networks]);
+  useEffect(() => { myNickRef.current   = myNick; },    [myNick]);
+  useEffect(() => { channelsRef.current = channels; },  [channels]);
+
+  const MONO = { fontFamily:"'JetBrains Mono',monospace" };
+
+  // ── helpers ────────────────────────────────────────────────────────────────
+  const addSys = useCallback((netId, chan, text) => {
+    dispatch({ type:"ADD_MSG", netId, chan,
+      msg:{ type:"system", text, time:new Date().toISOString() } });
+  }, []);
+
+  const ensureChan = useCallback((netId, chan) => {
+    dispatch({ type:"CHAN_JOIN", netId, chan });
+  }, []);
+
+  // ── IRC line handler ────────────────────────────────────────────────────────
+  // Uses refs so it never needs to be recreated when state changes
+  const handleLine = useCallback((netId, raw) => {
+    const { tags, prefix, command, params } = parseIRC(raw);
+    const time = tags.time || new Date().toISOString();
+    const from = nickOf(prefix);
+    const me   = myNickRef.current[netId] || "";
+    const nets = networksRef.current;
+    const chans = channelsRef.current;
+
+    switch (command) {
+      case "001":
+        dispatch({ type:"SET_NICK",   netId, nick:params[0] });
+        dispatch({ type:"NET_STATUS", id:netId, status:"connected" });
+        ensureChan(netId, STATUS_CHAN);
+        addSys(netId, STATUS_CHAN, `✓ Connected to ${nets[netId]?.name||netId} as ${params[0]}`);
+        break;
+
+      case "372": case "375": case "376":
+        ensureChan(netId, STATUS_CHAN);
+        addSys(netId, STATUS_CHAN, params[params.length-1]||"");
+        break;
+
+      case "432": case "433":
+        ensureChan(netId, STATUS_CHAN);
+        addSys(netId, STATUS_CHAN, `⚠ ${params[params.length-1]}: ${params[1]||""}`);
+        break;
+
+      case "NICK": {
+        const newNick = params[0];
+        if (from===me) dispatch({ type:"SET_NICK", netId, nick:newNick });
+        Object.keys(chans).filter(k=>k.startsWith(netId+"::")).forEach(k=>{
+          const chan=k.split("::")[1], ch=chans[k];
+          if (ch?.members && from in ch.members) {
+            const pfx=ch.members[from];
+            dispatch({ type:"DEL_MEMBER", netId, chan, nick:from });
+            dispatch({ type:"SET_MEMBERS", netId, chan, members:{[newNick]:pfx} });
+            addSys(netId, chan, `${from} is now known as ${newNick}`);
+          }
+        });
+        break;
+      }
+
+      case "JOIN": {
+        const chan=(params[0]||"").replace(/^:/,"");
+        if (!chan) break;
+        dispatch({ type:"CHAN_JOIN", netId, chan });
+        if (from===me) {
+          dispatch({ type:"SET_ACTIVE_CHAN", netId, chan });
+          addSys(netId, chan, `You joined ${chan}`);
+        } else {
+          dispatch({ type:"SET_MEMBERS", netId, chan, members:{[from]:""} });
+          addSys(netId, chan, `→ ${from} joined`);
+        }
+        break;
+      }
+
+      case "PART": {
+        const chan=params[0]; if (!chan) break;
+        if (from===me) dispatch({ type:"CHAN_PART", netId, chan });
+        else { dispatch({ type:"DEL_MEMBER", netId, chan, nick:from }); addSys(netId, chan, `← ${from} left${params[1]?": "+params[1]:""}`); }
+        break;
+      }
+
+      case "KICK": {
+        const [chan,target,,reason=""] = params;
+        dispatch({ type:"DEL_MEMBER", netId, chan, nick:target });
+        addSys(netId, chan, `✕ ${target} was kicked by ${from}${reason?": "+reason:""}`);
+        if (target===me) dispatch({ type:"CHAN_PART", netId, chan });
+        break;
+      }
+
+      case "QUIT": {
+        const reason=params[0]||"";
+        Object.keys(chans).filter(k=>k.startsWith(netId+"::")).forEach(k=>{
+          const chan=k.split("::")[1];
+          if (chans[k]?.members && from in chans[k].members) {
+            dispatch({ type:"DEL_MEMBER", netId, chan, nick:from });
+            addSys(netId, chan, `✕ ${from} quit${reason?": "+reason:""}`);
+          }
+        });
+        break;
+      }
+
+      case "353": {
+        // Accumulate NAMES reply batches — 366 (end of names) fires the replace
+        const chan=params[2]; if (!chan) break;
+        const key=netId+"::"+chan;
+        if (!namesBufRef.current[key]) namesBufRef.current[key]={};
+        (params[3]||"").trim().split(" ").forEach(e=>{
+          if (!e) return;
+          const pfx="~&@%+".includes(e[0])?e[0]:"";
+          const nick=pfx?e.slice(1):e;
+          if (nick) namesBufRef.current[key][nick]=pfx;
+        });
+        break;
+      }
+      case "366": {
+        // End of NAMES — atomically replace member list, clearing any stale entries
+        const chan=params[1]; if (!chan) break;
+        const key=netId+"::"+chan;
+        const members=namesBufRef.current[key]||{};
+        delete namesBufRef.current[key];
+        dispatch({ type:"REPLACE_MEMBERS", netId, chan, members });
+        break;
+      }
+
+      case "332": { const chan=params[1]; if (chan) dispatch({ type:"SET_TOPIC", netId, chan, topic:params[2]||"" }); break; }
+      case "331": { const chan=params[1]; if (chan) dispatch({ type:"SET_TOPIC", netId, chan, topic:"" }); break; }
+      case "TOPIC":
+        dispatch({ type:"SET_TOPIC", netId, chan:params[0], topic:params[1]||"" });
+        addSys(netId, params[0], `${from} set topic: ${params[1]||""}`);
+        break;
+
+      case "PRIVMSG":
+      case "NOTICE": {
+        const target=params[0], text=params[1]||"";
+        // BNC control messages from the backend
+        if (prefix==="*bnc*"||from==="*bnc*"||prefix==="*korechat*"||from==="*korechat*") {
+          // status:<value> — update network connection status in the UI
+          if (text.startsWith("status:")) {
+            const status=text.slice(7);
+            dispatch({ type:"NET_STATUS", id:netId, status });
+            break;
+          }
+          // replay-done nick:<nick> — buffer replay complete, update our nick
+          if (text.startsWith("replay-done")) {
+            const nickMatch=text.match(/nick:(\S+)/);
+            if (nickMatch) dispatch({ type:"SET_NICK", netId, nick:nickMatch[1] });
+            ensureChan(netId, STATUS_CHAN);
+            addSys(netId, STATUS_CHAN, "✓ Reconnected — message history restored");
+            break;
+          }
+          // All other BNC/korechat notices → show in status channel
+          ensureChan(netId, STATUS_CHAN); addSys(netId, STATUS_CHAN, text); break;
+        }
+        const isAction=text.startsWith("\x01ACTION ")&&text.endsWith("\x01");
+        const displayText=isAction?`* ${from} ${text.slice(8,-1)}`:text;
+        const isDM=target&&!target.startsWith("#");
+        // If the sender has no ! it's a server hostname, not a user — fold into status channel
+        const isServer=!prefix.includes("!");
+        const chan=isServer?STATUS_CHAN:isDM?from:target;
+        if (!chan) break;
+        const msgObj={ type:"message", nick:from, text:displayText, time, id:tags.msgid||Math.random().toString(36) };
+        // If this message carries a batch tag, route it into the batch accumulator
+        if (tags.batch) {
+          const bkey=netId+"::"+tags.batch;
+          if (batchBufRef.current[bkey]) {
+            batchBufRef.current[bkey].msgs.push({chan, msg:msgObj});
+            break; // held until BATCH end
+          }
+        }
+        ensureChan(netId, chan);
+        dispatch({ type:"ADD_MSG", netId, chan, msg:msgObj });
+        break;
+      }
+
+      case "BATCH": {
+        const ref=params[0]||"";
+        if (ref.startsWith("+")) {
+          // BATCH start: +<id> <type> [<chan>]
+          const id=ref.slice(1);
+          const btype=params[1]||"";
+          const bchan=params[2]||"";
+          batchBufRef.current[netId+"::"+id]={ type:btype, chan:bchan, msgs:[] };
+        } else if (ref.startsWith("-")) {
+          // BATCH end: flush accumulated messages
+          const id=ref.slice(1);
+          const bkey=netId+"::"+id;
+          const batch=batchBufRef.current[bkey];
+          delete batchBufRef.current[bkey];
+          if (!batch) break;
+          const isChatHistory=batch.type==="chathistory"||batch.type==="draft/chathistory";
+          if (isChatHistory && batch.msgs.length > 0) {
+            // Group by channel and prepend as history
+            const byChan={};
+            batch.msgs.forEach(({chan,msg})=>{
+              if (!byChan[chan]) byChan[chan]=[];
+              byChan[chan].push(msg);
+            });
+            Object.entries(byChan).forEach(([chan,msgs])=>{
+              ensureChan(netId, chan);
+              dispatch({ type:"PREPEND_MSGS", netId, chan, msgs });
+              addSys(netId, chan, `↑ ${msgs.length} line${msgs.length===1?"":"s"} of server history loaded`);
+            });
+          } else {
+            // Non-history batch — dispatch messages normally
+            batch.msgs.forEach(({chan,msg})=>{
+              ensureChan(netId, chan);
+              dispatch({ type:"ADD_MSG", netId, chan, msg });
+            });
+          }
+        }
+        break;
+      }
+
+      // Numeric replies — WHOIS goes to current active channel for inline display
+      case "311": { const dest=activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); addSys(netId,dest,`[whois] ${params[1]} (${params[2]}@${params[3]}): ${params[5]||""}`); break; }
+      case "312": { const dest=activeChan[netId]||STATUS_CHAN; addSys(netId,dest,`[whois] ${params[1]} on ${params[2]}: ${params[3]||""}`); break; }
+      case "317": { const dest=activeChan[netId]||STATUS_CHAN; addSys(netId,dest,`[whois] ${params[1]} idle ${params[2]}s`); break; }
+      case "318": { const dest=activeChan[netId]||STATUS_CHAN; addSys(netId,dest,`[whois] End of /WHOIS for ${params[1]}`); break; }
+      case "319": { const dest=activeChan[netId]||STATUS_CHAN; addSys(netId,dest,`[whois] ${params[1]} on: ${params[2]||""}`); break; }
+      case "330": { const dest=activeChan[netId]||STATUS_CHAN; addSys(netId,dest,`[whois] ${params[1]} logged in as ${params[2]}`); break; }
+      case "321": break;
+      case "322": ensureChan(netId,STATUS_CHAN); addSys(netId,STATUS_CHAN,`  ${params[1]}  (${params[2]} users)  ${params[3]||""}`); break;
+      case "323": addSys(netId,STATUS_CHAN,"End of /LIST"); break;
+      case "MODE": {
+        const target=params[0], modeStr=params.slice(1).join(" ");
+        if (target?.startsWith("#")) {
+          addSys(netId,target,`${from} sets mode ${modeStr}`);
+          // Update member prefixes for mode changes that affect them
+          // params[1] = mode string e.g. "+o-v", params[2+] = nick arguments
+          const modeChars=params[1]||"";
+          // Map of mode char → sidebar prefix symbol
+          const modeToPrefix={"o":"@","h":"%","v":"+","a":"&","q":"~"};
+          let argIdx=2; let dir="+";
+          for (const ch of modeChars) {
+            if (ch==="+"||ch==="-") { dir=ch; continue; }
+            if (modeToPrefix[ch]) {
+              const nick=params[argIdx++];
+              if (nick) dispatch({ type:"SET_MEMBER_PREFIX", netId, chan:target, nick, prefix:dir==="+"?modeToPrefix[ch]:"" });
+            } else if ("beIklLjf".includes(ch)) {
+              argIdx++; // these modes consume an argument but aren't member modes
+            }
+          }
+        }
+        break;
+      }
+      case "324": addSys(netId,params[1]||STATUS_CHAN,`Mode for ${params[1]}: ${params[2]||""}`); break;
+      case "INVITE": ensureChan(netId,STATUS_CHAN); addSys(netId,STATUS_CHAN,`${from} invited you to ${params[1]}`); break;
+      case "305": case "306": ensureChan(netId,STATUS_CHAN); addSys(netId,STATUS_CHAN,params[params.length-1]); break;
+      case "381": ensureChan(netId,STATUS_CHAN); addSys(netId,STATUS_CHAN,`★ ${params[params.length-1]}`); break;
+      case "491": case "464": ensureChan(netId,STATUS_CHAN); addSys(netId,STATUS_CHAN,`⚠ OPER failed: ${params[params.length-1]}`); break;
+      case "ERROR":
+        dispatch({ type:"NET_STATUS", id:netId, status:"error", msg:params[0]||"" });
+        ensureChan(netId,STATUS_CHAN); addSys(netId,STATUS_CHAN,`ERROR: ${params[0]||""}`);
+        break;
+
+      default:
+        if (/^\d+$/.test(command)) {
+          const text=params[params.length-1]||"";
+          if (!["333","005","004","002","003","001"].includes(command)&&text&&text!==me) {
+            ensureChan(netId,STATUS_CHAN); addSys(netId,STATUS_CHAN,`[${command}] ${text}`);
+          }
+        }
+        break;
+    }
+  }, [addSys, ensureChan]); // stable — reads live data via refs
+
+  // ── connect / disconnect ───────────────────────────────────────────────────
+  const connectNetwork = useCallback((net) => {
+    if (!net?.id) return;
+    if (connections.current[net.id]?.ready) {
+      addSys(net.id, STATUS_CHAN, `Already connected to ${net.name}.`);
+      return;
+    }
+    // Close any dead socket for this network first
+    connections.current[net.id]?.close();
+    delete connections.current[net.id];
+
+    ensureChan(net.id, STATUS_CHAN);
+
+    const conn = openWS({
+      networkId: net.id,
+      onLine:  line => handleLine(net.id, line),
+      onClose: () => {
+        const n = networksRef.current[net.id];
+        dispatch({ type:"NET_STATUS", id:net.id, status:"disconnected" });
+        addSys(net.id, STATUS_CHAN, `Disconnected from ${n?.name||net.name}`);
+        delete connections.current[net.id];
+      },
+    });
+    connections.current[net.id] = conn;
+  }, [handleLine, addSys, ensureChan]);
+
+  // reconnectNetwork explicitly tears down the upstream BNC connection and
+  // starts a fresh one. Only call this when the user explicitly requests it
+  // (manual connect button, /connect command, /reconnect command).
+  const reconnectNetwork = useCallback((net) => {
+    if (!net?.id) return;
+    addSys(net.id, STATUS_CHAN, `Connecting to ${net.name} (${net.host}:${net.port})…`);
+    API.connectNetwork(net.id).catch(()=>{});
+    connectNetwork(net);
+  }, [connectNetwork, addSys]);
+
+  const disconnectNetwork = useCallback((netId) => {
+    // Tell the BNC backend to drop the upstream IRC connection (no reconnect)
+    API.disconnectNetwork(netId).catch(()=>{});
+    // Close our local WS
+    connections.current[netId]?.close();
+    delete connections.current[netId];
+    dispatch({ type:"NET_STATUS", id:netId, status:"disconnected" });
+  }, []);
+
+  // ── load networks on mount ─────────────────────────────────────────────────
+  useEffect(() => {
+    API.listNetworks()
+      .then(nets => {
+        if (!Array.isArray(nets)) return;
+        nets.forEach(net => {
+          dispatch({ type:"NET_ADD", net });
+          // connectNetwork reads net directly (not from state), so safe to call immediately
+          connectNetwork(net);
+        });
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally run once on mount only
+
+  // ── scroll to bottom ───────────────────────────────────────────────────────
+  const activeChanName = activeNet ? activeChan[activeNet] : null;
+  const activeMsgKey   = activeNet&&activeChanName ? CHAN_KEY(activeNet,activeChanName) : null;
+  const activeMsgs     = activeMsgKey ? (messages[activeMsgKey]||[]) : [];
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({behavior:"smooth"}); }, [activeMsgs.length]);
+  useEffect(() => {
+    if (activeNet&&activeChanName)
+      dispatch({ type:"CLEAR_UNREAD", netId:activeNet, chan:activeChanName });
+  }, [activeNet, activeChanName]);
+
+  // ── command handler ────────────────────────────────────────────────────────
+  const handleSend = useCallback((text) => {
+    const netId = activeNet;
+    // Read live values from refs, not stale closure state
+    const nets  = networksRef.current;
+    const nicks = myNickRef.current;
+    const net   = netId ? nets[netId] : null;
+    const conn  = netId ? connections.current[netId] : null;
+    const me    = netId ? (nicks[netId]||"") : "";
+    const chan  = activeChanName;
+
+    const sys = t => {
+      const destChan = chan || STATUS_CHAN;
+      if (netId) { ensureChan(netId, destChan); addSys(netId, destChan, t); }
+    };
+
+    if (!text.startsWith("/")) {
+      if (!conn?.ready) { sys("Not connected. Type /connect to connect."); return; }
+      if (!chan||chan===STATUS_CHAN) { sys("Join a channel first (/join #channel)."); return; }
+      conn.send(`PRIVMSG ${chan} :${text}`);
+      dispatch({ type:"ADD_MSG", netId, chan, msg:{
+        type:"message", nick:me, text, time:new Date().toISOString(), id:Math.random().toString(36)
+      }});
+      return;
+    }
+
+    const space=text.indexOf(" ");
+    const cmd  =(space===-1?text:text.slice(0,space)).toLowerCase();
+    const rest = space===-1?"":text.slice(space+1).trim();
+    const args = rest?rest.split(/\s+/):[];
+
+    switch (cmd) {
+      case "/connect":
+        if (!netId) { sys("No network selected."); break; }
+        reconnectNetwork(net);
+        break;
+
+      case "/disconnect":
+        if (!netId) { sys("No network selected."); break; }
+        disconnectNetwork(netId);
+        break;
+
+      case "/reconnect":
+        if (!netId) break;
+        disconnectNetwork(netId);
+        setTimeout(() => reconnectNetwork(networksRef.current[netId]), 800);
+        break;
+
+      case "/join": {
+        if (!conn?.ready) { sys("Not connected. Type /connect first."); break; }
+        const target=args[0]?(args[0].startsWith("#")?args[0]:"#"+args[0]):null;
+        if (!target) { sys("Usage: /join #channel"); break; }
+        conn.send(`JOIN ${target}`);
+        break;
+      }
+
+      case "/part": case "/leave": {
+        if (!conn?.ready) { sys("Not connected."); break; }
+        const target=chan&&chan!==STATUS_CHAN?chan:args[0];
+        if (!target) { sys("Usage: /part [reason]"); break; }
+        conn.send(`PART ${target} :${rest||"Leaving"}`);
+        break;
+      }
+
+      case "/close":
+        if (chan&&netId) dispatch({ type:"CHAN_PART", netId, chan });
+        break;
+
+      case "/msg": case "/query": {
+        if (!conn?.ready) { sys("Not connected."); break; }
+        if (args.length<1) { sys("Usage: /msg <nick> [message]"); break; }
+        const [tgt,...mp]=args;
+        ensureChan(netId,tgt);
+        dispatch({ type:"SET_ACTIVE_CHAN", netId, chan:tgt });
+        if (mp.length>0) {
+          const msgText=mp.join(" ");
+          conn.send(`PRIVMSG ${tgt} :${msgText}`);
+          dispatch({ type:"ADD_MSG", netId, chan:tgt, msg:{
+            type:"message", nick:me, text:msgText, time:new Date().toISOString(), id:Math.random().toString(36)
+          }});
+        }
+        break;
+      }
+
+      case "/me": {
+        if (!conn?.ready) { sys("Not connected."); break; }
+        if (!chan||chan===STATUS_CHAN) { sys("Join a channel first."); break; }
+        if (!rest) { sys("Usage: /me <action>"); break; }
+        conn.send(`PRIVMSG ${chan} :\x01ACTION ${rest}\x01`);
+        dispatch({ type:"ADD_MSG", netId, chan, msg:{
+          type:"message", nick:me, text:`* ${me} ${rest}`, time:new Date().toISOString(), id:Math.random().toString(36)
+        }});
+        break;
+      }
+
+      case "/notice":
+        if (!conn?.ready||args.length<2) { sys("Usage: /notice <nick|#chan> <text>"); break; }
+        conn.send(`NOTICE ${args[0]} :${args.slice(1).join(" ")}`);
+        break;
+
+      case "/nick":
+        if (!conn?.ready) { sys("Not connected."); break; }
+        if (!args[0]) { sys("Usage: /nick <newnick>"); break; }
+        conn.send(`NICK ${args[0]}`);
+        break;
+
+      case "/oper": {
+        if (!conn?.ready) { sys("Not connected."); break; }
+        if (args.length < 2) { sys("Usage: /oper <name> <password>"); break; }
+        conn.send(`OPER ${args[0]} ${args.slice(1).join(" ")}`);
+        sys(`→ OPER sent for ${args[0]}`);
+        break;
+      }
+
+      case "/away":
+        if (!conn?.ready) { sys("Not connected."); break; }
+        conn.send(rest?`AWAY :${rest}`:"AWAY");
+        break;
+
+      case "/back":
+        if (conn?.ready) conn.send("AWAY");
+        break;
+
+      case "/topic": {
+        if (!conn?.ready) { sys("Not connected."); break; }
+        const target=chan&&chan!==STATUS_CHAN?chan:args[0];
+        if (!target) { sys("Usage: /topic [text]"); break; }
+        conn.send(rest&&chan!==STATUS_CHAN?`TOPIC ${target} :${rest}`:`TOPIC ${target}`);
+        break;
+      }
+
+      case "/kick": {
+        if (!conn?.ready) { sys("Not connected."); break; }
+        if (!args[0]) { sys("Usage: /kick <nick> [reason]"); break; }
+        const target=chan&&chan!==STATUS_CHAN?chan:null;
+        if (!target) { sys("/kick must be used in a channel."); break; }
+        conn.send(`KICK ${target} ${args[0]} :${args.slice(1).join(" ")||"Kicked"}`);
+        break;
+      }
+
+      case "/ban": {
+        if (!conn?.ready||!args[0]) { sys("Usage: /ban <mask>"); break; }
+        const target=chan&&chan!==STATUS_CHAN?chan:null;
+        if (!target) { sys("/ban must be used in a channel."); break; }
+        conn.send(`MODE ${target} +b ${args[0]}`);
+        break;
+      }
+
+      case "/unban": {
+        if (!conn?.ready||!args[0]) { sys("Usage: /unban <mask>"); break; }
+        const target=chan&&chan!==STATUS_CHAN?chan:null;
+        if (!target) break;
+        conn.send(`MODE ${target} -b ${args[0]}`);
+        break;
+      }
+
+      case "/mode":
+        if (!conn?.ready) { sys("Not connected."); break; }
+        conn.send(rest?`MODE ${rest}`:`MODE ${chan&&chan!==STATUS_CHAN?chan:me}`);
+        break;
+
+      case "/invite": {
+        if (!conn?.ready||!args[0]) { sys("Usage: /invite <nick> [#channel]"); break; }
+        const target=args[1]||(chan!==STATUS_CHAN?chan:"");
+        if (!target) { sys("Usage: /invite <nick> <#channel>"); break; }
+        conn.send(`INVITE ${args[0]} ${target}`);
+        break;
+      }
+
+      case "/whois":
+        if (!conn?.ready) { sys("Not connected."); break; }
+        if (!args[0]) { sys("Usage: /whois <nick>"); break; }
+        conn.send(`WHOIS ${args[0]}`);
+        ensureChan(netId,STATUS_CHAN);
+        dispatch({ type:"SET_ACTIVE_CHAN", netId, chan:STATUS_CHAN });
+        break;
+
+      case "/who": {
+        if (!conn?.ready) { sys("Not connected."); break; }
+        const target=args[0]||(chan&&chan!==STATUS_CHAN?chan:"");
+        if (!target) { sys("Usage: /who <#channel|nick>"); break; }
+        conn.send(`WHO ${target}`);
+        break;
+      }
+
+      case "/names": {
+        if (!conn?.ready) break;
+        const target=args[0]||(chan&&chan!==STATUS_CHAN?chan:"");
+        if (target) conn.send(`NAMES ${target}`);
+        break;
+      }
+
+      case "/list":
+        if (!conn?.ready) { sys("Not connected."); break; }
+        conn.send(args[0]?`LIST ${args[0]}`:"LIST");
+        ensureChan(netId,STATUS_CHAN);
+        dispatch({ type:"SET_ACTIVE_CHAN", netId, chan:STATUS_CHAN });
+        break;
+
+      case "/quote": case "/raw":
+        if (!conn?.ready) { sys("Not connected."); break; }
+        if (!rest) { sys("Usage: /raw <IRC command>"); break; }
+        conn.send(rest);
+        sys(`→ ${rest}`);
+        break;
+
+      case "/clear":
+        // Clear by flooding with an empty visual marker — simplest approach
+        if (netId&&chan) addSys(netId,chan,"── cleared ──");
+        break;
+
+      case "/help":
+        if (netId&&chan) {
+          const specific=args[0]?CMDS["/"+args[0].replace(/^\//,"")]:null;
+          if (specific) { addSys(netId,chan,`${cmd}: ${specific}`); }
+          else Object.entries(CMDS).forEach(([c,d])=>addSys(netId,chan,`${c} — ${d}`));
+        }
+        break;
+
+      default:
+        sys(`Unknown command: ${cmd}  (type /help)`);
+    }
+  }, [activeNet, activeChanName, addSys, ensureChan, connectNetwork, reconnectNetwork, disconnectNetwork]);
+  // Note: reads networks/myNick/channels via refs — not in dep array on purpose
+
+  // ── derived ────────────────────────────────────────────────────────────────
+  const activeNetObj  = activeNet ? networks[activeNet] : null;
+  const activeChanObj = activeMsgKey ? (channels[activeMsgKey]||{}) : {};
+  const activeMembers = activeChanObj.members || {};
+  const activeTopic   = activeChanObj.topic   || "";
+  const currentNick   = activeNet ? (myNick[activeNet]||"") : "";
+  const isConnected   = activeNetObj?.status==="connected";
+  const isStatusChan  = activeChanName===STATUS_CHAN;
+
+  const ops    = Object.entries(activeMembers).filter(([,p])=>p==="~"||p==="&"||p==="@");
+  const halfop = Object.entries(activeMembers).filter(([,p])=>p==="%");
+  const voiced = Object.entries(activeMembers).filter(([,p])=>p==="+");
+  const normal = Object.entries(activeMembers).filter(([,p])=>!p);
+
+  // Am I an op (or higher) in the active channel?
+  const myPrefix = currentNick ? (activeMembers[currentNick]||"") : "";
+  const amIop = myPrefix==="~"||myPrefix==="&"||myPrefix==="@";
+
+  const theme = appTheme || "dark";
+  const T = THEMES[theme] || THEMES.dark;
+  const toggleTheme = appToggleTheme || (() => {});
+
+  return (
+    <ThemeCtx.Provider value={T}>
+    <div style={{display:"flex",height:"100vh",width:"100%",background:T.bg,
+      overflow:"hidden",color:T.text,fontFamily:"'Inter var','Inter',sans-serif"}}>
+
+      {showProfile&&(
+        <ProfileModal
+          currentUser={me}
+          onClose={()=>setShowProfile(false)}
+          onUpdated={updated=>{
+            setMe(updated);
+            // Bust avatar cache so sidebar and chat update immediately
+            delete _avatarCache[updated.username];
+            setShowProfile(false);
+          }}
+        />
+      )}
+
+      {showLogs&&(
+        <LogsModal onClose={()=>setShowLogs(false)} />
+      )}
+
+      {showAddNet&&(
+        <AddNetworkModal
+          onClose={()=>setShowAddNet(false)}
+          onAdded={net=>{
+            // Add to state first, then connect — net object is passed directly
+            // so connectNetwork never needs to look it up from state
+            dispatch({ type:"NET_ADD", net });
+            dispatch({ type:"SET_ACTIVE_NET", id:net.id });
+            setShowAddNet(false);
+            // Short delay so NET_ADD processes before connect tries to log to STATUS_CHAN
+            setTimeout(() => reconnectNetwork(net), 50);
+          }}
+        />
+      )}
+
+      {netSettings&&(
+        <NetworkSettingsModal
+          net={netSettings}
+          onClose={()=>setNetSettings(null)}
+          onSaved={updated=>{
+            dispatch({ type:"NET_UPDATE", net:updated });
+            setNetSettings(null);
+            // If the network was connected, offer to reconnect — but never force it.
+            const wasConnected = networks[updated.id]?.status==="connected";
+            if (wasConnected) {
+              if (window.confirm(`Settings saved. Reconnect to ${updated.name} now to apply changes?`)) {
+                disconnectNetwork(updated.id);
+                setTimeout(() => reconnectNetwork(updated), 800);
+              }
+            }
+          }}
+          onDelete={id=>{
+            disconnectNetwork(id);
+            dispatch({ type:"NET_REMOVE", id });
+            setNetSettings(null);
+          }}
+        />
+      )}
+
+      {/* User context menu popup — click on a member in the user list */}
+      {userMenu&&(
+        <UserMenuPopup
+          menu={userMenu}
+          onClose={()=>setUserMenu(null)}
+          myPrefix={myPrefix}
+          currentNick={currentNick}
+          onSend={(netId, cmd) => {
+            // Route commands directly through the connection for the given network
+            const conn = connections.current[netId];
+            if (!conn?.ready) return;
+            // Re-use handleSend but we need to temporarily ensure context —
+            // since the popup always acts on the active channel, handleSend works directly
+            handleSend(cmd);
+          }}
+        />
+      )}
+
+      {/* Context menu for right-click on network */}
+      {ctxMenu&&(
+        <div style={{position:"fixed",inset:0,zIndex:150}} onClick={()=>setCtxMenu(null)}>
+          <div style={{position:"fixed",left:ctxMenu.x,top:ctxMenu.y,zIndex:151,
+            background:T.bgPanel,border:`1px solid ${T.border}`,
+            borderRadius:6,boxShadow:"0 4px 20px #0006",minWidth:160,padding:4}}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{padding:"6px 14px",fontSize:13,cursor:"pointer",borderRadius:4,
+              color:T.text,fontFamily:"'Inter var','Inter',sans-serif"}}
+              onMouseEnter={e=>e.currentTarget.style.background=T.border}
+              onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+              onClick={()=>{setNetSettings(ctxMenu.net);setCtxMenu(null);}}>
+              ⚙ Settings
+            </div>
+            {(ctxMenu.net.status==="disconnected"||ctxMenu.net.status==="error")&&(
+              <div style={{padding:"6px 14px",fontSize:13,cursor:"pointer",borderRadius:4,
+                color:T.green,fontFamily:"'Inter var','Inter',sans-serif"}}
+                onMouseEnter={e=>e.currentTarget.style.background=T.border}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+                onClick={()=>{reconnectNetwork(ctxMenu.net);setCtxMenu(null);}}>
+                ⚡ Connect
+              </div>
+            )}
+            {ctxMenu.net.status==="connected"&&(
+              <div style={{padding:"6px 14px",fontSize:13,cursor:"pointer",borderRadius:4,
+                color:T.red,fontFamily:"'Inter var','Inter',sans-serif"}}
+                onMouseEnter={e=>e.currentTarget.style.background=T.border}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+                onClick={()=>{disconnectNetwork(ctxMenu.net.id);setCtxMenu(null);}}>
+                ✕ Disconnect
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Sidebar ── */}
+      <div style={{width:224,flexShrink:0,background:T.bgSide,borderRight:`1px solid ${T.border}`,
+        display:"flex",flexDirection:"column",overflow:"hidden"}}>
+
+        {/* Logo + theme toggle */}
+        <div style={{padding:"13px 14px 10px",borderBottom:`1px solid ${T.border}`,flexShrink:0,
+          display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div>
+            <div style={{fontWeight:800,fontSize:15,letterSpacing:"-0.3px",color:T.textBright,
+              fontFamily:"'JetBrains Mono',monospace",display:"flex",alignItems:"center",gap:8}}>
+              <div style={{width:22,height:22,borderRadius:6,background:"linear-gradient(135deg,#7eb8f7,#7ef7d0)",
+                display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:900,color:"#0a1628"}}>K</div>
+              KoreChat
+            </div>
+            <div style={{fontSize:9,color:T.textGhost,marginTop:2,paddingLeft:30,
+              fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.06em"}}>IRCv3</div>
+          </div>
+          <button onClick={toggleTheme} title={`Switch to ${theme==="dark"?"light":"dark"} theme`}
+            style={{background:T.accentBg,border:`1px solid ${T.accentDim}`,borderRadius:6,
+              color:T.accent,fontSize:14,cursor:"pointer",padding:"4px 7px",lineHeight:1,
+              fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}
+            onMouseEnter={e=>e.currentTarget.style.background=T.accentBg2}
+            onMouseLeave={e=>e.currentTarget.style.background=T.accentBg}>
+            {theme==="dark" ? THEMES.dark.label : THEMES.light.label}
+          </button>
+        </div>
+
+        {/* Add network button */}
+        <button onClick={()=>setShowAddNet(true)}
+          style={{margin:"8px 10px 4px",padding:"8px 12px",background:T.accentBg,
+            border:`1px solid ${T.accentDim}`,borderRadius:6,color:T.accent,fontSize:13,
+            cursor:"pointer",textAlign:"left",fontFamily:"'JetBrains Mono',monospace",
+            display:"flex",alignItems:"center",gap:6,flexShrink:0}}
+          onMouseEnter={e=>{e.currentTarget.style.background=T.accentBg2;}}
+          onMouseLeave={e=>{e.currentTarget.style.background=T.accentBg;}}>
+          ⊕ Add Network
+        </button>
+
+        {/* Network / channel list */}
+        <div style={{flex:1,overflowY:"auto",paddingTop:4}}>
+          {networkOrder.length===0&&(
+            <div style={{...MONO,padding:"20px 14px",fontSize:12,color:T.textFaint,
+              textAlign:"center",lineHeight:1.8}}>
+              No networks yet.<br/>Click ⊕ Add Network<br/>to connect to IRC.
+            </div>
+          )}
+          {networkOrder.map(netId => {
+            const net=networks[netId];
+            if (!net) return null;
+            const isActiveNet=netId===activeNet;
+            const activeChanName2=activeChan[netId];
+
+            // Partition into server tab, channels, DMs
+            const allKeys=Object.keys(channels).filter(k=>k.startsWith(netId+"::"));
+            const allNames=allKeys.map(k=>k.split("::")[1]);
+
+            const serverTab = allNames.includes(STATUS_CHAN) ? STATUS_CHAN : null;
+            const chans = allNames
+              .filter(n=>n!==STATUS_CHAN && n.startsWith("#"))
+              .sort((a,b)=>a.localeCompare(b));
+            const dms = allNames
+              .filter(n=>n!==STATUS_CHAN && !n.startsWith("#"))
+              .sort((a,b)=>a.localeCompare(b));
+
+            const chansKey = netId+"::channels";
+            const dmsKey   = netId+"::dms";
+            const chansOpen = collapsed[chansKey] !== false; // default open
+            const dmsOpen   = collapsed[dmsKey]   !== false;
+            const toggle = key => setCollapsed(c=>({...c,[key]:c[key]===false?true:false}));
+
+            const goTo = (chan) => {
+              dispatch({type:"SET_ACTIVE_NET",id:netId});
+              dispatch({type:"SET_ACTIVE_CHAN",netId,chan});
+              dispatch({type:"CLEAR_UNREAD",netId,chan});
+            };
+
+            return (
+              <div key={netId} style={{marginBottom:6}}>
+                {/* Network header */}
+                <div style={{padding:"5px 10px 3px",display:"flex",alignItems:"center",gap:6,
+                  cursor:"pointer",borderRadius:4,margin:"0 4px"}}
+                  onClick={()=>dispatch({type:"SET_ACTIVE_NET",id:netId})}
+                  onContextMenu={e=>{e.preventDefault();setCtxMenu({x:e.clientX,y:e.clientY,net});}}
+                  onMouseEnter={e=>e.currentTarget.style.background=T.border}
+                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <StatusDot status={net.status||"disconnected"}/>
+                  <span style={{...MONO,fontSize:11,fontWeight:700,color:isActiveNet?T.textBright:T.textDim,
+                    flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                    textTransform:"uppercase",letterSpacing:"0.04em"}}>
+                    {net.name}
+                  </span>
+                  {net.tls&&(
+                    <span title="TLS encrypted" style={{fontSize:10,opacity:0.7,flexShrink:0}}>🔒</span>
+                  )}
+                  {!net.tls&&net.status==="connected"&&(
+                    <span title="Unencrypted connection" style={{fontSize:10,opacity:0.5,flexShrink:0}}>🔓</span>
+                  )}
+                  {(net.status==="disconnected"||net.status==="error")&&(
+                    <button onClick={e=>{e.stopPropagation();reconnectNetwork(net);}}
+                      style={{...MONO,background:T.greenBg,border:`1px solid ${T.greenBorder}`,
+                        borderRadius:3,color:T.green,fontSize:9,padding:"1px 5px",cursor:"pointer"}}>
+                      connect
+                    </button>
+                  )}
+                  {net.status==="connected"&&(
+                    <button onClick={e=>{e.stopPropagation();disconnectNetwork(netId);}}
+                      style={{...MONO,background:"transparent",border:`1px solid ${T.redBorder}`,
+                        borderRadius:3,color:T.red+"99",fontSize:9,padding:"1px 5px",cursor:"pointer"}}>
+                      dc
+                    </button>
+                  )}
+                  {net.status==="connecting"&&(
+                    <span style={{...MONO,fontSize:9,color:T.amber+"99"}}>…</span>
+                  )}
+                  <span title="Settings" onClick={e=>{e.stopPropagation();setNetSettings(net);}}
+                    style={{fontSize:11,opacity:0.4,cursor:"pointer",flexShrink:0,lineHeight:1,
+                      padding:"1px 2px",borderRadius:3}}
+                    onMouseEnter={e=>e.currentTarget.style.opacity="1"}
+                    onMouseLeave={e=>e.currentTarget.style.opacity="0.4"}>⚙</span>
+                </div>
+
+                {/* Server tab */}
+                {serverTab&&(
+                  <SidebarItem chanName={STATUS_CHAN} kind="server"
+                    active={isActiveNet&&activeChanName2===STATUS_CHAN}
+                    unread={unread[CHAN_KEY(netId,STATUS_CHAN)]||0}
+                    onClick={()=>goTo(STATUS_CHAN)}/>
+                )}
+
+                {/* Channels section */}
+                {chans.length>0&&(
+                  <>
+                    <SectionHeader label="Channels" count={chans.length}
+                      open={chansOpen} onToggle={()=>toggle(chansKey)}/>
+                    {chansOpen&&chans.map(chanName=>(
+                      <SidebarItem key={chanName} chanName={chanName} kind="channel"
+                        active={isActiveNet&&chanName===activeChanName2}
+                        unread={unread[CHAN_KEY(netId,chanName)]||0}
+                        onClick={()=>goTo(chanName)}/>
+                    ))}
+                  </>
+                )}
+
+                {/* DMs section */}
+                {dms.length>0&&(
+                  <>
+                    <SectionHeader label="Messages" count={dms.length}
+                      open={dmsOpen} onToggle={()=>toggle(dmsKey)}/>
+                    {dmsOpen&&dms.map(chanName=>(
+                      <SidebarItem key={chanName} chanName={chanName} kind="dm"
+                        active={isActiveNet&&chanName===activeChanName2}
+                        unread={unread[CHAN_KEY(netId,chanName)]||0}
+                        onClick={()=>goTo(chanName)}/>
+                    ))}
+                  </>
+                )}
+
+                {/* Join channel */}
+                {net.status==="connected"&&(
+                  <div style={{...MONO,padding:"3px 10px 3px 24px",fontSize:12,
+                    color:T.textDim,cursor:"pointer",marginTop:2}}
+                    onClick={()=>{
+                      const ch=prompt("Channel to join:");
+                      if (!ch) return;
+                      connections.current[netId]?.send(`JOIN ${ch.startsWith("#")?ch:"#"+ch}`);
+                    }}
+                    onMouseEnter={e=>e.currentTarget.style.color=T.accent}
+                    onMouseLeave={e=>e.currentTarget.style.color=T.textDim}>
+                    + join channel
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* User footer */}
+        <div style={{padding:"9px 12px",borderTop:`1px solid ${T.borderFaint}`,flexShrink:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:me?.role==="admin"?7:0}}>
+            <div style={{cursor:"pointer",flexShrink:0}} onClick={()=>setShowProfile(true)}
+              title="Edit profile">
+              <Avatar nick={me?.username||"?"} size={28}/>
+            </div>
+            <div style={{flex:1,overflow:"hidden",cursor:"pointer"}} onClick={()=>setShowProfile(true)}>
+              <div style={{...MONO,fontSize:13,fontWeight:600,color:T.text,
+                overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                {me?.display_name||me?.username||""}
+              </div>
+              {currentNick&&currentNick!==me?.username&&(
+                <div style={{fontSize:11,color:T.textFaint,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                  IRC: {currentNick}
+                </div>
+              )}
+            </div>
+            <button onClick={onLogout} title="Sign out"
+              style={{background:"transparent",border:"none",color:T.textFaint,fontSize:14,
+                cursor:"pointer",padding:"2px 4px",flexShrink:0}}
+              onMouseEnter={e=>e.currentTarget.style.color=T.red}
+              onMouseLeave={e=>e.currentTarget.style.color=T.textFaint}>⏏</button>
+          </div>
+          {me?.role==="admin"&&(
+            <button onClick={onAdmin}
+              style={{...MONO,width:"100%",background:T.amberBg,border:`1px solid ${T.amberBorder}`,
+                borderRadius:5,color:T.amber+"88",fontSize:11,padding:"5px 8px",cursor:"pointer",
+                textAlign:"left"}}
+              onMouseEnter={e=>{e.currentTarget.style.background=T.amberBg;e.currentTarget.style.color=T.amber;}}
+              onMouseLeave={e=>{e.currentTarget.style.background=T.amberBg;e.currentTarget.style.color=T.amber+"88";}}>
+              ⚙ Admin Panel
+            </button>
+          )}
+          <button onClick={()=>setShowLogs(true)}
+            style={{...MONO,width:"100%",background:"transparent",
+              border:`1px solid ${T.borderFaint}`,marginTop:me?.role==="admin"?5:0,
+              borderRadius:5,color:T.textFaint,fontSize:11,padding:"5px 8px",cursor:"pointer",
+              textAlign:"left"}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.color=T.text;}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=T.borderFaint;e.currentTarget.style.color=T.textFaint;}}>
+            📋 Message Logs
+          </button>
+        </div>
+      </div>
+
+      {/* ── Main area ── */}
+      <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minWidth:0}}>
+
+        {/* Header */}
+        <div style={{padding:"10px 18px",borderBottom:`1px solid ${T.borderFaint}`,background:T.bgSide,
+          display:"flex",alignItems:"center",gap:12,flexShrink:0,minHeight:46}}>
+          {activeChanName?(
+            <>
+              <span style={{...MONO,fontSize:15,fontWeight:700,color:T.textBright,flexShrink:0}}>
+                {isStatusChan?`⚡ ${activeNetObj?.name||"server"}`:`#${activeChanName.replace(/^#/,"")}`}
+              </span>
+              {activeTopic&&!isStatusChan&&(
+                <span style={{fontSize:13,color:T.textFaint,flex:1,overflow:"hidden",
+                  textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{activeTopic}</span>
+              )}
+              <div style={{display:"flex",gap:6,marginLeft:"auto",flexShrink:0,alignItems:"center"}}>
+                {isConnected&&(
+                  <span style={{...MONO,fontSize:11,color:T.green,background:T.greenBg,
+                    border:`1px solid ${T.greenBorder}`,borderRadius:4,padding:"2px 7px"}}>
+                    ● {activeNetObj?.name}
+                  </span>
+                )}
+                {!isStatusChan&&(
+                  <button onClick={()=>setShowUsers(s=>!s)}
+                    style={{...MONO,background:showUsers?T.accentBg3:"transparent",
+                      border:`1px solid ${T.borderFaint}`,borderRadius:4,padding:"3px 9px",
+                      fontSize:12,color:T.accent,cursor:"pointer"}}>
+                    {Object.keys(activeMembers).length} users
+                  </button>
+                )}
+              </div>
+            </>
+          ):(
+            <span style={{...MONO,fontSize:13,color:T.textFaint}}>
+              {networkOrder.length===0?"Add a network to get started":"Select a channel or /join #channel"}
+            </span>
+          )}
+        </div>
+
+        {/* Messages + member list */}
+        <div style={{flex:1,display:"flex",overflow:"hidden"}}>
+          <div style={{flex:1,overflowY:"auto",padding:"8px 0"}}>
+            {activeMsgs.length===0&&activeChanName&&(
+              <div style={{...MONO,padding:"32px 58px",color:T.textFaint,fontSize:13}}>
+                {isStatusChan?"Waiting for server messages…":`No messages yet in ${activeChanName}`}
+              </div>
+            )}
+            {activeMsgs.map((msg,i)=>(
+              <MsgRow key={msg.id||i} msg={msg} prev={i>0?activeMsgs[i-1]:null} myNick={currentNick}/>
+            ))}
+            <div ref={bottomRef}/>
+          </div>
+
+          {showUsers&&!isStatusChan&&activeChanName&&(
+            <div style={{width:190,flexShrink:0,borderLeft:`1px solid ${T.borderFaint}`,
+              background:T.bgSide,overflowY:"auto"}}>
+              {[["Operators",ops],["Half-ops",halfop],["Voiced",voiced],["Members",normal]].map(([lbl,list])=>
+                list.length===0?null:(
+                  <div key={lbl}>
+                    <div style={{...MONO,padding:"9px 10px 4px",fontSize:10,color:T.textFaint,
+                      textTransform:"uppercase",letterSpacing:"0.1em"}}>{lbl} — {list.length}</div>
+                    {list.map(([nick,pfx])=>(
+                      <div key={nick} style={{display:"flex",alignItems:"center",gap:7,
+                        padding:"4px 10px",borderRadius:3,margin:"1px 4px",cursor:"pointer"}}
+                        onClick={e=>setUserMenu({nick,pfx,x:e.clientX,y:e.clientY,chan:activeChanName,netId:activeNet})}
+                        onMouseEnter={e=>e.currentTarget.style.background=T.border}
+                        onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                        <Avatar nick={nick} size={22}/>
+                        <span style={{fontSize:13,color:T.textDim,flex:1,overflow:"hidden",
+                          textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nick}</span>
+                        {pfx&&<span style={{...MONO,fontSize:11,
+                          color:(pfx==="~"||pfx==="&"||pfx==="@")?T.amber:"#a0f77e",opacity:0.7}}>{pfx}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )
+              )}
+            </div>
+          )}
+        </div>
+
+        {activeChanName&&(
+          <InputBar
+            onSend={handleSend}
+            label={isStatusChan?activeNetObj?.name||"server":activeChanName}
+            nick={currentNick||"…"}
+            disabled={!isConnected&&!isStatusChan}
+          />
+        )}
+        {!activeChanName&&networkOrder.length>0&&(
+          <div style={{...MONO,padding:"13px 18px",borderTop:`1px solid ${T.borderFaint}`,
+            fontSize:13,color:T.textFaint}}>
+            Type /join #channel to get started
+          </div>
+        )}
+      </div>
+    </div>
+    </ThemeCtx.Provider>
+  );
+}
+
+// ─── Auth API helpers ─────────────────────────────────────────────────────────
+const AuthAPI = {
+  setup:        ()    => fetch(`${API_BASE}/setup`).then(r=>r.json()),
+  setupCreate:  (b)   => fetch(`${API_BASE}/setup`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b),credentials:"include"}).then(r=>r.json()),
+  login:        (b)   => fetch(`${API_BASE}/auth/login`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b),credentials:"include"}).then(r=>r.json()),
+  logout:       ()    => fetch(`${API_BASE}/auth/logout`,{method:"POST",credentials:"include"}).then(r=>r.json()),
+  me:           ()    => fetch(`${API_BASE}/auth/me`,{credentials:"include"}).then(r=>{if(!r.ok)throw new Error("unauth");return r.json();}),
+  listUsers:    ()    => fetch(`${API_BASE}/admin/users`,{credentials:"include"}).then(r=>r.json()),
+  createUser:   (b)   => fetch(`${API_BASE}/admin/users`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b),credentials:"include"}).then(r=>r.json()),
+  updateUser:   (id,b)=> fetch(`${API_BASE}/admin/users/${id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(b),credentials:"include"}).then(r=>r.json()),
+  deleteUser:   (id)  => fetch(`${API_BASE}/admin/users/${id}`,{method:"DELETE",credentials:"include"}),
+};
+
+// ─── Setup Wizard ─────────────────────────────────────────────────────────────
+function SetupPage({ onDone }) {
+  const T=useTheme();
+  const [form, setForm] = useState({ username:"", password:"", password2:"", display_name:"" });
+  const [err,  setErr]  = useState("");
+  const [busy, setBusy] = useState(false);
+  const set = k => e => setForm(f=>({...f,[k]:e.target.value}));
+
+  const IS = {background:T.bg,border:`1px solid ${T.border}`,borderRadius:6,
+    color:T.text,padding:"10px 12px",fontSize:15,outline:"none",width:"100%",boxSizing:"border-box"};
+  const LS = {display:"block",fontSize:11,color:T.textMono,marginBottom:6,
+    fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.07em"};
+
+  const submit = async () => {
+    setErr("");
+    if (!form.username.trim()) { setErr("Username is required."); return; }
+    if (form.password.length < 8) { setErr("Password must be at least 8 characters."); return; }
+    if (form.password !== form.password2) { setErr("Passwords do not match."); return; }
+    setBusy(true);
+    try {
+      const res = await AuthAPI.setupCreate({
+        username: form.username.trim(),
+        password: form.password,
+        display_name: form.display_name.trim() || form.username.trim(),
+      });
+      if (res.error) { setErr(res.error); return; }
+      onDone(res);
+    } catch(e) { setErr("Setup failed: "+e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{width:"100%",maxWidth:440}}>
+        <div style={{textAlign:"center",marginBottom:32}}>
+          <div style={{width:56,height:56,borderRadius:16,background:"linear-gradient(135deg,#7eb8f7,#7ef7d0)",
+            display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,fontWeight:900,
+            color:"#0a1628",margin:"0 auto 16px",fontFamily:"'JetBrains Mono',monospace"}}>K</div>
+          <div style={{fontSize:22,fontWeight:800,color:T.textBright,fontFamily:"'JetBrains Mono',monospace"}}>Welcome to KoreChat</div>
+          <div style={{fontSize:13,color:T.textFaint,marginTop:6}}>Create the first admin account to get started</div>
+        </div>
+
+        <div style={{background:T.bgPanel,border:`1px solid ${T.accentDim}`,borderRadius:12,padding:"28px 28px 24px",
+          boxShadow:"0 24px 64px #00000060"}}>
+          {err && <div style={{background:T.redBg,border:`1px solid ${T.redBorder}`,borderRadius:6,
+            padding:"9px 12px",fontSize:14,color:T.red,marginBottom:16}}>{err}</div>}
+
+          <div style={{display:"flex",flexDirection:"column",gap:16}}>
+            <div>
+              <label style={LS}>Username</label>
+              <input value={form.username} onChange={set("username")} style={IS} placeholder="admin"
+                onKeyDown={e=>e.key==="Enter"&&submit()} autoFocus />
+            </div>
+            <div>
+              <label style={LS}>Display Name <span style={{opacity:0.4}}>(optional)</span></label>
+              <input value={form.display_name} onChange={set("display_name")} style={IS} placeholder="Admin" />
+            </div>
+            <div>
+              <label style={LS}>Password</label>
+              <input type="password" value={form.password} onChange={set("password")} style={IS} placeholder="Min 8 characters" />
+            </div>
+            <div>
+              <label style={LS}>Confirm Password</label>
+              <input type="password" value={form.password2} onChange={set("password2")} style={IS}
+                onKeyDown={e=>e.key==="Enter"&&submit()} />
+            </div>
+          </div>
+
+          <button onClick={submit} disabled={busy}
+            style={{width:"100%",marginTop:24,padding:"12px 0",background:"linear-gradient(135deg,#7eb8f7,#7ef7d0)",
+              border:"none",borderRadius:8,color:"#0a1628",fontWeight:800,fontSize:15,cursor:busy?"wait":"pointer",
+              fontFamily:"'JetBrains Mono',monospace",opacity:busy?0.7:1}}>
+            {busy?"Creating…":"Create Admin Account"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Login Page ───────────────────────────────────────────────────────────────
+function LoginPage({ onLogin }) {
+  const T=useTheme();
+  const [form, setForm] = useState({ username:"", password:"" });
+  const [err,  setErr]  = useState("");
+  const [busy, setBusy] = useState(false);
+  const set = k => e => setForm(f=>({...f,[k]:e.target.value}));
+
+  const IS = {background:T.bg,border:`1px solid ${T.border}`,borderRadius:6,
+    color:T.text,padding:"10px 12px",fontSize:15,outline:"none",width:"100%",boxSizing:"border-box"};
+  const LS = {display:"block",fontSize:11,color:T.textMono,marginBottom:6,
+    fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.07em"};
+
+  const submit = async () => {
+    setErr("");
+    if (!form.username || !form.password) { setErr("Username and password are required."); return; }
+    setBusy(true);
+    try {
+      const res = await AuthAPI.login({ username:form.username, password:form.password });
+      if (res.error) { setErr(res.error); return; }
+      onLogin(res);
+    } catch(e) { setErr("Login failed: "+e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{width:"100%",maxWidth:380}}>
+        <div style={{textAlign:"center",marginBottom:32}}>
+          <div style={{width:56,height:56,borderRadius:16,background:"linear-gradient(135deg,#7eb8f7,#7ef7d0)",
+            display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,fontWeight:900,
+            color:"#0a1628",margin:"0 auto 16px",fontFamily:"'JetBrains Mono',monospace"}}>K</div>
+          <div style={{fontSize:22,fontWeight:800,color:T.textBright,fontFamily:"'JetBrains Mono',monospace"}}>KoreChat</div>
+          <div style={{fontSize:13,color:T.textFaint,marginTop:6}}>Sign in to your account</div>
+        </div>
+
+        <div style={{background:T.bgPanel,border:`1px solid ${T.accentDim}`,borderRadius:12,padding:"28px 28px 24px",
+          boxShadow:"0 24px 64px #00000060"}}>
+          {err && <div style={{background:T.redBg,border:`1px solid ${T.redBorder}`,borderRadius:6,
+            padding:"9px 12px",fontSize:14,color:T.red,marginBottom:16}}>{err}</div>}
+
+          <div style={{display:"flex",flexDirection:"column",gap:16}}>
+            <div>
+              <label style={LS}>Username</label>
+              <input value={form.username} onChange={set("username")} style={IS} placeholder="your username"
+                onKeyDown={e=>e.key==="Enter"&&submit()} autoFocus />
+            </div>
+            <div>
+              <label style={LS}>Password</label>
+              <input type="password" value={form.password} onChange={set("password")} style={IS}
+                onKeyDown={e=>e.key==="Enter"&&submit()} />
+            </div>
+          </div>
+
+          <button onClick={submit} disabled={busy}
+            style={{width:"100%",marginTop:24,padding:"12px 0",background:"linear-gradient(135deg,#7eb8f7,#7ef7d0)",
+              border:"none",borderRadius:8,color:"#0a1628",fontWeight:800,fontSize:15,cursor:busy?"wait":"pointer",
+              fontFamily:"'JetBrains Mono',monospace",opacity:busy?0.7:1}}>
+            {busy?"Signing in…":"Sign In"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Admin Panel ──────────────────────────────────────────────────────────────
+function AdminPanel({ currentUser, onBack, theme, toggleTheme }) {
+  const T=useTheme();
+  const [users,     setUsers]     = useState([]);
+  const [err,       setErr]       = useState("");
+  const [showAdd,   setShowAdd]   = useState(false);
+  const [editUser,  setEditUser]  = useState(null);
+  const [busy,      setBusy]      = useState(false);
+
+  const MONO = {fontFamily:"'JetBrains Mono',monospace"};
+
+  useEffect(() => {
+    AuthAPI.listUsers().then(setUsers).catch(e=>setErr(e.message));
+  }, []);
+
+  const reload = () => AuthAPI.listUsers().then(setUsers).catch(e=>setErr(e.message));
+
+  const deleteUser = async (id) => {
+    if (!confirm("Delete this user? Their networks will also be deleted.")) return;
+    await AuthAPI.deleteUser(id);
+    reload();
+  };
+
+  return (
+    <div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"'Inter var','Inter',sans-serif"}}>
+      {/* Header */}
+      <div style={{background:T.bgSide,borderBottom:`1px solid ${T.borderFaint}`,padding:"12px 24px",
+        display:"flex",alignItems:"center",gap:16}}>
+        <div style={{width:32,height:32,borderRadius:9,background:"linear-gradient(135deg,#7eb8f7,#7ef7d0)",
+          display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:900,
+          color:"#0a1628",fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>K</div>
+        <span style={{...MONO,fontWeight:800,fontSize:15,color:T.textBright}}>KoreChat Admin</span>
+        <div style={{flex:1}}/>
+        {toggleTheme&&<button onClick={toggleTheme} title="Toggle theme"
+          style={{...MONO,background:T.accentBg,border:`1px solid ${T.accentDim}`,borderRadius:6,
+            color:T.accent,padding:"4px 9px",fontSize:14,cursor:"pointer",marginRight:4}}>
+          {T.label}
+        </button>}
+        <button onClick={onBack}
+          style={{...MONO,background:T.accentBg,border:`1px solid ${T.accentDim}`,borderRadius:6,
+            color:T.accent,padding:"5px 14px",fontSize:13,cursor:"pointer"}}>
+          ← Back to Chat
+        </button>
+      </div>
+
+      <div style={{maxWidth:840,margin:"0 auto",padding:"32px 24px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24}}>
+          <div>
+            <div style={{fontSize:20,fontWeight:800,color:"#e8f4ff"}}>User Management</div>
+            <div style={{fontSize:12,color:"#ffffff35",marginTop:3}}>{users.length} user{users.length!==1?"s":""}</div>
+          </div>
+          <button onClick={()=>setShowAdd(true)}
+            style={{...MONO,background:"#7eb8f7",border:"none",borderRadius:7,color:"#0a1628",
+              fontWeight:700,padding:"8px 18px",fontSize:13,cursor:"pointer"}}>
+            + Add User
+          </button>
+        </div>
+
+        {err && <div style={{background:T.redBg,border:`1px solid ${T.redBorder}`,borderRadius:6,
+          padding:"9px 12px",fontSize:14,color:T.red,marginBottom:16}}>{err}</div>}
+
+        <div style={{background:T.bgPanel,border:`1px solid ${T.borderFaint}`,borderRadius:10,overflow:"hidden"}}>
+          {users.map((u,i)=>(
+            <div key={u.id} style={{display:"flex",alignItems:"center",gap:14,padding:"14px 18px",
+              borderBottom:i<users.length-1?`1px solid ${T.border}`:"none",
+              background:u.id===currentUser.id?T.accentBg:"transparent"}}>
+              <div style={{width:36,height:36,borderRadius:"50%",background:nickColor(u.username)+"18",
+                border:`1.5px solid ${nickColor(u.username)}33`,display:"flex",alignItems:"center",
+                justifyContent:"center",fontSize:15,fontWeight:700,color:nickColor(u.username),
+                fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>
+                {(u.username[0]||"?").toUpperCase()}
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontWeight:600,fontSize:14,color:T.textBright}}>{u.display_name||u.username}</span>
+                  {u.id===currentUser.id&&<span style={{...MONO,fontSize:9,color:T.accent,
+                    background:T.accentBg,border:`1px solid ${T.accentDim}`,borderRadius:3,padding:"1px 5px"}}>you</span>}
+                </div>
+                <div style={{fontSize:12,color:T.textFaint,marginTop:1}}>@{u.username}</div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                <span style={{...MONO,fontSize:10,padding:"2px 8px",borderRadius:4,
+                  background:u.role==="admin"?T.amberBg:T.border,
+                  border:`1px solid ${u.role==="admin"?T.amberBorder:T.borderFaint}`,
+                  color:u.role==="admin"?T.amber:T.textFaint}}>
+                  {u.role}
+                </span>
+                <button onClick={()=>setEditUser(u)}
+                  style={{...MONO,background:"transparent",border:`1px solid ${T.border}`,borderRadius:5,
+                    color:T.textDim,padding:"4px 10px",fontSize:11,cursor:"pointer"}}>
+                  Edit
+                </button>
+                {u.id!==currentUser.id && (
+                  <button onClick={()=>deleteUser(u.id)}
+                    style={{...MONO,background:"transparent",border:`1px solid ${T.redBorder}`,borderRadius:5,
+                      color:T.red+"60",padding:"4px 10px",fontSize:11,cursor:"pointer"}}
+                    onMouseEnter={e=>e.currentTarget.style.color=T.red}
+                    onMouseLeave={e=>e.currentTarget.style.color=T.red+"60"}>
+                    Delete
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+          {users.length===0&&(
+            <div style={{...MONO,padding:"32px",textAlign:"center",fontSize:12,color:T.textFaint}}>
+              No users yet
+            </div>
+          )}
+        </div>
+      </div>
+
+      {(showAdd||editUser) && (
+        <UserFormModal
+          user={editUser}
+          onClose={()=>{setShowAdd(false);setEditUser(null);}}
+          onSave={async(body)=>{
+            setBusy(true);
+            try {
+              if (editUser) await AuthAPI.updateUser(editUser.id, body);
+              else await AuthAPI.createUser(body);
+              await reload();
+              setShowAdd(false); setEditUser(null);
+            } catch(e) { setErr(e.message); }
+            finally { setBusy(false); }
+          }}
+          busy={busy}
+        />
+      )}
+    </div>
+  );
+}
+
+function UserFormModal({ user, onClose, onSave, busy }) {
+  const T=useTheme();
+  const isEdit = !!user;
+  const [form, setForm] = useState({
+    username:     user?.username     || "",
+    display_name: user?.display_name || "",
+    role:         user?.role         || "user",
+    password:     "",
+    password2:    "",
+  });
+  const [err, setErr] = useState("");
+  const set = k => e => setForm(f=>({...f,[k]:e.target.value}));
+
+  const IS = {background:T.bg,border:`1px solid ${T.border}`,borderRadius:6,
+    color:T.text,padding:"9px 11px",fontSize:14,outline:"none",width:"100%",boxSizing:"border-box"};
+  const LS = {display:"block",fontSize:10,color:T.textMono,marginBottom:5,
+    fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.07em"};
+
+  const submit = async () => {
+    setErr("");
+    if (!isEdit && !form.username) { setErr("Username is required."); return; }
+    if (!isEdit && form.password.length < 8) { setErr("Password must be at least 8 characters."); return; }
+    if (form.password && form.password !== form.password2) { setErr("Passwords do not match."); return; }
+    const body = { display_name: form.display_name, role: form.role };
+    if (!isEdit) body.username = form.username;
+    if (form.password) body.password = form.password;
+    await onSave(body);
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"#000000bb",zIndex:400,display:"flex",
+      alignItems:"center",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{background:T.bgPanel,border:`1px solid ${T.accentDim}`,borderRadius:12,width:420,
+        boxShadow:"0 32px 96px #000e",overflow:"hidden"}}>
+        <div style={{padding:"16px 20px 12px",borderBottom:`1px solid ${T.borderFaint}`,display:"flex",
+          alignItems:"center",justifyContent:"space-between"}}>
+          <span style={{fontSize:14,fontWeight:800,color:T.textBright,fontFamily:"'JetBrains Mono',monospace"}}>
+            {isEdit?"Edit User":"Add User"}
+          </span>
+          <button onClick={onClose} style={{background:"none",border:"none",color:T.textFaint,fontSize:20,cursor:"pointer"}}>×</button>
+        </div>
+        <div style={{padding:"16px 20px"}}>
+          {err&&<div style={{background:T.redBg,border:`1px solid ${T.redBorder}`,borderRadius:6,
+            padding:"8px 12px",fontSize:13,color:T.red,marginBottom:12}}>{err}</div>}
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            {!isEdit && <div><label style={LS}>Username *</label><input value={form.username} onChange={set("username")} style={IS} autoFocus /></div>}
+            <div><label style={LS}>Display Name</label><input value={form.display_name} onChange={set("display_name")} style={IS} /></div>
+            <div>
+              <label style={LS}>Role</label>
+              <select value={form.role} onChange={set("role")} style={{...IS,cursor:"pointer"}}>
+                <option value="user">user</option>
+                <option value="admin">admin</option>
+              </select>
+            </div>
+            <div><label style={LS}>{isEdit?"New Password (leave blank to keep)":"Password *"}</label><input type="password" value={form.password} onChange={set("password")} style={IS} /></div>
+            <div><label style={LS}>Confirm Password</label><input type="password" value={form.password2} onChange={set("password2")} style={IS} onKeyDown={e=>e.key==="Enter"&&submit()} /></div>
+          </div>
+        </div>
+        <div style={{padding:"12px 20px 16px",borderTop:`1px solid ${T.borderFaint}`,display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={onClose} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,
+            color:T.textDim,padding:"8px 16px",fontSize:14,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace"}}>
+            Cancel
+          </button>
+          <button onClick={submit} disabled={busy} style={{background:T.accent,border:"none",borderRadius:6,
+            color:T.bg,fontWeight:700,padding:"8px 18px",fontSize:14,cursor:busy?"wait":"pointer",
+            fontFamily:"'JetBrains Mono',monospace",opacity:busy?0.6:1}}>
+            {busy?"Saving…":isEdit?"Save Changes":"Add User"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Root App ─────────────────────────────────────────────────────────────────
+// Handles the top-level routing: setup → login → chat (+ admin panel)
+function App() {
+  // "loading" | "setup" | "login" | "chat" | "admin"
+  const [view,    setView]    = useState("loading");
+  const [me,      setMe]      = useState(null);
+  // Theme lives here at the root so Login/Setup/Admin all share it
+  const [theme,   setTheme]   = useState(() => sessionStorage.getItem("kc_theme") || "dark");
+  const T = THEMES[theme] || THEMES.dark;
+
+  // Keep body background in sync with theme (affects the area behind the app)
+  useEffect(() => {
+    document.body.style.background = T.bg;
+  }, [T.bg]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { needed } = await AuthAPI.setup();
+        if (needed) { setView("setup"); return; }
+        const user = await AuthAPI.me();
+        setMe(user);
+        setView("chat");
+      } catch {
+        setView("login");
+      }
+    })();
+  }, []);
+
+  const handleLogout = async () => {
+    await AuthAPI.logout();
+    setMe(null);
+    setView("login");
+  };
+
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    sessionStorage.setItem("kc_theme", next);
+  };
+
+  if (view==="loading") return null;
+
+  // Auth pages get a simple themed wrapper with a toggle button in the corner
+  const AuthWrapper = ({children}) => (
+    <ThemeCtx.Provider value={T}>
+      <div style={{position:"relative",minHeight:"100vh",background:T.bg}}>
+        <button onClick={toggleTheme} title={`Switch to ${theme==="dark"?"light":"dark"} theme`}
+          style={{position:"fixed",top:14,right:14,background:T.accentBg,border:`1px solid ${T.accentDim}`,
+            borderRadius:6,color:T.accent,fontSize:15,cursor:"pointer",padding:"5px 9px",
+            fontFamily:"'JetBrains Mono',monospace",zIndex:10}}>
+          {T.label}
+        </button>
+        {children}
+      </div>
+    </ThemeCtx.Provider>
+  );
+
+  if (view==="setup") return <AuthWrapper><SetupPage onDone={u=>{setMe(u);setView("chat");}}/></AuthWrapper>;
+  if (view==="login") return <AuthWrapper><LoginPage onLogin={u=>{setMe(u);setView("chat");}}/></AuthWrapper>;
+
+  // KoreChat is always mounted once authenticated so IRC connections persist.
+  // AdminPanel overlays on top rather than replacing KoreChat, preventing remount/reconnect.
+  return (
+    <ThemeCtx.Provider value={T}>
+      <div style={{position:"relative",width:"100%",height:"100vh",overflow:"hidden"}}>
+        <KoreChat currentUser={me} onLogout={handleLogout} onAdmin={()=>setView("admin")}
+          appTheme={theme} appToggleTheme={toggleTheme}/>
+        {view==="admin" && (
+          <div style={{position:"fixed",inset:0,zIndex:500,background:T.bg}}>
+            <AdminPanel currentUser={me} onBack={()=>setView("chat")} theme={theme} toggleTheme={toggleTheme}/>
+          </div>
+        )}
+      </div>
+    </ThemeCtx.Provider>
+  );
+}
+
+// ─── Mount ────────────────────────────────────────────────────────────────────
+const { useState, useEffect, useRef, useCallback, useReducer } = React;
+const _root = ReactDOM.createRoot(document.getElementById("root"));
+_root.render(React.createElement(App));
+if (window.__korechatReady) window.__korechatReady();

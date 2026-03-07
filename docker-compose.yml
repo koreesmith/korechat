@@ -1,0 +1,71 @@
+version: "3.9"
+
+services:
+
+  # ── Postgres ─────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: korechat-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       korechat
+      POSTGRES_USER:     korechat
+      POSTGRES_PASSWORD: korechat
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    networks:
+      - korechat
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U korechat"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Go API + WebSocket backend ────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: korechat-backend
+    restart: unless-stopped
+    expose:
+      - "8080"
+    env_file:
+      - .env
+    environment:
+      - HTTP_ADDR=:8080
+      - SERVER_NAME=korechat.net
+      - SERVER_VERSION=KoreChat/1.0
+      - MOTD=Welcome to KoreChat · IRCv3 · Built for teams
+      - DATABASE_URL=postgres://korechat:korechat@postgres:5432/korechat?sslmode=disable
+    volumes:
+      - ./data/avatars:/data/avatars
+    networks:
+      - korechat
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8080 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── nginx frontend + reverse proxy ───────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend
+    container_name: korechat-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    networks:
+      - korechat
+    depends_on:
+      - backend
+
+networks:
+  korechat:
+    driver: bridge

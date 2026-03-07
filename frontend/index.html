@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KoreChat</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root { height: 100%; width: 100%; overflow: hidden; }
+    body { background: #080f1e; color: #c8d8f0; }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #ffffff18; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #ffffff30; }
+
+    /* Inter from Google Fonts */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700;800&display=swap');
+
+    /* Loading splash shown before React mounts */
+    #splash {
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: 12px;
+      background: #080f1e;
+      font-family: 'JetBrains Mono', monospace;
+      color: #7eb8f7;
+      font-size: 13px;
+      z-index: 9999;
+      transition: opacity 0.3s;
+    }
+    #splash .logo {
+      width: 40px; height: 40px; border-radius: 12px;
+      background: linear-gradient(135deg, #7eb8f7, #7ef7d0);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; font-weight: 900; color: #0a1628;
+    }
+    #splash .dots span {
+      animation: blink 1.2s infinite;
+      opacity: 0;
+    }
+    #splash .dots span:nth-child(2) { animation-delay: 0.2s; }
+    #splash .dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes blink { 0%,80%,100% { opacity:0 } 40% { opacity:1 } }
+  </style>
+</head>
+<body>
+  <div id="splash">
+    <div class="logo">K</div>
+    <span>KoreChat loading<span class="dots"><span>.</span><span>.</span><span>.</span></span></span>
+  </div>
+  <div id="root"></div>
+
+  <!-- React 18 + ReactDOM (UMD) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+  <!-- Babel standalone for in-browser JSX transpilation -->
+  <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"></script>
+
+  <!-- KoreChat app (JSX, transpiled in-browser by Babel) -->
+  <script type="text/babel" data-type="module" src="/app.jsx"></script>
+
+  <script>
+    // Hide splash once React has mounted
+    window.__korechatReady = function() {
+      const s = document.getElementById('splash');
+      if (s) { s.style.opacity = '0'; setTimeout(() => s.remove(), 350); }
+    };
+    // Fallback: hide after 5s regardless
+    setTimeout(window.__korechatReady, 5000);
+  </script>
+</body>
+</html>
