@@ -2101,9 +2101,7 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                         {notifPerms==="granted"?"Notifications enabled"
                           :notifPerms==="denied"?"Notifications blocked by browser"
                           :"Notifications not yet enabled"}
-                        <span style={{fontSize:10,opacity:0.5,marginLeft:6}}>
-                          (raw: {Notification?.permission ?? "unsupported"})
-                        </span>
+
                       </div>
                       {notifPerms==="denied"&&(
                         <div style={{fontSize:11,color:T.textFaint,marginTop:2,lineHeight:1.6}}>
@@ -2112,7 +2110,7 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                             const isIOS = /iPad|iPhone|iPod/.test(ua);
                             const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
                             if (isIOS) return "iOS requires KoreChat to be installed to your home screen (Share → Add to Home Screen) before notifications can be enabled.";
-                            if (isSafari) return "In Safari: go to Safari → Settings → Websites → Notifications, find this site, and set it to Allow.";
+                            if (isSafari) return "In Safari: go to Settings → Privacy → Manage Website Data, search for this site and Remove it, then reload KoreChat and click Enable.";
                             if (/Firefox/.test(ua)) return "In Firefox: click the lock icon or ⚠ in the address bar, then Permissions → Notifications → Allow.";
                             if (/Edg/.test(ua)) return "In Edge: click the lock icon in the address bar → Permissions for this site → Notifications → Allow.";
                             return "Click the lock icon or ⚙ in your browser's address bar → Site settings → Notifications → Allow.";
@@ -2133,7 +2131,7 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                         background:notifPerms==="denied"?T.border:T.accent,
                         color:notifPerms==="denied"?T.textDim:"#fff",
                         fontSize:11,fontWeight:700,cursor:"pointer",flexShrink:0}}>
-                        {notifPerms==="denied"?"Reload to apply":"Enable"}
+                        {notifPerms==="denied"?"Reload page":"Enable"}
                       </button>
                     )}
                   </div>
