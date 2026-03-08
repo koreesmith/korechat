@@ -594,11 +594,14 @@ func (c *Conn) intercept(line string) {
 
 	case "900": // RPL_LOGGEDIN
 		c.mu.Lock()
+		alreadyDone := c.saslDone
 		c.saslDone = true
 		c.mu.Unlock()
-		log.Printf("bnc[%s]: SASL authentication successful", c.net.ID)
-		c.notice("✓ SASL authentication successful")
-		c.sendRaw("CAP END")
+		if !alreadyDone {
+			log.Printf("bnc[%s]: SASL logged in (900)", c.net.ID)
+			c.notice("✓ SASL authentication successful")
+			c.sendRaw("CAP END")
+		}
 
 	case "901": // RPL_LOGGEDOUT — shouldn't happen during connect
 		break
@@ -607,13 +610,18 @@ func (c *Conn) intercept(line string) {
 		// 902 = ERR_NICKLOCKED, 903 = RPL_SASLSUCCESS, 904 = ERR_SASLFAIL
 		// 905 = ERR_SASLTOOLONG, 906 = ERR_SASLABORTED, 907 = ERR_SASLALREADY
 		if cmd == "903" {
-			// Some servers send 903 instead of 900
 			c.mu.Lock()
+			alreadyDone := c.saslDone
 			c.saslDone = true
 			c.mu.Unlock()
-			log.Printf("bnc[%s]: SASL success (903)", c.net.ID)
-			c.notice("✓ SASL authentication successful")
-			c.sendRaw("CAP END")
+			if !alreadyDone {
+				// Some servers send 903 without 900
+				log.Printf("bnc[%s]: SASL success (903)", c.net.ID)
+				c.notice("✓ SASL authentication successful")
+				c.sendRaw("CAP END")
+			} else {
+				log.Printf("bnc[%s]: SASL 903 received (CAP END already sent via 900)", c.net.ID)
+			}
 		} else {
 			msg := ""
 			if len(parts) > idx+1 {
