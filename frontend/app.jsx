@@ -5,11 +5,12 @@ const API_BASE = location.protocol + "//" + location.host + "/api/v1";
 
 
 // ─── Theme system ─────────────────────────────────────────────────────────────
-// To add a new theme: add an entry to THEMES with the same keys.
-const THEMES = {
+// Built-in theme palette. Each entry must define the same set of tokens.
+// Custom themes are stored in localStorage as JSON and merged at runtime.
+const BUILTIN_THEMES = {
   dark: {
     name:        "dark",
-    label:       "☀",
+    label:       "KoreChat Dark",
     bg:          "#080f1e",
     bgSide:      "#090e1c",
     bgPanel:     "#0d1f38",
@@ -43,10 +44,11 @@ const THEMES = {
     mentionBg2:  "#f7a07e0d",
     mentionBdr:  "#f7a07e44",
     scrollThumb: "#ffffff18",
+    fontSize:    14,
   },
   light: {
     name:        "light",
-    label:       "☾",
+    label:       "KoreChat Light",
     bg:          "#f0f4fa",
     bgSide:      "#e4ecf7",
     bgPanel:     "#ffffff",
@@ -80,10 +82,145 @@ const THEMES = {
     mentionBg2:  "#c040200e",
     mentionBdr:  "#c0402045",
     scrollThumb: "#00000015",
+    fontSize:    14,
+  },
+  // ── New Morning (ported from thelounge-theme-new-morning) ─────────────────
+  newmorning: {
+    name:        "newmorning",
+    label:       "New Morning",
+    bg:          "#303e4a",
+    bgSide:      "#28333d",
+    bgPanel:     "#242a33",
+    bgInput:     "#242a33",
+    bgInputWrap: "#28333d",
+    border:      "#28333d",
+    borderMid:   "#28333d",
+    borderFaint: "#2e3a44",
+    text:        "#f3f3f3",
+    textBright:  "#ffffff",
+    textDim:     "#b7c5d1",
+    textFaint:   "#adbbc7",
+    textGhost:   "#7a8fa0",
+    textMono:    "#99a2b4",
+    accent:      "#77abd9",
+    accentDim:   "#77abd930",
+    accentBg:    "#77abd915",
+    accentBg2:   "#77abd922",
+    accentBg3:   "#77abd918",
+    green:       "#97ea70",
+    greenBg:     "#97ea7012",
+    greenBorder: "#97ea7030",
+    amber:       "#f39c12",
+    amberBg:     "#f39c1215",
+    amberBorder: "#f39c1235",
+    red:         "#f92772",
+    redBg:       "#f9277215",
+    redBorder:   "#f9277240",
+    msgHover:    "#ffffff06",
+    mentionBg:   "#4d433280",
+    mentionBg2:  "#4d4332aa",
+    mentionBdr:  "#f39c12cc",
+    scrollThumb: "#b7c5d140",
+    fontSize:    14,
+  },
+  // ── Solarized Dark ────────────────────────────────────────────────────────
+  solarized: {
+    name:        "solarized",
+    label:       "Solarized Dark",
+    bg:          "#002b36",
+    bgSide:      "#073642",
+    bgPanel:     "#073642",
+    bgInput:     "#073642",
+    bgInputWrap: "#002b36",
+    border:      "#586e7520",
+    borderMid:   "#586e7530",
+    borderFaint: "#586e7518",
+    text:        "#839496",
+    textBright:  "#eee8d5",
+    textDim:     "#657b83",
+    textFaint:   "#586e75",
+    textGhost:   "#586e7580",
+    textMono:    "#93a1a1",
+    accent:      "#268bd2",
+    accentDim:   "#268bd230",
+    accentBg:    "#268bd215",
+    accentBg2:   "#268bd225",
+    accentBg3:   "#268bd218",
+    green:       "#859900",
+    greenBg:     "#85990015",
+    greenBorder: "#85990030",
+    amber:       "#b58900",
+    amberBg:     "#b5890015",
+    amberBorder: "#b5890030",
+    red:         "#dc322f",
+    redBg:       "#dc322f15",
+    redBorder:   "#dc322f40",
+    msgHover:    "#ffffff04",
+    mentionBg:   "#dc322f0a",
+    mentionBg2:  "#dc322f14",
+    mentionBdr:  "#dc322f50",
+    scrollThumb: "#586e7540",
+    fontSize:    14,
+  },
+  // ── Dracula ───────────────────────────────────────────────────────────────
+  dracula: {
+    name:        "dracula",
+    label:       "Dracula",
+    bg:          "#282a36",
+    bgSide:      "#21222c",
+    bgPanel:     "#1e1f29",
+    bgInput:     "#1e1f29",
+    bgInputWrap: "#21222c",
+    border:      "#44475a40",
+    borderMid:   "#44475a60",
+    borderFaint: "#44475a30",
+    text:        "#f8f8f2",
+    textBright:  "#ffffff",
+    textDim:     "#bd93f9",
+    textFaint:   "#6272a4",
+    textGhost:   "#44475a",
+    textMono:    "#8be9fd",
+    accent:      "#bd93f9",
+    accentDim:   "#bd93f930",
+    accentBg:    "#bd93f915",
+    accentBg2:   "#bd93f922",
+    accentBg3:   "#bd93f918",
+    green:       "#50fa7b",
+    greenBg:     "#50fa7b12",
+    greenBorder: "#50fa7b30",
+    amber:       "#ffb86c",
+    amberBg:     "#ffb86c12",
+    amberBorder: "#ffb86c30",
+    red:         "#ff5555",
+    redBg:       "#ff555515",
+    redBorder:   "#ff555540",
+    msgHover:    "#ffffff04",
+    mentionBg:   "#ff555510",
+    mentionBg2:  "#ff55551a",
+    mentionBdr:  "#ff5555aa",
+    scrollThumb: "#6272a440",
+    fontSize:    14,
   },
 };
-const _savedTheme = sessionStorage.getItem("kc_theme") || "dark";
-const ThemeCtx = React.createContext(THEMES[_savedTheme] || THEMES.dark);
+
+// Load custom themes from localStorage and merge with built-ins
+function loadThemes() {
+  try {
+    const custom = JSON.parse(localStorage.getItem("kc_custom_themes") || "{}");
+    return { ...BUILTIN_THEMES, ...custom };
+  } catch { return { ...BUILTIN_THEMES }; }
+}
+
+// Resolve a theme by name — falls back to custom themes, then dark
+function resolveTheme(name, themes) {
+  return themes[name] || themes.dark || BUILTIN_THEMES.dark;
+}
+
+// All themes (built-ins + custom) — rebuilt on each App render from state
+let THEMES = loadThemes();
+
+const _savedTheme = localStorage.getItem("kc_theme") || "dark";
+const ThemeCtx = React.createContext(resolveTheme(_savedTheme, THEMES));
 function useTheme() { return React.useContext(ThemeCtx); }
 
 // ─── IRCv3 Parser ─────────────────────────────────────────────────────────────
@@ -1965,7 +2102,7 @@ function LogsModal({ onClose }) {
 }
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
-function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appToggleTheme }) {
+function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appToggleTheme, allThemes, onOpenThemePicker }) {
   const [state, dispatch] = useReducer(reducer, INIT);
   const [me, setMe]        = useState(_currentUser); // local copy updated on profile save
   const [showAddNet,   setShowAddNet]   = useState(false);
@@ -2790,13 +2927,15 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
   const amIop = myPrefix==="~"||myPrefix==="&"||myPrefix==="@";
 
   const theme = appTheme || "dark";
-  const T = THEMES[theme] || THEMES.dark;
+  const _allThemes = allThemes || BUILTIN_THEMES;
+  const T = _allThemes[theme] || BUILTIN_THEMES.dark;
   const toggleTheme = appToggleTheme || (() => {});
 
   return (
     <ThemeCtx.Provider value={T}>
     <div style={{display:"flex",height:"100vh",width:"100%",background:T.bg,
-      overflow:"hidden",color:T.text,fontFamily:"'Inter var','Inter',sans-serif"}}>
+      overflow:"hidden",color:T.text,fontFamily:"'Inter var','Inter',sans-serif",
+      fontSize: T.fontSize||14}}>
 
       {showProfile&&(
         <ProfileModal
@@ -2924,13 +3063,13 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
             <div style={{fontSize:9,color:T.textGhost,marginTop:2,paddingLeft:30,
               fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.06em"}}>IRCv3</div>
           </div>
-          <button onClick={toggleTheme} title={`Switch to ${theme==="dark"?"light":"dark"} theme`}
+          <button onClick={onOpenThemePicker||toggleTheme} title="Themes"
             style={{background:T.accentBg,border:`1px solid ${T.accentDim}`,borderRadius:6,
-              color:T.accent,fontSize:14,cursor:"pointer",padding:"4px 7px",lineHeight:1,
+              color:T.accent,fontSize:13,cursor:"pointer",padding:"4px 7px",lineHeight:1,
               fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}
             onMouseEnter={e=>e.currentTarget.style.background=T.accentBg2}
             onMouseLeave={e=>e.currentTarget.style.background=T.accentBg}>
-            {theme==="dark" ? THEMES.dark.label : THEMES.light.label}
+            🎨
           </button>
         </div>
 
@@ -3611,9 +3750,42 @@ function App() {
   // "loading" | "setup" | "login" | "chat" | "admin"
   const [view,    setView]    = useState("loading");
   const [me,      setMe]      = useState(null);
-  // Theme lives here at the root so Login/Setup/Admin all share it
-  const [theme,   setTheme]   = useState(() => sessionStorage.getItem("kc_theme") || "dark");
-  const T = THEMES[theme] || THEMES.dark;
+  // Theme lives at root — name key + all custom themes stored in localStorage
+  const [theme,        setTheme]        = useState(() => localStorage.getItem("kc_theme") || "dark");
+  const [customThemes, setCustomThemes] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("kc_custom_themes") || "{}"); } catch { return {}; }
+  });
+  const [showThemePicker, setShowThemePicker] = useState(false);
+
+  // Rebuild merged theme map whenever custom themes change
+  const allThemes = { ...BUILTIN_THEMES, ...customThemes };
+  const T = allThemes[theme] || BUILTIN_THEMES.dark;
+
+  // Persist and apply a new theme name
+  const applyTheme = (name) => {
+    setTheme(name);
+    localStorage.setItem("kc_theme", name);
+  };
+
+  // Save a new or edited custom theme
+  const saveCustomTheme = (themeObj) => {
+    const next = { ...customThemes, [themeObj.name]: themeObj };
+    setCustomThemes(next);
+    localStorage.setItem("kc_custom_themes", JSON.stringify(next));
+    applyTheme(themeObj.name);
+  };
+
+  // Delete a custom theme
+  const deleteCustomTheme = (name) => {
+    const next = { ...customThemes };
+    delete next[name];
+    setCustomThemes(next);
+    localStorage.setItem("kc_custom_themes", JSON.stringify(next));
+    if (theme === name) applyTheme("dark");
+  };
+
+  // Legacy toggle (dark ↔ light) still works
+  const toggleTheme = () => applyTheme(theme === "dark" ? "light" : "dark");
 
   // Keep body background in sync with theme (affects the area behind the app)
   useEffect(() => {
@@ -3672,14 +3844,372 @@ function App() {
     <ThemeCtx.Provider value={T}>
       <div style={{position:"relative",width:"100%",height:"100vh",overflow:"hidden"}}>
         <KoreChat currentUser={me} onLogout={handleLogout} onAdmin={()=>setView("admin")}
-          appTheme={theme} appToggleTheme={toggleTheme}/>
+          appTheme={theme} appToggleTheme={toggleTheme}
+          allThemes={allThemes} onOpenThemePicker={()=>setShowThemePicker(true)}/>
         {view==="admin" && (
           <div style={{position:"fixed",inset:0,zIndex:500,background:T.bg}}>
-            <AdminPanel currentUser={me} onBack={()=>setView("chat")} theme={theme} toggleTheme={toggleTheme}/>
+            <AdminPanel currentUser={me} onBack={()=>setView("chat")} theme={theme} toggleTheme={toggleTheme}
+              allThemes={allThemes} onOpenThemePicker={()=>setShowThemePicker(true)}/>
           </div>
         )}
       </div>
+      {showThemePicker && (
+        <ThemeCtx.Provider value={T}>
+          <ThemePicker
+            allThemes={allThemes}
+            currentTheme={theme}
+            builtinNames={Object.keys(BUILTIN_THEMES)}
+            onApply={applyTheme}
+            onSave={saveCustomTheme}
+            onDelete={deleteCustomTheme}
+            onClose={()=>setShowThemePicker(false)}
+          />
+        </ThemeCtx.Provider>
+      )}
     </ThemeCtx.Provider>
+  );
+}
+
+// ─── ThemePicker ─────────────────────────────────────────────────────────────
+// Editable fields shown in the custom theme editor (subset of all tokens)
+const THEME_EDITOR_FIELDS = [
+  { key:"bg",          label:"Main background" },
+  { key:"bgSide",      label:"Sidebar background" },
+  { key:"bgPanel",     label:"Panel / modal background" },
+  { key:"bgInput",     label:"Input background" },
+  { key:"text",        label:"Primary text" },
+  { key:"textBright",  label:"Bright text" },
+  { key:"textDim",     label:"Dim text / labels" },
+  { key:"textFaint",   label:"Faint text" },
+  { key:"border",      label:"Border" },
+  { key:"accent",      label:"Accent / links" },
+  { key:"green",       label:"Success / online" },
+  { key:"amber",       label:"Warning / away" },
+  { key:"red",         label:"Error / mention" },
+  { key:"mentionBdr",  label:"Mention left border" },
+  { key:"scrollThumb", label:"Scrollbar thumb" },
+];
+
+function ThemePreviewSwatch({ theme }) {
+  const T = theme;
+  return (
+    <div style={{borderRadius:8,overflow:"hidden",border:`2px solid ${T.border||"#fff2"}`,
+      width:"100%",aspectRatio:"16/9",position:"relative",background:T.bg,fontSize:10,
+      fontFamily:"'JetBrains Mono',monospace",userSelect:"none"}}>
+      {/* Sidebar strip */}
+      <div style={{position:"absolute",left:0,top:0,bottom:0,width:"28%",background:T.bgSide,
+        borderRight:`1px solid ${T.border}`}}>
+        <div style={{padding:"4px 6px",borderBottom:`1px solid ${T.border}`}}>
+          <div style={{width:"60%",height:5,borderRadius:2,background:T.accent,marginBottom:3}}/>
+          <div style={{width:"40%",height:3,borderRadius:2,background:T.textGhost||T.textFaint}}/>
+        </div>
+        {["#general","#dev","#random"].map((ch,i)=>(
+          <div key={i} style={{padding:"2px 6px",background:i===0?T.accentBg:"transparent",
+            color:i===0?T.accent:T.textFaint,marginTop:1}}>{ch}</div>
+        ))}
+      </div>
+      {/* Chat area */}
+      <div style={{position:"absolute",left:"28%",right:0,top:0,bottom:"20%",
+        background:T.bg,padding:"4px 6px",overflow:"hidden"}}>
+        {[
+          {nick:"alice",  color:T.accent,  msg:"hey everyone!"},
+          {nick:"bob",    color:T.green,   msg:"hi alice 👋"},
+          {nick:"carol",  color:T.amber,   msg:"what's new?"},
+        ].map(({nick,color,msg},i)=>(
+          <div key={i} style={{display:"flex",gap:3,marginBottom:2,alignItems:"baseline"}}>
+            <span style={{color,fontWeight:700,fontSize:9,whiteSpace:"nowrap"}}>{nick}</span>
+            <span style={{color:T.text,fontSize:8,opacity:0.9}}>{msg}</span>
+          </div>
+        ))}
+        {/* Mention row */}
+        <div style={{display:"flex",gap:3,alignItems:"baseline",
+          borderLeft:`2px solid ${T.mentionBdr}`,paddingLeft:2,
+          background:T.mentionBg,marginLeft:-4,paddingRight:2}}>
+          <span style={{color:T.red,fontWeight:700,fontSize:9}}>dave</span>
+          <span style={{color:T.text,fontSize:8}}>@alice ping!</span>
+        </div>
+      </div>
+      {/* Input bar */}
+      <div style={{position:"absolute",left:"28%",right:0,bottom:0,height:"20%",
+        background:T.bgInput,borderTop:`1px solid ${T.border}`,
+        display:"flex",alignItems:"center",padding:"0 6px"}}>
+        <div style={{flex:1,height:6,borderRadius:2,background:T.textGhost||T.textFaint,opacity:0.4}}/>
+      </div>
+    </div>
+  );
+}
+
+function ThemePicker({ allThemes, currentTheme, builtinNames, onApply, onSave, onDelete, onClose }) {
+  const T = useTheme();
+  const [tab,         setTab]         = useState("gallery"); // "gallery" | "editor"
+  const [editTarget,  setEditTarget]  = useState(null);  // theme name being edited, or null for new
+  const [editState,   setEditState]   = useState(null);  // working copy of theme tokens
+  const [editName,    setEditName]    = useState("");    // display label for custom theme
+  const [nameError,   setNameError]   = useState("");
+
+  const themeList = Object.values(allThemes);
+  const builtinSet = new Set(builtinNames);
+
+  const startEdit = (theme) => {
+    // Deep-copy theme tokens for editing
+    const copy = { ...theme };
+    const isBuiltin = builtinSet.has(theme.name);
+    // Forking a built-in: null editTarget so handleSave creates a new custom theme
+    setEditTarget(isBuiltin ? null : theme.name);
+    setEditState(copy);
+    setEditName(isBuiltin ? (copy.label||copy.name) + " (custom)" : (copy.label||copy.name));
+    setNameError("");
+    setTab("editor");
+  };
+
+  const startNew = () => {
+    // Clone current theme as starting point
+    const base = { ...(allThemes[currentTheme] || allThemes.dark) };
+    const newName = "custom_" + Date.now();
+    base.name = newName;
+    base.label = "My Theme";
+    setEditTarget(null);
+    setEditState(base);
+    setEditName("My Theme");
+    setNameError("");
+    setTab("editor");
+  };
+
+  const handleSave = () => {
+    const label = editName.trim();
+    if (!label) { setNameError("Name is required"); return; }
+    const key = editTarget || ("custom_" + label.toLowerCase().replace(/[^a-z0-9]/g,"_").slice(0,24) + "_" + Date.now());
+    // Auto-derive alpha-channel variants from the base colors so users only need to pick the solids
+    const s = editState;
+    const derived = {
+      accentDim:   (s.accent||"#7eb8f7").slice(0,7) + "30",
+      accentBg:    (s.accent||"#7eb8f7").slice(0,7) + "15",
+      accentBg2:   (s.accent||"#7eb8f7").slice(0,7) + "22",
+      accentBg3:   (s.accent||"#7eb8f7").slice(0,7) + "18",
+      greenBg:     (s.green||"#4af7a0").slice(0,7)  + "12",
+      greenBorder: (s.green||"#4af7a0").slice(0,7)  + "30",
+      amberBg:     (s.amber||"#f7d07e").slice(0,7)  + "12",
+      amberBorder: (s.amber||"#f7d07e").slice(0,7)  + "30",
+      redBg:       (s.red||"#f7a07e").slice(0,7)    + "15",
+      redBorder:   (s.red||"#f7a07e").slice(0,7)    + "40",
+      mentionBg:   (s.red||"#f7a07e").slice(0,7)    + "10",
+      mentionBg2:  (s.red||"#f7a07e").slice(0,7)    + "1a",
+      borderMid:   (s.border||"#ffffff07").slice(0,7) + "20",
+      borderFaint: (s.border||"#ffffff07").slice(0,7) + "15",
+      bgInputWrap: s.bgSide || s.bg,
+      textGhost:   (s.textFaint||"#ffffff20"),
+      textMono:    (s.textFaint||"#ffffff45"),
+      msgHover:    "#ffffff05",
+    };
+    onSave({ ...derived, ...s, name: key, label });
+    setTab("gallery");
+  };
+
+  const MONO = { fontFamily:"'JetBrains Mono',monospace" };
+  const inputStyle = {
+    background: T.bgInput, border:`1px solid ${T.border}`, borderRadius:5,
+    color: T.text, padding:"5px 9px", fontSize:12, width:"100%", boxSizing:"border-box",
+    ...MONO,
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:900,background:"#00000070",
+      display:"flex",alignItems:"center",justifyContent:"center"}}
+      onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{background:T.bgPanel,borderRadius:12,border:`1px solid ${T.border}`,
+        width:680,maxWidth:"96vw",maxHeight:"88vh",display:"flex",flexDirection:"column",
+        boxShadow:"0 24px 80px #00000060"}}>
+
+        {/* Header */}
+        <div style={{padding:"16px 20px 12px",borderBottom:`1px solid ${T.border}`,
+          display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:16,color:T.textBright,...MONO}}>🎨 Themes</div>
+            <div style={{fontSize:11,color:T.textDim,marginTop:2,...MONO}}>
+              {tab==="gallery" ? "Choose a theme or create your own" : "Customize your theme"}
+            </div>
+          </div>
+          <button onClick={onClose} style={{background:"none",border:"none",color:T.textFaint,
+            fontSize:20,cursor:"pointer",lineHeight:1,padding:"2px 6px"}}>×</button>
+        </div>
+
+        {/* Tabs */}
+        <div style={{display:"flex",gap:0,borderBottom:`1px solid ${T.border}`,flexShrink:0}}>
+          {[["gallery","Gallery"],["editor",editTarget?"Edit Theme":"New Theme"]].map(([id,lbl])=>(
+            <button key={id} onClick={()=>{ if(id==="editor"&&!editState) startNew(); else setTab(id); }}
+              style={{...MONO,fontSize:12,padding:"9px 18px",background:"none",border:"none",
+                borderBottom:tab===id?`2px solid ${T.accent}`:"2px solid transparent",
+                color:tab===id?T.accent:T.textDim,cursor:"pointer",fontWeight:tab===id?700:400}}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+
+        {/* Gallery tab */}
+        {tab==="gallery" && (
+          <div style={{overflowY:"auto",padding:"16px 20px",flex:1}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:14}}>
+              {themeList.map(th => {
+                const active = th.name === currentTheme;
+                const isBuiltin = builtinSet.has(th.name);
+                return (
+                  <div key={th.name}
+                    style={{borderRadius:8,border:`2px solid ${active?T.accent:T.border}`,
+                      background:T.bgPanel,overflow:"hidden",cursor:"pointer",
+                      transition:"border-color 0.15s"}}
+                    onClick={()=>onApply(th.name)}
+                    onMouseEnter={e=>{ if(!active) e.currentTarget.style.borderColor=T.accentDim; }}
+                    onMouseLeave={e=>{ if(!active) e.currentTarget.style.borderColor=T.border; }}>
+                    <div style={{padding:8}}>
+                      <ThemePreviewSwatch theme={th}/>
+                    </div>
+                    <div style={{padding:"6px 10px 10px",display:"flex",
+                      alignItems:"center",justifyContent:"space-between"}}>
+                      <div>
+                        <div style={{...MONO,fontSize:11,fontWeight:700,color:active?T.accent:T.textBright}}>
+                          {th.label||th.name}
+                          {active && <span style={{color:T.accent,marginLeft:5}}>✓</span>}
+                        </div>
+                        <div style={{...MONO,fontSize:9,color:T.textFaint,marginTop:1}}>
+                          {isBuiltin ? "built-in" : "custom"}
+                        </div>
+                      </div>
+                      <div style={{display:"flex",gap:4}}>
+                        {!isBuiltin && (
+                          <button title="Edit" onClick={e=>{e.stopPropagation();startEdit(th);}}
+                            style={{...MONO,fontSize:10,background:T.accentBg,border:`1px solid ${T.accentDim}`,
+                              borderRadius:4,color:T.accent,cursor:"pointer",padding:"2px 6px"}}>
+                            edit
+                          </button>
+                        )}
+                        {!isBuiltin && (
+                          <button title="Delete" onClick={e=>{e.stopPropagation();onDelete(th.name);}}
+                            style={{...MONO,fontSize:10,background:T.redBg,border:`1px solid ${T.redBorder}`,
+                              borderRadius:4,color:T.red,cursor:"pointer",padding:"2px 6px"}}>
+                            ✕
+                          </button>
+                        )}
+                        {isBuiltin && (
+                          <button title="Use as base for custom theme"
+                            onClick={e=>{e.stopPropagation();startEdit(th);}}
+                            style={{...MONO,fontSize:10,background:T.accentBg,border:`1px solid ${T.accentDim}`,
+                              borderRadius:4,color:T.accent,cursor:"pointer",padding:"2px 6px"}}>
+                            fork
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {/* New theme card */}
+              <div onClick={startNew}
+                style={{borderRadius:8,border:`2px dashed ${T.border}`,
+                  background:"transparent",cursor:"pointer",
+                  display:"flex",flexDirection:"column",alignItems:"center",
+                  justifyContent:"center",gap:8,minHeight:130,padding:12,
+                  color:T.textDim,transition:"border-color 0.15s"}}
+                onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent}
+                onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+                <div style={{fontSize:24}}>＋</div>
+                <div style={{...MONO,fontSize:11}}>New Custom Theme</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Editor tab */}
+        {tab==="editor" && editState && (
+          <div style={{overflowY:"auto",flex:1,padding:"16px 20px"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+              {/* Left: color fields */}
+              <div>
+                {/* Theme name */}
+                <div style={{marginBottom:14}}>
+                  <label style={{...MONO,fontSize:10,color:T.textDim,display:"block",marginBottom:4}}>
+                    THEME NAME
+                  </label>
+                  <input value={editName}
+                    onChange={e=>{setEditName(e.target.value);setNameError("");}}
+                    style={{...inputStyle,borderColor:nameError?T.red:undefined}}
+                    placeholder="My Theme"/>
+                  {nameError && <div style={{...MONO,fontSize:10,color:T.red,marginTop:3}}>{nameError}</div>}
+                </div>
+
+                {/* Font size */}
+                <div style={{marginBottom:14}}>
+                  <label style={{...MONO,fontSize:10,color:T.textDim,display:"block",marginBottom:4}}>
+                    FONT SIZE — {editState.fontSize||14}px
+                  </label>
+                  <input type="range" min={11} max={20}
+                    value={editState.fontSize||14}
+                    onChange={e=>setEditState(s=>({...s,fontSize:+e.target.value}))}
+                    style={{width:"100%",accentColor:T.accent}}/>
+                </div>
+
+                {/* Color fields */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                  {THEME_EDITOR_FIELDS.map(({key,label})=>(
+                    <div key={key}>
+                      <label style={{...MONO,fontSize:9,color:T.textDim,display:"block",marginBottom:2}}>
+                        {label.toUpperCase()}
+                      </label>
+                      <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                        <input type="color"
+                          value={(editState[key]||"#000000").slice(0,7)}
+                          onChange={e=>setEditState(s=>({...s,[key]:e.target.value}))}
+                          style={{width:28,height:24,border:`1px solid ${T.border}`,
+                            borderRadius:4,padding:0,cursor:"pointer",background:"none"}}/>
+                        <input value={editState[key]||""}
+                          onChange={e=>setEditState(s=>({...s,[key]:e.target.value}))}
+                          style={{...inputStyle,padding:"3px 6px",fontSize:10}}
+                          placeholder="#rrggbb"/>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Right: live preview */}
+              <div>
+                <div style={{...MONO,fontSize:10,color:T.textDim,marginBottom:8}}>LIVE PREVIEW</div>
+                <ThemePreviewSwatch theme={editState}/>
+                <div style={{marginTop:10,...MONO,fontSize:10,color:T.textFaint,lineHeight:1.7}}>
+                  Tip: use &ldquo;fork&rdquo; on any built-in theme to start from its colors.
+                  Advanced tokens (hover states, alpha variants) are auto-derived when saved.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div style={{padding:"12px 20px",borderTop:`1px solid ${T.border}`,flexShrink:0,
+          display:"flex",justifyContent:"flex-end",gap:8}}>
+          {tab==="editor" && (
+            <>
+              <button onClick={()=>setTab("gallery")}
+                style={{...MONO,fontSize:12,padding:"7px 16px",background:T.accentBg,
+                  border:`1px solid ${T.accentDim}`,borderRadius:6,color:T.textDim,cursor:"pointer"}}>
+                Cancel
+              </button>
+              <button onClick={handleSave}
+                style={{...MONO,fontSize:12,padding:"7px 16px",background:T.accent,
+                  border:"none",borderRadius:6,color:T.bg,cursor:"pointer",fontWeight:700}}>
+                Save Theme
+              </button>
+            </>
+          )}
+          {tab==="gallery" && (
+            <button onClick={onClose}
+              style={{...MONO,fontSize:12,padding:"7px 16px",background:T.accentBg,
+                border:`1px solid ${T.accentDim}`,borderRadius:6,color:T.accent,cursor:"pointer"}}>
+              Done
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
