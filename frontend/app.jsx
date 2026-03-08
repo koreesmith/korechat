@@ -2072,6 +2072,7 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                 </div>
               )}
             </div>
+          )}
 
           {/* ── Notifications tab ── */}
           {tab==="notifications"&&(
@@ -2144,10 +2145,8 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                     </div>
                   ))}
                 </div>
-
               </div>
             </div>
-          )}
           )}
 
         </div>
