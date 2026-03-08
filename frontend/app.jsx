@@ -435,7 +435,7 @@ function MsgRow({ msg, prev, myNick }) {
   if (msg.type==="system") return (
     <div style={{padding:"2px 16px 2px 58px",userSelect:"text"}}>
       <span style={{fontSize:13,color:T.textDim,fontStyle:"italic",fontFamily:"'JetBrains Mono',monospace"}}>{msg.text}</span>
-      {msg.time&&<span style={{fontSize:11,color:T.textFaint,marginLeft:6,fontFamily:"'JetBrains Mono',monospace"}}>{fmtTime(msg.time)}</span>}
+      {msg.time&&<span style={{fontSize:11,color:T.textDim,marginLeft:6,fontFamily:"'JetBrains Mono',monospace"}}>{fmtTime(msg.time)}</span>}
     </div>
   );
   const cont=prev?.type==="message"&&prev.nick===msg.nick&&(new Date(msg.time)-new Date(prev.time))<300000;
@@ -451,7 +451,7 @@ function MsgRow({ msg, prev, myNick }) {
         {!cont&&(
           <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:2}}>
             <span style={{fontWeight:700,fontSize:14,color:nickColor(msg.nick),fontFamily:"'JetBrains Mono',monospace"}}>{msg.nick}</span>
-            <span style={{fontSize:11,color:T.textFaint,fontFamily:"'JetBrains Mono',monospace"}}>{fmtTime(msg.time)}</span>
+            <span style={{fontSize:11,color:T.textDim,fontFamily:"'JetBrains Mono',monospace"}}>{fmtTime(msg.time)}</span>
           </div>
         )}
         <div style={{fontSize:15,color:T.text,lineHeight:1.6,wordBreak:"break-word"}}>
