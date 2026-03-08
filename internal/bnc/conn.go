@@ -128,6 +128,7 @@ type Conn struct {
 	serverCaps  map[string]bool // caps advertised by server in CAP LS
 	ackedCaps   map[string]bool // caps we successfully negotiated
 	capQueue    []string        // caps waiting to be REQ'd one at a time
+	capInflight bool            // true when a CAP REQ has been sent but not yet ACK/NAK'd
 }
 
 func newConn(n *networks.Network, store *networks.Store, mgr *Manager, logFn LogFunc) *Conn {
@@ -304,6 +305,7 @@ func (c *Conn) dial() {
 	c.currentNick = c.net.Nick
 	c.saslDone = false
 	c.capQueue    = nil
+	c.capInflight = false
 	c.serverCaps = make(map[string]bool)
 	c.ackedCaps  = make(map[string]bool)
 	c.mu.Unlock()
@@ -521,11 +523,13 @@ func (c *Conn) intercept(line string) {
 			for k := range c.ackedCaps {
 				ackedList = append(ackedList, k)
 			}
-			// Send next queued cap if any, otherwise we're done
+			// This ACK resolves the current inflight REQ
+			c.capInflight = false
 			var nextCap string
 			if len(c.capQueue) > 0 {
 				nextCap = c.capQueue[0]
 				c.capQueue = c.capQueue[1:]
+				c.capInflight = true
 			}
 			queueLen := len(c.capQueue)
 			c.mu.Unlock()
@@ -535,7 +539,7 @@ func (c *Conn) intercept(line string) {
 				// More caps to request — send next one
 				c.sendRaw("CAP REQ :" + nextCap)
 			} else {
-				// All caps resolved — proceed to SASL or CAP END
+				// Queue empty and nothing inflight — proceed
 				if useSASL && c.hasAckedCap("sasl") {
 					c.sendRaw("AUTHENTICATE " + c.net.SASLMechanism)
 				} else {
@@ -547,26 +551,25 @@ func (c *Conn) intercept(line string) {
 			log.Printf("bnc[%s]: CAP NAK for: %s — retrying individually", c.net.ID, caps)
 			nakCaps := strings.Fields(caps)
 			if len(nakCaps) > 1 {
-				// Bulk NAK — queue all caps and send first one now
+				// Bulk NAK — queue remaining caps, send first one now
 				c.mu.Lock()
-				if len(nakCaps) > 1 {
-					c.capQueue = append(c.capQueue, nakCaps[1:]...)
-				}
+				c.capQueue = append(c.capQueue, nakCaps[1:]...)
+				c.capInflight = true
 				c.mu.Unlock()
-				// Send the first cap immediately; ACK/NAK will send the rest
 				c.sendRaw("CAP REQ :" + nakCaps[0])
 			} else {
-				// Single cap rejected — log it
+				// Single cap rejected
 				log.Printf("bnc[%s]: cap %q not supported", c.net.ID, caps)
 				if useSASL && strings.Contains(caps, "sasl") {
 					c.notice("⚠ Server rejected SASL capability — connected without authentication")
 				}
-				// Check if more caps are queued
 				c.mu.Lock()
+				c.capInflight = false
 				var nextCap string
 				if len(c.capQueue) > 0 {
 					nextCap = c.capQueue[0]
 					c.capQueue = c.capQueue[1:]
+					c.capInflight = true
 				}
 				c.mu.Unlock()
 
