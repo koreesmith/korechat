@@ -2119,6 +2119,9 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                     </div>
                     {notifPerms!=="granted"&&(
                       <button onClick={()=>{
+                        // Re-read first — Safari may already have granted via system settings
+                        const live = Notification?.permission;
+                        if (live === "granted") { setNotifPerms("granted"); return; }
                         Notification.requestPermission().then(p=>setNotifPerms(p));
                       }} style={{...MONO,padding:"5px 12px",borderRadius:6,border:"none",
                         background:notifPerms==="denied"?T.border:T.accent,
@@ -2303,6 +2306,14 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
   // Notification preferences (persisted to sessionStorage, loaded once)
   const [notifPerms, setNotifPerms] = useState(() => Notification?.permission || "default");
+  // Re-sync permission state whenever it may have changed (e.g. user updated browser settings)
+  React.useEffect(() => {
+    const sync = () => setNotifPerms(Notification?.permission || "default");
+    sync();
+    // Poll every 2s while Settings modal is open — catches Safari's delayed grant
+    const id = setInterval(sync, 2000);
+    return () => clearInterval(id);
+  }, []);
   const [notifPrefs, setNotifPrefs] = useState(() => {
     try { return JSON.parse(localStorage.getItem("kc_notif_prefs") || "{}"); } catch { return {}; }
   });
