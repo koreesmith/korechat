@@ -1592,7 +1592,7 @@ function SectionHeader({ label, count, open, onToggle }) {
 }
 
 // ─── Logs Modal ───────────────────────────────────────────────────────────────
-function LogsModal({ onClose }) {
+function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, saveNotifPrefs }) {
   const T = useTheme();
   const MONO = { fontFamily:"'JetBrains Mono',monospace" };
   const IS = {
@@ -1733,12 +1733,12 @@ function LogsModal({ onClose }) {
         {/* Header */}
         <div style={{padding:"16px 20px 0",borderBottom:`1px solid ${T.border}`,flexShrink:0}}>
           <div style={{display:"flex",alignItems:"center",marginBottom:14}}>
-            <span style={{...MONO,fontSize:15,fontWeight:700,color:T.textBright}}>📋 Message Logs</span>
+            <span style={{...MONO,fontSize:15,fontWeight:700,color:T.textBright}}>⚙ User Settings</span>
             <button onClick={onClose} style={{marginLeft:"auto",background:"transparent",
               border:"none",color:T.textFaint,fontSize:18,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>
           </div>
           <div style={{display:"flex",gap:0}}>
-            {[["browse","Browse"],["settings","Settings"]].map(([id,label])=>(
+            {[["browse","Browse"],["logs","Logs"],["notifications","Notifications"]].map(([id,label])=>(
               <button key={id} onClick={()=>setTab(id)}
                 style={{...MONO,fontSize:12,padding:"7px 16px",border:"none",cursor:"pointer",
                   borderBottom: tab===id ? `2px solid ${T.accent||T.blue||"#58a6ff"}` : "2px solid transparent",
@@ -1965,8 +1965,8 @@ function LogsModal({ onClose }) {
             </div>
           )}
 
-          {/* ── Settings tab ── */}
-          {tab==="settings"&&(
+          {/* ── Logs tab ── */}
+          {tab==="logs"&&(
             <div style={{flex:1,overflowY:"auto",padding:"24px 28px"}}>
               {!settings ? (
                 <div style={{color:T.textFaint,...MONO,fontSize:13}}>Loading…</div>
@@ -2057,74 +2057,6 @@ function LogsModal({ onClose }) {
                     ))}
                   </div>
 
-                  {/* ── Notifications ── */}
-                  <div style={{background:T.bg,borderRadius:8,border:`1px solid ${T.border}`,padding:"16px 18px"}}>
-                    <div style={{...MONO,fontSize:13,fontWeight:700,color:T.textBright,marginBottom:4}}>
-                      Browser Notifications
-                    </div>
-                    <div style={{fontSize:12,color:T.textFaint,lineHeight:1.5,marginBottom:14}}>
-                      Get notified even when the tab is in the background.
-                    </div>
-
-                    {/* Permission status + request button */}
-                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,
-                      padding:"10px 12px",borderRadius:6,
-                      background: notifPerms==="granted"?T.greenBg:notifPerms==="denied"?T.redBg:T.accentBg,
-                      border:`1px solid ${notifPerms==="granted"?T.greenBorder:notifPerms==="denied"?T.redBorder:T.accentDim}`}}>
-                      <span style={{fontSize:14}}>
-                        {notifPerms==="granted"?"🔔":notifPerms==="denied"?"🔕":"🔔"}
-                      </span>
-                      <div style={{flex:1}}>
-                        <div style={{fontSize:12,fontWeight:600,
-                          color:notifPerms==="granted"?T.green:notifPerms==="denied"?T.red:T.accent}}>
-                          {notifPerms==="granted"?"Notifications enabled"
-                            :notifPerms==="denied"?"Notifications blocked by browser"
-                            :"Notifications not yet enabled"}
-                        </div>
-                        {notifPerms==="denied"&&(
-                          <div style={{fontSize:11,color:T.textFaint,marginTop:2}}>
-                            Click the lock icon in your browser's address bar to unblock.
-                          </div>
-                        )}
-                      </div>
-                      {notifPerms!=="granted"&&notifPerms!=="denied"&&(
-                        <button onClick={()=>{
-                          Notification.requestPermission().then(p=>setNotifPerms(p));
-                        }} style={{...MONO,padding:"5px 12px",borderRadius:6,border:"none",
-                          background:T.accent,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",
-                          flexShrink:0}}>
-                          Enable
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Notification toggles */}
-                    {[
-                      ["mentions","Mentions","Notify when someone says your nick in a channel"],
-                      ["dms","Direct Messages","Notify when you receive a private message"],
-                      ["onlyWhenHidden","Only when tab is hidden","Skip notifications when KoreChat is the active tab"],
-                    ].map(([key, label, desc])=>(
-                      <div key={key} style={{display:"flex",alignItems:"center",
-                        justifyContent:"space-between",padding:"8px 0",
-                        borderTop:`1px solid ${T.borderFaint}`}}>
-                        <div>
-                          <div style={{fontSize:13,color:T.text,fontWeight:500}}>{label}</div>
-                          <div style={{fontSize:11,color:T.textFaint,marginTop:2}}>{desc}</div>
-                        </div>
-                        <button
-                          disabled={notifPerms!=="granted"}
-                          onClick={()=>saveNotifPrefs({...notifPrefs,[key]:notifPrefs[key]===false?true:!(notifPrefs[key]??true)})}
-                          style={{...MONO,flexShrink:0,marginLeft:16,padding:"4px 14px",
-                            borderRadius:20,border:"none",cursor:notifPerms==="granted"?"pointer":"not-allowed",
-                            fontSize:11,fontWeight:700,opacity:notifPerms==="granted"?1:0.4,
-                            background:(notifPrefs[key]??true)?T.green:T.border,
-                            color:(notifPrefs[key]??true)?"#fff":T.textFaint}}>
-                          {(notifPrefs[key]??true)?"ON":"OFF"}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-
                   {/* Save button */}
                   <div style={{display:"flex",alignItems:"center",gap:12}}>
                     <button onClick={saveSettings} disabled={settingsSaving}
@@ -2140,6 +2072,82 @@ function LogsModal({ onClose }) {
                 </div>
               )}
             </div>
+
+          {/* ── Notifications tab ── */}
+          {tab==="notifications"&&(
+            <div style={{flex:1,overflowY:"auto",padding:"24px 28px"}}>
+              <div style={{maxWidth:440,display:"flex",flexDirection:"column",gap:20}}>
+                {/* ── Notifications ── */}
+                <div style={{background:T.bg,borderRadius:8,border:`1px solid ${T.border}`,padding:"16px 18px"}}>
+                  <div style={{...MONO,fontSize:13,fontWeight:700,color:T.textBright,marginBottom:4}}>
+                    Browser Notifications
+                  </div>
+                  <div style={{fontSize:12,color:T.textFaint,lineHeight:1.5,marginBottom:14}}>
+                    Get notified even when the tab is in the background.
+                  </div>
+
+                  {/* Permission status + request button */}
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,
+                    padding:"10px 12px",borderRadius:6,
+                    background: notifPerms==="granted"?T.greenBg:notifPerms==="denied"?T.redBg:T.accentBg,
+                    border:`1px solid ${notifPerms==="granted"?T.greenBorder:notifPerms==="denied"?T.redBorder:T.accentDim}`}}>
+                    <span style={{fontSize:14}}>
+                      {notifPerms==="granted"?"🔔":notifPerms==="denied"?"🔕":"🔔"}
+                    </span>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:12,fontWeight:600,
+                        color:notifPerms==="granted"?T.green:notifPerms==="denied"?T.red:T.accent}}>
+                        {notifPerms==="granted"?"Notifications enabled"
+                          :notifPerms==="denied"?"Notifications blocked by browser"
+                          :"Notifications not yet enabled"}
+                      </div>
+                      {notifPerms==="denied"&&(
+                        <div style={{fontSize:11,color:T.textFaint,marginTop:2}}>
+                          Click the lock icon in your browser's address bar to unblock.
+                        </div>
+                      )}
+                    </div>
+                    {notifPerms!=="granted"&&notifPerms!=="denied"&&(
+                      <button onClick={()=>{
+                        Notification.requestPermission().then(p=>setNotifPerms(p));
+                      }} style={{...MONO,padding:"5px 12px",borderRadius:6,border:"none",
+                        background:T.accent,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",
+                        flexShrink:0}}>
+                        Enable
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Notification toggles */}
+                  {[
+                    ["mentions","Mentions","Notify when someone says your nick in a channel"],
+                    ["dms","Direct Messages","Notify when you receive a private message"],
+                    ["onlyWhenHidden","Only when tab is hidden","Skip notifications when KoreChat is the active tab"],
+                  ].map(([key, label, desc])=>(
+                    <div key={key} style={{display:"flex",alignItems:"center",
+                      justifyContent:"space-between",padding:"8px 0",
+                      borderTop:`1px solid ${T.borderFaint}`}}>
+                      <div>
+                        <div style={{fontSize:13,color:T.text,fontWeight:500}}>{label}</div>
+                        <div style={{fontSize:11,color:T.textFaint,marginTop:2}}>{desc}</div>
+                      </div>
+                      <button
+                        disabled={notifPerms!=="granted"}
+                        onClick={()=>saveNotifPrefs({...notifPrefs,[key]:notifPrefs[key]===false?true:!(notifPrefs[key]??true)})}
+                        style={{...MONO,flexShrink:0,marginLeft:16,padding:"4px 14px",
+                          borderRadius:20,border:"none",cursor:notifPerms==="granted"?"pointer":"not-allowed",
+                          fontSize:11,fontWeight:700,opacity:notifPerms==="granted"?1:0.4,
+                          background:(notifPrefs[key]??true)?T.green:T.border,
+                          color:(notifPrefs[key]??true)?"#fff":T.textFaint}}>
+                        {(notifPrefs[key]??true)?"ON":"OFF"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+              </div>
+            </div>
+          )}
           )}
 
         </div>
@@ -3162,7 +3170,9 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
       )}
 
       {showLogs&&(
-        <LogsModal onClose={()=>setShowLogs(false)} />
+        <UserSettingsModal onClose={()=>setShowLogs(false)}
+          notifPerms={notifPerms} setNotifPerms={setNotifPerms}
+          notifPrefs={notifPrefs} saveNotifPrefs={saveNotifPrefs} />
       )}
 
       {showAddNet&&(
@@ -3486,7 +3496,7 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
               textAlign:"left"}}
             onMouseEnter={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.color=T.text;}}
             onMouseLeave={e=>{e.currentTarget.style.borderColor=T.borderFaint;e.currentTarget.style.color=T.textFaint;}}>
-            📋 Message Logs
+            ⚙ Settings
           </button>
         </div>
       </div>
