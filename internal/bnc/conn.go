@@ -383,6 +383,12 @@ func (c *Conn) readLoop(tc net.Conn) {
 		}
 
 		line := scanner.Text()
+		// Raw receive log — redact AUTHENTICATE credential lines
+		logLine := line
+		if strings.HasPrefix(strings.ToUpper(line), "AUTHENTICATE ") && line != "AUTHENTICATE +" {
+			logLine = "AUTHENTICATE <redacted>"
+		}
+		log.Printf("bnc[%s] ← %s", c.net.ID, logLine)
 		// Any incoming data resets the keepalive timer — we only care that
 		// the TCP connection is alive, not specifically that PONG arrived.
 		c.mu.Lock()
@@ -864,6 +870,16 @@ func (c *Conn) sendRaw(line string) {
 	if tc == nil {
 		return
 	}
+	// Raw send log — redact AUTHENTICATE credentials and PASS/OPER passwords
+	logLine := line
+	upper := strings.ToUpper(line)
+	switch {
+	case strings.HasPrefix(upper, "AUTHENTICATE ") && line != "AUTHENTICATE PLAIN" && line != "AUTHENTICATE *":
+		logLine = "AUTHENTICATE <redacted>"
+	case strings.HasPrefix(upper, "PASS "):
+		logLine = "PASS <redacted>"
+	}
+	log.Printf("bnc[%s] → %s", c.net.ID, logLine)
 	tc.SetWriteDeadline(time.Now().Add(writeTimeout))
 	fmt.Fprintf(tc, "%s\r\n", line)
 }
