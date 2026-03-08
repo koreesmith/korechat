@@ -2106,6 +2106,39 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
             if (nickMatch) dispatch({ type:"SET_NICK", netId, nick:nickMatch[1] });
             ensureChan(netId, STATUS_CHAN);
             addSys(netId, STATUS_CHAN, "✓ Reconnected — message history restored");
+
+            // Load recent log history for each joined channel from Postgres
+            // This fills in history even when the IRC server doesn't support CHATHISTORY
+            const chans = channelsRef.current;
+            const prefix = netId + "::";
+            const chanNames = Object.keys(chans)
+              .filter(k => k.startsWith(prefix) && !k.endsWith("::__status__"))
+              .map(k => k.slice(prefix.length))
+              .filter(c => c.startsWith("#") || c.startsWith("&"));
+
+            chanNames.forEach(chan => {
+              const params = new URLSearchParams({
+                network_id: netId,
+                channel:    chan,
+                limit:      "100",
+                type:       "PRIVMSG",
+              });
+              fetch(`/api/v1/logs?${params}`, { credentials:"include" })
+                .then(r => r.ok ? r.json() : null)
+                .then(data => {
+                  if (!data?.entries?.length) return;
+                  const msgs = data.entries.map(e => ({
+                    type: "message",
+                    nick: e.nick,
+                    text: e.text,
+                    time: e.timestamp,
+                    id:   `log-${e.id}`,
+                  }));
+                  ensureChan(netId, chan);
+                  dispatch({ type:"PREPEND_MSGS", netId, chan, msgs });
+                })
+                .catch(() => {});
+            });
             break;
           }
           // All other BNC/korechat notices → show in status channel
