@@ -3001,7 +3001,7 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
                 list.length===0 ? null : (
                   <div key={lbl}>
                     <div style={{...MONO,padding:"9px 10px 4px",fontSize:10,
-                      color:T.textFaint,textTransform:"uppercase",letterSpacing:"0.1em"}}>
+                      color:T.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em"}}>
                       {lbl} — {list.length}
                     </div>
                     {list.map(([nick,pfx])=>(
