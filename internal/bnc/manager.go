@@ -12,8 +12,9 @@ import (
 // Manager owns all persistent BNC connections.
 // One Manager exists for the lifetime of the server process.
 type Manager struct {
-	store *networks.Store
-	logFn LogFunc // may be nil
+	store    *networks.Store
+	logFn    LogFunc // may be nil
+	ircDebug bool
 
 	mu    sync.RWMutex
 	conns map[string]*Conn // networkID → Conn
@@ -26,6 +27,9 @@ func NewManager(store *networks.Store) *Manager {
 		conns: make(map[string]*Conn),
 	}
 }
+
+// SetIRCDebug enables or disables raw IRC line logging.
+func (m *Manager) SetIRCDebug(v bool) { m.ircDebug = v }
 
 // SetLogFunc attaches a logging callback. Call before Start().
 func (m *Manager) SetLogFunc(fn LogFunc) {

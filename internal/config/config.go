@@ -21,6 +21,9 @@ type Config struct {
 
 	// Postgres
 	DatabaseURL string
+
+	// Developer
+	IRCDebug bool // log raw IRC lines sent/received
 }
 
 func Load() *Config {
@@ -34,6 +37,7 @@ func Load() *Config {
 		MOTD:        getEnv("MOTD", "Welcome to KoreChat · IRCv3 · Built for teams"),
 		JWTSecret:   getEnv("JWT_SECRET", "changeme-please-use-a-long-random-string"),
 		DatabaseURL: getEnv("DATABASE_URL", "postgres://korechat:korechat@postgres:5432/korechat?sslmode=disable"),
+		IRCDebug:    getEnvBool("IRC_DEBUG", false),
 	}
 }
 

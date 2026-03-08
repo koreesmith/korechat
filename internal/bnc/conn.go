@@ -121,6 +121,9 @@ type Conn struct {
 	// keepalive tracking
 	lastPong time.Time
 
+	// Developer options
+	ircDebug bool // log raw ← recv and → send lines
+
 	// SASL state (used during registration)
 	saslDone bool
 
@@ -137,6 +140,7 @@ func newConn(n *networks.Network, store *networks.Store, mgr *Manager, logFn Log
 		store:       store,
 		manager:     mgr,
 		logFn:       logFn,
+		ircDebug:    mgr.ircDebug,
 		joinedChans: make(map[string]bool),
 		buffers:     make(map[string]*RingBuffer),
 		subs:        make(map[string]*subscriber),
@@ -384,11 +388,13 @@ func (c *Conn) readLoop(tc net.Conn) {
 
 		line := scanner.Text()
 		// Raw receive log — redact AUTHENTICATE credential lines
-		logLine := line
-		if strings.HasPrefix(strings.ToUpper(line), "AUTHENTICATE ") && line != "AUTHENTICATE +" {
-			logLine = "AUTHENTICATE <redacted>"
+		if c.ircDebug {
+			logLine := line
+			if strings.HasPrefix(strings.ToUpper(line), "AUTHENTICATE ") && line != "AUTHENTICATE +" {
+				logLine = "AUTHENTICATE <redacted>"
+			}
+			log.Printf("bnc[%s] ← %s", c.net.ID, logLine)
 		}
-		log.Printf("bnc[%s] ← %s", c.net.ID, logLine)
 		// Any incoming data resets the keepalive timer — we only care that
 		// the TCP connection is alive, not specifically that PONG arrived.
 		c.mu.Lock()
@@ -881,15 +887,17 @@ func (c *Conn) sendRaw(line string) {
 		return
 	}
 	// Raw send log — redact AUTHENTICATE credentials and PASS/OPER passwords
-	logLine := line
-	upper := strings.ToUpper(line)
-	switch {
-	case strings.HasPrefix(upper, "AUTHENTICATE ") && line != "AUTHENTICATE PLAIN" && line != "AUTHENTICATE *":
-		logLine = "AUTHENTICATE <redacted>"
-	case strings.HasPrefix(upper, "PASS "):
-		logLine = "PASS <redacted>"
+	if c.ircDebug {
+		logLine := line
+		upper := strings.ToUpper(line)
+		switch {
+		case strings.HasPrefix(upper, "AUTHENTICATE ") && line != "AUTHENTICATE PLAIN" && line != "AUTHENTICATE *":
+			logLine = "AUTHENTICATE <redacted>"
+		case strings.HasPrefix(upper, "PASS "):
+			logLine = "PASS <redacted>"
+		}
+		log.Printf("bnc[%s] → %s", c.net.ID, logLine)
 	}
-	log.Printf("bnc[%s] → %s", c.net.ID, logLine)
 	tc.SetWriteDeadline(time.Now().Add(writeTimeout))
 	fmt.Fprintf(tc, "%s\r\n", line)
 }

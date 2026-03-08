@@ -42,6 +42,10 @@ func main() {
 	// status — connecting/connected/error — lives in memory).
 	ns := networks.NewStore()
 	bm := bnc.NewManager(ns)
+	bm.SetIRCDebug(cfg.IRCDebug)
+	if cfg.IRCDebug {
+		log.Println("IRC_DEBUG enabled — raw IRC lines will be logged")
+	}
 
 	// Load all networks from DB and start persistent connections
 	allNets, err := db.ListAllNetworks()
