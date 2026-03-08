@@ -3,6 +3,7 @@ package bnc
 import (
 	"fmt"
 	"log"
+	"runtime"
 	"sync"
 
 	"github.com/koree/korechat/internal/networks"
@@ -91,6 +92,11 @@ func (m *Manager) DisconnectNetwork(networkID string) {
 // ReconnectNetwork starts a fresh connection for a network that was previously
 // disconnected. Looks up the network from the store.
 func (m *Manager) ReconnectNetwork(n *networks.Network) {
+	// Log caller for debugging double-connect issues
+	buf := make([]byte, 2048)
+	buf = buf[:runtime.Stack(buf, false)]
+	log.Printf("bnc: ReconnectNetwork called for %s — stack:\n%s", n.Name, buf)
+
 	m.store.SetStatus(n.ID, networks.StatusDisconnected, "")
 	m.startConn(n)
 	log.Printf("bnc: reconnecting network %s (%s)", n.Name, n.Addr())
