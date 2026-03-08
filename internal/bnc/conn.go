@@ -694,6 +694,7 @@ func (c *Conn) intercept(line string) {
 				chans = append(chans, ch)
 			}
 			c.mu.Unlock()
+			log.Printf("bnc[%s]: auto-join: %d channel(s): %v", c.net.ID, len(chans), chans)
 			for _, ch := range chans {
 				c.sendRaw("JOIN " + ch)
 			}
