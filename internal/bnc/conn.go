@@ -651,6 +651,7 @@ func (c *Conn) intercept(line string) {
 		// Execute OnConnect perform commands, then auto-join channels.
 		// Small initial delay lets the server finish its welcome burst.
 		go func() {
+			log.Printf("bnc[%s]: auto-join goroutine started, sleeping 500ms", c.net.ID)
 			time.Sleep(500 * time.Millisecond)
 
 			// Run perform commands (slash commands like /msg, /oper, etc.)
@@ -780,6 +781,20 @@ func (c *Conn) intercept(line string) {
 			delete(c.joinedChans, ch)
 			c.mu.Unlock()
 		}
+
+	case "471", "473", "474", "475", "477", "485":
+		// JOIN error numerics — log them so we can diagnose auto-join failures
+		// 471=channel full, 473=invite only, 474=banned, 475=key required
+		// 477=need registered nick, 485=cannot join (unaffiliated)
+		errChan := ""
+		if len(parts) > idx+2 {
+			errChan = parts[idx+2]
+		}
+		errMsg := ""
+		if len(parts) > idx+3 {
+			errMsg = strings.TrimPrefix(parts[len(parts)-1], ":")
+		}
+		log.Printf("bnc[%s]: JOIN error %s for %s: %s", c.net.ID, cmd, errChan, errMsg)
 
 	case "ERROR":
 		log.Printf("bnc[%s]: server ERROR: %s", c.net.ID, line)
