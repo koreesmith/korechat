@@ -2119,15 +2119,18 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                     </div>
                     {notifPerms!=="granted"&&(
                       <button onClick={()=>{
-                        // Re-read first — Safari may already have granted via system settings
-                        const live = Notification?.permission;
-                        if (live === "granted") { setNotifPerms("granted"); return; }
+                        if (notifPerms === "denied") {
+                          // Safari caches denied in-session even if system settings changed.
+                          // A full reload forces it to re-read the real permission.
+                          window.location.reload();
+                          return;
+                        }
                         Notification.requestPermission().then(p=>setNotifPerms(p));
                       }} style={{...MONO,padding:"5px 12px",borderRadius:6,border:"none",
                         background:notifPerms==="denied"?T.border:T.accent,
                         color:notifPerms==="denied"?T.textDim:"#fff",
                         fontSize:11,fontWeight:700,cursor:"pointer",flexShrink:0}}>
-                        {notifPerms==="denied"?"Try again":"Enable"}
+                        {notifPerms==="denied"?"Reload to apply":"Enable"}
                       </button>
                     )}
                   </div>
