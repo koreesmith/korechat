@@ -8,27 +8,18 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body, #root { height: 100%; width: 100%; overflow: hidden; }
     body { background: #080f1e; color: #c8d8f0; }
-
-    /* Scrollbars */
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #ffffff18; border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #ffffff30; }
-
-    /* Inter from Google Fonts */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700;800&display=swap');
-
-    /* Loading splash shown before React mounts */
     #splash {
       position: fixed; inset: 0;
       display: flex; align-items: center; justify-content: center;
       flex-direction: column; gap: 12px;
       background: #080f1e;
       font-family: 'JetBrains Mono', monospace;
-      color: #7eb8f7;
-      font-size: 13px;
-      z-index: 9999;
-      transition: opacity 0.3s;
+      color: #7eb8f7; font-size: 13px; z-index: 9999; transition: opacity 0.3s;
     }
     #splash .logo {
       width: 40px; height: 40px; border-radius: 12px;
@@ -36,13 +27,13 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 22px; font-weight: 900; color: #0a1628;
     }
-    #splash .dots span {
-      animation: blink 1.2s infinite;
-      opacity: 0;
-    }
+    #splash .dots span { animation: blink 1.2s infinite; opacity: 0; }
     #splash .dots span:nth-child(2) { animation-delay: 0.2s; }
     #splash .dots span:nth-child(3) { animation-delay: 0.4s; }
     @keyframes blink { 0%,80%,100% { opacity:0 } 40% { opacity:1 } }
+    #errmsg { padding:20px; max-width:900px; font-family:monospace; font-size:11px;
+      color:#f7a07e; white-space:pre-wrap; word-break:break-all; }
+    #errtitle { font-size:15px; font-weight:700; margin-bottom:12px; color:#f7d07e; }
   </style>
 </head>
 <body>
@@ -52,50 +43,57 @@
   </div>
   <div id="root"></div>
 
-  <!-- React 18 + ReactDOM (UMD) -->
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script>
+    function showErr(msg) {
+      var s = document.getElementById('splash');
+      if (s) {
+        s.innerHTML = '<div id="errmsg"><div id="errtitle">\u26a0 KoreChat Load Error</div>' + msg + '</div>';
+        s.style.opacity = '1';
+      }
+    }
+    window.onerror = function(msg, src, line, col, err) {
+      showErr((err ? String(err) + '\n' + (err.stack||'') : msg) + '\nFile: ' + src + ' Line: ' + line);
+      return true;
+    };
+    window.onunhandledrejection = function(e) {
+      showErr('Unhandled rejection: ' + String(e.reason));
+    };
+  </script>
 
-  <!-- Babel standalone for in-browser JSX transpilation -->
-  <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"></script>
-
-  <!-- KoreChat app (JSX, transpiled in-browser by Babel) -->
-  <script type="text/babel" data-type="module" src="/app.jsx"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"
+    onerror="showErr('Failed to load React from unpkg.com — CDN may be unreachable from this server.')"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"
+    onerror="showErr('Failed to load ReactDOM from unpkg.com')"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"
+    onerror="showErr('Failed to load Babel from unpkg.com')"></script>
 
   <script>
-    // Hide splash once React has mounted
-    window.__korechatReady = function() {
-      const s = document.getElementById('splash');
-      if (s) { s.style.opacity = '0'; setTimeout(() => s.remove(), 350); }
-    };
-    // Fallback: hide after 5s regardless
-    setTimeout(window.__korechatReady, 5000);
+    if (typeof React === 'undefined') { showErr('React did not load — CDN unreachable?'); }
+    else if (typeof Babel === 'undefined') { showErr('Babel did not load — CDN unreachable?'); }
+    else {
+      fetch('/app.jsx')
+        .then(function(r) { return r.text(); })
+        .then(function(src) {
+          try {
+            var out = Babel.transform(src, { presets: ['react'], filename: 'app.jsx' });
+            // Use indirect eval to run in global scope
+            (0, eval)(out.code);
+          } catch(e) {
+            showErr(String(e) + '\n' + (e.stack || ''));
+          }
+        })
+        .catch(function(e) {
+          showErr('Failed to fetch app.jsx: ' + String(e));
+        });
+    }
+  </script>
 
-    // Catch and display any JS/Babel errors visibly on screen
-    window.addEventListener('error', function(e) {
-      const s = document.getElementById('splash');
-      if (s) {
-        s.innerHTML = '<div style="padding:20px;max-width:800px;font-family:monospace;font-size:12px;color:#f7a07e;white-space:pre-wrap;word-break:break-all">'
-          + '<div style="font-size:16px;font-weight:700;margin-bottom:12px;color:#f7d07e">⚠ KoreChat Load Error</div>'
-          + (e.message || 'Unknown error') + '\n\n'
-          + 'File: ' + (e.filename || '?') + '\n'
-          + 'Line: ' + (e.lineno || '?') + ' Col: ' + (e.colno || '?')
-          + '</div>';
-        s.style.opacity = '1';
-      }
-      console.error('KoreChat load error:', e);
-    });
-    window.addEventListener('unhandledrejection', function(e) {
-      const s = document.getElementById('splash');
-      if (s) {
-        s.innerHTML = '<div style="padding:20px;max-width:800px;font-family:monospace;font-size:12px;color:#f7a07e;white-space:pre-wrap;word-break:break-all">'
-          + '<div style="font-size:16px;font-weight:700;margin-bottom:12px;color:#f7d07e">⚠ KoreChat Promise Error</div>'
-          + String(e.reason)
-          + '</div>';
-        s.style.opacity = '1';
-      }
-      console.error('KoreChat unhandled rejection:', e.reason);
-    });
+  <script>
+    window.__korechatReady = function() {
+      var s = document.getElementById('splash');
+      if (s) { s.style.opacity = '0'; setTimeout(function(){ s.remove(); }, 350); }
+    };
+    setTimeout(window.__korechatReady, 5000);
   </script>
 </body>
 </html>
