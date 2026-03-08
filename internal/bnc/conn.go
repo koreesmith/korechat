@@ -541,8 +541,10 @@ func (c *Conn) intercept(line string) {
 			} else {
 				// Queue empty and nothing inflight — proceed
 				if useSASL && c.hasAckedCap("sasl") {
+					log.Printf("bnc[%s]: CAP negotiation complete, sending AUTHENTICATE %s", c.net.ID, c.net.SASLMechanism)
 					c.sendRaw("AUTHENTICATE " + c.net.SASLMechanism)
 				} else {
+					log.Printf("bnc[%s]: CAP negotiation complete, sending CAP END (no SASL)", c.net.ID)
 					c.sendRaw("CAP END")
 				}
 			}
@@ -578,8 +580,10 @@ func (c *Conn) intercept(line string) {
 				} else {
 					// Nothing left — proceed
 					if useSASL && c.hasAckedCap("sasl") {
+						log.Printf("bnc[%s]: CAP negotiation complete (via NAK), sending AUTHENTICATE %s", c.net.ID, c.net.SASLMechanism)
 						c.sendRaw("AUTHENTICATE " + c.net.SASLMechanism)
 					} else {
+						log.Printf("bnc[%s]: CAP negotiation complete (via NAK), sending CAP END", c.net.ID)
 						c.sendRaw("CAP END")
 					}
 				}
@@ -589,9 +593,10 @@ func (c *Conn) intercept(line string) {
 	case "AUTHENTICATE":
 		// Server is ready for our credentials (sent "AUTHENTICATE +")
 		payload := ""
-		if len(parts) > idx {
+		if len(parts) > idx+1 {
 			payload = strings.TrimPrefix(parts[idx+1], ":")
 		}
+		log.Printf("bnc[%s]: AUTHENTICATE payload=%q", c.net.ID, payload)
 		if payload != "+" {
 			break
 		}
@@ -600,7 +605,9 @@ func (c *Conn) intercept(line string) {
 		case "PLAIN":
 			// PLAIN: base64("\x00username\x00password")
 			raw := "\x00" + c.net.SASLUsername + "\x00" + c.net.SASLPassword
-			c.sendRaw("AUTHENTICATE " + base64.StdEncoding.EncodeToString([]byte(raw)))
+			encoded := base64.StdEncoding.EncodeToString([]byte(raw))
+			log.Printf("bnc[%s]: sending AUTHENTICATE PLAIN credentials (username=%q)", c.net.ID, c.net.SASLUsername)
+			c.sendRaw("AUTHENTICATE " + encoded)
 		default:
 			c.sendRaw("AUTHENTICATE *")
 			log.Printf("bnc[%s]: unsupported SASL mechanism %q", c.net.ID, mech)
