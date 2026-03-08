@@ -125,8 +125,9 @@ type Conn struct {
 	saslDone bool
 
 	// IRCv3 capability tracking
-	serverCaps map[string]bool // caps advertised by server in CAP LS
-	ackedCaps  map[string]bool // caps we successfully negotiated
+	serverCaps  map[string]bool // caps advertised by server in CAP LS
+	ackedCaps   map[string]bool // caps we successfully negotiated
+	pendingCaps int             // number of individual CAP REQs awaiting ACK/NAK
 }
 
 func newConn(n *networks.Network, store *networks.Store, mgr *Manager, logFn LogFunc) *Conn {
@@ -302,6 +303,7 @@ func (c *Conn) dial() {
 	c.nickRetries = 0
 	c.currentNick = c.net.Nick
 	c.saslDone = false
+	c.pendingCaps = 0
 	c.serverCaps = make(map[string]bool)
 	c.ackedCaps  = make(map[string]bool)
 	c.mu.Unlock()
@@ -516,8 +518,18 @@ func (c *Conn) intercept(line string) {
 			for k := range c.ackedCaps {
 				ackedList = append(ackedList, k)
 			}
+			// Decrement pending counter — this REQ is resolved
+			if c.pendingCaps > 0 {
+				c.pendingCaps--
+			}
+			pending := c.pendingCaps
 			c.mu.Unlock()
-			log.Printf("bnc[%s]: CAP ACK, now have: %v", c.net.ID, ackedList)
+			log.Printf("bnc[%s]: CAP ACK, now have: %v (pending=%d)", c.net.ID, ackedList, pending)
+
+			// Only proceed to SASL / CAP END when all individual REQs are resolved
+			if pending > 0 {
+				break
+			}
 			if useSASL && c.hasAckedCap("sasl") {
 				c.sendRaw("AUTHENTICATE " + c.net.SASLMechanism)
 			} else {
@@ -530,7 +542,10 @@ func (c *Conn) intercept(line string) {
 			log.Printf("bnc[%s]: CAP NAK for: %s — retrying individually", c.net.ID, caps)
 			nakCaps := strings.Fields(caps)
 			if len(nakCaps) > 1 {
-				// Send separate REQ for each cap; collect ACKs individually
+				// Send separate REQ for each cap; track how many are in flight
+				c.mu.Lock()
+				c.pendingCaps += len(nakCaps)
+				c.mu.Unlock()
 				for _, cap := range nakCaps {
 					c.sendRaw("CAP REQ :" + cap)
 				}
@@ -540,7 +555,17 @@ func (c *Conn) intercept(line string) {
 				if useSASL && strings.Contains(caps, "sasl") {
 					c.notice("⚠ Server rejected SASL capability — connected without authentication")
 				}
-				c.sendRaw("CAP END")
+				// Decrement pending if this was an individual retry
+				c.mu.Lock()
+				if c.pendingCaps > 0 {
+					c.pendingCaps--
+				}
+				pending := c.pendingCaps
+				c.mu.Unlock()
+				// Only send CAP END if no more pending
+				if pending == 0 {
+					c.sendRaw("CAP END")
+				}
 			}
 		}
 
