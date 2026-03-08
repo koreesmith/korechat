@@ -427,6 +427,16 @@ func (c *Conn) readLoop(tc net.Conn) {
 // intercept handles proxy-level concerns: PING/PONG, nick tracking,
 // auto-join on 001, error handling. Does NOT forward to browser directly.
 func (c *Conn) intercept(line string) {
+	// Strip IRCv3 message tags (@tag=value ...) before parsing.
+	// Tags are always the first token when present, starting with '@'.
+	if strings.HasPrefix(line, "@") {
+		if sp := strings.Index(line, " "); sp >= 0 {
+			line = strings.TrimLeft(line[sp+1:], " ")
+		} else {
+			return // tags-only line, nothing to parse
+		}
+	}
+
 	// Split fully (not SplitN) so CAP/KICK/etc. multi-field commands parse correctly.
 	// For the trailing parameter (prefixed with ":") we keep it as-is; callers strip ":".
 	parts := strings.Split(line, " ")
@@ -903,6 +913,15 @@ func nickFrom(prefix string) string {
 // channelFromLine returns the channel name for lines that target a channel,
 // or "" for server/global messages.
 func channelFromLine(line string) string {
+	// Strip IRCv3 message tags
+	if strings.HasPrefix(line, "@") {
+		if sp := strings.Index(line, " "); sp >= 0 {
+			line = strings.TrimLeft(line[sp+1:], " ")
+		} else {
+			return ""
+		}
+	}
+
 	// Fast path: skip lines without a channel prefix in the target
 	parts := strings.SplitN(line, " ", 4)
 	if len(parts) < 3 {
