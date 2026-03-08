@@ -7,6 +7,10 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body, #root { height: 100%; width: 100%; overflow: hidden; }
+    /* Safari mobile 100vh fix — excludes browser chrome from height */
+    @supports (-webkit-touch-callout: none) {
+      html, body, #root { height: -webkit-fill-available; }
+    }
     body { background: #080f1e; color: #c8d8f0; }
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -75,11 +79,17 @@
 
   <script>
     function showErr(msg) {
-      var s = document.getElementById('splash');
-      if (s) {
-        s.innerHTML = '<div id="errmsg"><div id="errtitle">\u26a0 KoreChat Load Error</div>' + msg + '</div>';
-        s.style.opacity = '1';
+      // Works even after splash is removed - uses a persistent overlay
+      var el = document.getElementById('kc-error');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'kc-error';
+        el.style.cssText = 'position:fixed;inset:0;background:#080f1e;z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;';
+        document.body.appendChild(el);
       }
+      el.innerHTML = '<div style="max-width:900px;font-family:monospace;font-size:11px;color:#f7a07e;white-space:pre-wrap;word-break:break-all"><div style="font-size:15px;font-weight:700;margin-bottom:12px;color:#f7d07e">\u26a0 KoreChat Error</div>' + msg + '</div>';
+      var s = document.getElementById('splash');
+      if (s) s.style.display = 'none';
     }
     window.onerror = function(msg, src, line, col, err) {
       showErr((err ? String(err) + '\n' + (err.stack||'') : msg) + '\nFile: ' + src + ' Line: ' + line);

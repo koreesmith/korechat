@@ -2101,6 +2101,9 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                         {notifPerms==="granted"?"Notifications enabled"
                           :notifPerms==="denied"?"Notifications blocked by browser"
                           :"Notifications not yet enabled"}
+                        <span style={{fontSize:10,opacity:0.5,marginLeft:6}}>
+                          (raw: {Notification?.permission ?? "unsupported"})
+                        </span>
                       </div>
                       {notifPerms==="denied"&&(
                         <div style={{fontSize:11,color:T.textFaint,marginTop:2,lineHeight:1.6}}>
@@ -3176,7 +3179,7 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
 
   return (
     <ThemeCtx.Provider value={T}>
-    <div style={{display:"flex",height:"100vh",width:"100%",background:T.bg,
+    <div style={{display:"flex",height:"100%",width:"100%",background:T.bg,
       overflow:"hidden",color:T.text,fontFamily:"'Inter var','Inter',sans-serif"}}>
 
       {showProfile&&(
