@@ -954,18 +954,38 @@ const CMDS = {
   "/nick":        "Change nickname:  /nick <newnick>",
   "/topic":       "Get/set topic:  /topic [new topic]",
   "/kick":        "Kick user:  /kick <nick> [reason]",
+  "/kickban":     "Kick and ban:  /kickban <nick> [reason]",
   "/ban":         "Ban mask:  /ban <nick!user@host>",
   "/unban":       "Unban mask:  /unban <mask>",
+  "/op":          "Give op (+o):  /op <nick> [nick2 ...]",
+  "/deop":        "Remove op (-o):  /deop <nick> [nick2 ...]",
+  "/voice":       "Give voice (+v):  /voice <nick> [nick2 ...]",
+  "/devoice":     "Remove voice (-v):  /devoice <nick> [nick2 ...]",
+  "/halfop":      "Give half-op (+h):  /halfop <nick> [nick2 ...]",
+  "/dehalfop":    "Remove half-op (-h):  /dehalfop <nick> [nick2 ...]",
   "/mode":        "Get/set modes:  /mode [target] [flags]",
   "/invite":      "Invite user:  /invite <nick> [#channel]",
   "/whois":       "User info:  /whois <nick>",
+  "/whowas":      "Info on departed nick:  /whowas <nick>",
   "/who":         "Channel member details:  /who [#channel]",
   "/names":       "Refresh member list",
   "/list":        "List channels:  /list [pattern]",
-  "/oper":        "IRC operator login:  /oper <name> <password>",
+  "/stats":       "Server stats:  /stats [query] [server]",
+  "/links":       "List servers in network:  /links [server]",
+  "/time":        "Server time:  /time [server]",
+  "/version":     "Server version:  /version [server]",
+  "/info":        "Server info:  /info [server]",
+  "/motd":        "Show MOTD:  /motd [server]",
+  "/lusers":      "Server user counts:  /lusers",
+  "/map":         "Network map:  /map",
+  "/ping":        "Ping nick or server:  /ping <nick|server>",
+  "/oper":        "IRC operator login:  /oper <n> <password>",
   "/away":        "Set away:  /away [message]",
   "/back":        "Clear away status",
   "/notice":      "Send NOTICE:  /notice <nick|#chan> <text>",
+  "/ctcp":        "Send CTCP:  /ctcp <nick> <command> [args]",
+  "/ignore":      "Ignore nick (client-side):  /ignore <nick>",
+  "/unignore":    "Remove ignore:  /unignore <nick>",
   "/raw":         "Send raw IRC:  /raw <command>",
   "/quote":       "Send raw IRC:  /quote <command>",
   "/connect":     "Connect to active network",
@@ -1953,10 +1973,25 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
   const [showUsers,    setShowUsers]    = useState(true);
   const [collapsed,    setCollapsed]    = useState({}); // key: netId+"::channels" | netId+"::dms"
   const [userMenu,     setUserMenu]     = useState(null); // {nick, pfx, x, y, chan, netId}
+  const [ignoredNicks, setIgnoredNicks] = useState(new Set()); // client-side ignore list
   const [showProfile,  setShowProfile]  = useState(false);
   const [showLogs,     setShowLogs]     = useState(false);
 
   const [ctxMenu, setCtxMenu] = useState(null); // {x,y,net} for right-click menu
+
+  // Listen for /ignore and /unignore events dispatched by the command handler
+  useEffect(() => {
+    const handler = (e) => {
+      const { nick, add } = e.detail;
+      setIgnoredNicks(prev => {
+        const next = new Set(prev);
+        add ? next.add(nick) : next.delete(nick);
+        return next;
+      });
+    };
+    window.addEventListener("irc-ignore", handler);
+    return () => window.removeEventListener("irc-ignore", handler);
+  }, []);
   const connections  = useRef({});  // networkId → WS handle
   const networksRef  = useRef({});  // always-current mirror of state.networks
   const myNickRef    = useRef({});  // always-current mirror of state.myNick
@@ -2341,7 +2376,7 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
   // ── scroll to bottom ───────────────────────────────────────────────────────
   const activeChanName = activeNet ? activeChan[activeNet] : null;
   const activeMsgKey   = activeNet&&activeChanName ? CHAN_KEY(activeNet,activeChanName) : null;
-  const activeMsgs     = activeMsgKey ? (messages[activeMsgKey]||[]) : [];
+  const activeMsgs     = (activeMsgKey ? (messages[activeMsgKey]||[]) : []).filter(m=>!m.nick||!ignoredNicks.has(m.nick));
 
   useEffect(() => { bottomRef.current?.scrollIntoView({behavior:"smooth"}); }, [activeMsgs.length]);
   useEffect(() => {
@@ -2505,6 +2540,76 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
         break;
       }
 
+      case "/kickban": {
+        if (!conn?.ready) { sys("Not connected."); break; }
+        if (!args[0]) { sys("Usage: /kickban <nick> [reason]"); break; }
+        const target=chan&&chan!==STATUS_CHAN?chan:null;
+        if (!target) { sys("/kickban must be used in a channel."); break; }
+        conn.send(`MODE ${target} +b ${args[0]}!*@*`);
+        conn.send(`KICK ${target} ${args[0]} :${args.slice(1).join(" ")||"Kicked"}`);
+        break;
+      }
+
+      case "/op": {
+        if (!conn?.ready) { sys("Not connected."); break; }
+        if (!args[0]) { sys("Usage: /op <nick> [nick2 ...]"); break; }
+        const target=chan&&chan!==STATUS_CHAN?chan:null;
+        if (!target) { sys("/op must be used in a channel."); break; }
+        const nicks=args; const flags="+"+("o".repeat(nicks.length));
+        conn.send(`MODE ${target} ${flags} ${nicks.join(" ")}`);
+        break;
+      }
+
+      case "/deop": {
+        if (!conn?.ready) { sys("Not connected."); break; }
+        if (!args[0]) { sys("Usage: /deop <nick> [nick2 ...]"); break; }
+        const target=chan&&chan!==STATUS_CHAN?chan:null;
+        if (!target) { sys("/deop must be used in a channel."); break; }
+        const nicks=args; const flags="-"+("o".repeat(nicks.length));
+        conn.send(`MODE ${target} ${flags} ${nicks.join(" ")}`);
+        break;
+      }
+
+      case "/voice": {
+        if (!conn?.ready) { sys("Not connected."); break; }
+        if (!args[0]) { sys("Usage: /voice <nick> [nick2 ...]"); break; }
+        const target=chan&&chan!==STATUS_CHAN?chan:null;
+        if (!target) { sys("/voice must be used in a channel."); break; }
+        const nicks=args; const flags="+"+("v".repeat(nicks.length));
+        conn.send(`MODE ${target} ${flags} ${nicks.join(" ")}`);
+        break;
+      }
+
+      case "/devoice": {
+        if (!conn?.ready) { sys("Not connected."); break; }
+        if (!args[0]) { sys("Usage: /devoice <nick> [nick2 ...]"); break; }
+        const target=chan&&chan!==STATUS_CHAN?chan:null;
+        if (!target) { sys("/devoice must be used in a channel."); break; }
+        const nicks=args; const flags="-"+("v".repeat(nicks.length));
+        conn.send(`MODE ${target} ${flags} ${nicks.join(" ")}`);
+        break;
+      }
+
+      case "/halfop": {
+        if (!conn?.ready) { sys("Not connected."); break; }
+        if (!args[0]) { sys("Usage: /halfop <nick> [nick2 ...]"); break; }
+        const target=chan&&chan!==STATUS_CHAN?chan:null;
+        if (!target) { sys("/halfop must be used in a channel."); break; }
+        const nicks=args; const flags="+"+("h".repeat(nicks.length));
+        conn.send(`MODE ${target} ${flags} ${nicks.join(" ")}`);
+        break;
+      }
+
+      case "/dehalfop": {
+        if (!conn?.ready) { sys("Not connected."); break; }
+        if (!args[0]) { sys("Usage: /dehalfop <nick> [nick2 ...]"); break; }
+        const target=chan&&chan!==STATUS_CHAN?chan:null;
+        if (!target) { sys("/dehalfop must be used in a channel."); break; }
+        const nicks=args; const flags="-"+("h".repeat(nicks.length));
+        conn.send(`MODE ${target} ${flags} ${nicks.join(" ")}`);
+        break;
+      }
+
       case "/mode":
         if (!conn?.ready) { sys("Not connected."); break; }
         conn.send(rest?`MODE ${rest}`:`MODE ${chan&&chan!==STATUS_CHAN?chan:me}`);
@@ -2547,6 +2652,96 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
         ensureChan(netId,STATUS_CHAN);
         dispatch({ type:"SET_ACTIVE_CHAN", netId, chan:STATUS_CHAN });
         break;
+
+      case "/whowas":
+        if (!conn?.ready) { sys("Not connected."); break; }
+        if (!args[0]) { sys("Usage: /whowas <nick>"); break; }
+        conn.send(`WHOWAS ${args[0]}`);
+        ensureChan(netId,STATUS_CHAN);
+        dispatch({ type:"SET_ACTIVE_CHAN", netId, chan:STATUS_CHAN });
+        break;
+
+      case "/stats":
+        if (!conn?.ready) { sys("Not connected."); break; }
+        conn.send(rest?`STATS ${rest}`:"STATS");
+        ensureChan(netId,STATUS_CHAN);
+        dispatch({ type:"SET_ACTIVE_CHAN", netId, chan:STATUS_CHAN });
+        break;
+
+      case "/links":
+        if (!conn?.ready) { sys("Not connected."); break; }
+        conn.send(args[0]?`LINKS ${args[0]}`:"LINKS");
+        ensureChan(netId,STATUS_CHAN);
+        dispatch({ type:"SET_ACTIVE_CHAN", netId, chan:STATUS_CHAN });
+        break;
+
+      case "/time":
+        if (!conn?.ready) { sys("Not connected."); break; }
+        conn.send(args[0]?`TIME ${args[0]}`:"TIME");
+        break;
+
+      case "/version":
+        if (!conn?.ready) { sys("Not connected."); break; }
+        conn.send(args[0]?`VERSION ${args[0]}`:"VERSION");
+        break;
+
+      case "/info":
+        if (!conn?.ready) { sys("Not connected."); break; }
+        conn.send(args[0]?`INFO ${args[0]}`:"INFO");
+        ensureChan(netId,STATUS_CHAN);
+        dispatch({ type:"SET_ACTIVE_CHAN", netId, chan:STATUS_CHAN });
+        break;
+
+      case "/motd":
+        if (!conn?.ready) { sys("Not connected."); break; }
+        conn.send(args[0]?`MOTD ${args[0]}`:"MOTD");
+        ensureChan(netId,STATUS_CHAN);
+        dispatch({ type:"SET_ACTIVE_CHAN", netId, chan:STATUS_CHAN });
+        break;
+
+      case "/lusers":
+        if (!conn?.ready) { sys("Not connected."); break; }
+        conn.send("LUSERS");
+        break;
+
+      case "/map":
+        if (!conn?.ready) { sys("Not connected."); break; }
+        conn.send("MAP");
+        ensureChan(netId,STATUS_CHAN);
+        dispatch({ type:"SET_ACTIVE_CHAN", netId, chan:STATUS_CHAN });
+        break;
+
+      case "/ping":
+        if (!conn?.ready) { sys("Not connected."); break; }
+        if (!args[0]) { sys("Usage: /ping <nick|server>"); break; }
+        conn.send(`PING ${args[0]}`);
+        sys(`→ PING ${args[0]}`);
+        break;
+
+      case "/ctcp": {
+        if (!conn?.ready) { sys("Not connected."); break; }
+        if (args.length < 2) { sys("Usage: /ctcp <nick> <command> [args]"); break; }
+        const ctcpCmd=args[1].toUpperCase();
+        const ctcpArgs=args.slice(2).join(" ");
+        conn.send(`PRIVMSG ${args[0]} :${ctcpCmd}${ctcpArgs?" "+ctcpArgs:""}`);
+        sys(`→ CTCP ${ctcpCmd} to ${args[0]}`);
+        break;
+      }
+
+      case "/ignore": {
+        if (!args[0]) { sys("Usage: /ignore <nick>"); break; }
+        // Store ignores in component state via a custom event — client-side only
+        window.dispatchEvent(new CustomEvent("irc-ignore", { detail:{ nick:args[0], add:true } }));
+        sys(`Ignoring ${args[0]}`);
+        break;
+      }
+
+      case "/unignore": {
+        if (!args[0]) { sys("Usage: /unignore <nick>"); break; }
+        window.dispatchEvent(new CustomEvent("irc-ignore", { detail:{ nick:args[0], add:false } }));
+        sys(`No longer ignoring ${args[0]}`);
+        break;
+      }
 
       case "/quote": case "/raw":
         if (!conn?.ready) { sys("Not connected."); break; }
