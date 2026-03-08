@@ -70,6 +70,32 @@
     };
     // Fallback: hide after 5s regardless
     setTimeout(window.__korechatReady, 5000);
+
+    // Catch and display any JS/Babel errors visibly on screen
+    window.addEventListener('error', function(e) {
+      const s = document.getElementById('splash');
+      if (s) {
+        s.innerHTML = '<div style="padding:20px;max-width:800px;font-family:monospace;font-size:12px;color:#f7a07e;white-space:pre-wrap;word-break:break-all">'
+          + '<div style="font-size:16px;font-weight:700;margin-bottom:12px;color:#f7d07e">⚠ KoreChat Load Error</div>'
+          + (e.message || 'Unknown error') + '\n\n'
+          + 'File: ' + (e.filename || '?') + '\n'
+          + 'Line: ' + (e.lineno || '?') + ' Col: ' + (e.colno || '?')
+          + '</div>';
+        s.style.opacity = '1';
+      }
+      console.error('KoreChat load error:', e);
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      const s = document.getElementById('splash');
+      if (s) {
+        s.innerHTML = '<div style="padding:20px;max-width:800px;font-family:monospace;font-size:12px;color:#f7a07e;white-space:pre-wrap;word-break:break-all">'
+          + '<div style="font-size:16px;font-weight:700;margin-bottom:12px;color:#f7d07e">⚠ KoreChat Promise Error</div>'
+          + String(e.reason)
+          + '</div>';
+        s.style.opacity = '1';
+      }
+      console.error('KoreChat unhandled rejection:', e.reason);
+    });
   </script>
 </body>
 </html>
