@@ -197,6 +197,12 @@ function renderText(text, myNick, T) {
   if (!text) return "";
   const accent  = T?.accent || "#7eb8f7";
   const red     = T?.red    || "#f7a07e";
+  // Strip IRC formatting control characters before rendering:
+  // \x03 = color (optional fg,bg digits follow), \x02 bold, \x1D italic,
+  // \x1F underline, \x16 reverse, \x11 monospace, \x0F reset
+  text = text
+    .replace(/\x03(\d{1,2}(,\d{1,2})?)?/g, "")
+    .replace(/[\x02\x1D\x1F\x16\x11\x0F]/g, "");
   const URL_RE = /(https?:\/\/[^\s<>"]+)/g;
   const parts = []; let key = 0, last = 0, m;
   URL_RE.lastIndex = 0;
@@ -989,8 +995,10 @@ function UserMenuPopup({ menu, onClose, onSend, myPrefix, currentNick }) {
   const canOp       = myRank >= 3; // ops can give/take op
   const canAdmin    = myRank >= 4; // admins (&) can give/take admin (+a)
   const canOwner    = myRank >= 5; // owners (~) can give/take owner (+q)
-  // Can only act on users strictly below my rank
-  const outranks    = myRank > theirRank;
+  // Granting a mode requires strictly outranking the target
+  // Removing a mode only requires being at equal or higher rank
+  const canGrant    = myRank > theirRank;
+  const canRevoke   = myRank >= theirRank;
 
   // Target's current modes
   const hasOwner = pfx==="~";
@@ -1021,7 +1029,9 @@ function UserMenuPopup({ menu, onClose, onSend, myPrefix, currentNick }) {
 
   const ModeRow = ({ has, label, sub, canDo }) => {
     const active = has;
-    const dim    = !canDo || !outranks;
+    // To grant: need canDo privilege AND must outrank target
+    // To remove: need canDo privilege AND must be equal or higher rank
+    const dim = !canDo || (active ? !canRevoke : !canGrant);
     return (
       <div onClick={dim ? undefined : ()=>send(`/mode ${chan} ${active?"-":"+"}${sub.replace(/[+-]/g,"")} ${nick}`)}
         style={{display:"flex",alignItems:"center",gap:9,padding:"6px 12px",
@@ -1089,15 +1099,15 @@ function UserMenuPopup({ menu, onClose, onSend, myPrefix, currentNick }) {
 
             <Divider/>
 
-            <Row icon="🔇" label="Kick" danger dim={!canKick||!outranks}
+            <Row icon="🔇" label="Kick" danger dim={!canKick||!canRevoke}
               onClick={()=>{
                 onClose();
                 const reason = window.prompt(`Kick reason for ${nick}:`,"");
                 if (reason !== null) onSend(netId, `/kick ${chan} ${nick} ${reason||"Kicked"}`);
               }} />
-            <Row icon="🔨" label="Ban (host mask)" danger dim={!canKick||!outranks}
+            <Row icon="🔨" label="Ban (host mask)" danger dim={!canKick||!canRevoke}
               onClick={()=>send(`/mode ${chan} +b ${nick}!*@*`)} />
-            <Row icon="🚫" label="Kick & Ban" danger dim={!canKick||!outranks}
+            <Row icon="🚫" label="Kick & Ban" danger dim={!canKick||!canRevoke}
               onClick={()=>{
                 onClose();
                 const reason = window.prompt(`Kick+ban reason for ${nick}:`,"");
