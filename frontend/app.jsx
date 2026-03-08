@@ -5,9 +5,8 @@ const API_BASE = location.protocol + "//" + location.host + "/api/v1";
 
 
 // ─── Theme system ─────────────────────────────────────────────────────────────
-// Built-in theme palette. Each entry must define the same set of tokens.
-// Custom themes are stored in localStorage as JSON and merged at runtime.
-const BUILTIN_THEMES = {
+// To add a new theme: add an entry to THEMES with the same keys.
+const THEMES = {
   dark: {
     name:        "dark",
     label:       "KoreChat Dark",
@@ -84,7 +83,6 @@ const BUILTIN_THEMES = {
     scrollThumb: "#00000015",
     fontSize:    14,
   },
-  // ── New Morning (ported from thelounge-theme-new-morning) ─────────────────
   newmorning: {
     name:        "newmorning",
     label:       "New Morning",
@@ -123,7 +121,6 @@ const BUILTIN_THEMES = {
     scrollThumb: "#b7c5d140",
     fontSize:    14,
   },
-  // ── Solarized Dark ────────────────────────────────────────────────────────
   solarized: {
     name:        "solarized",
     label:       "Solarized Dark",
@@ -162,7 +159,6 @@ const BUILTIN_THEMES = {
     scrollThumb: "#586e7540",
     fontSize:    14,
   },
-  // ── Dracula ───────────────────────────────────────────────────────────────
   dracula: {
     name:        "dracula",
     label:       "Dracula",
@@ -202,25 +198,8 @@ const BUILTIN_THEMES = {
     fontSize:    14,
   },
 };
-
-// Load custom themes from localStorage and merge with built-ins
-function loadThemes() {
-  try {
-    const custom = JSON.parse(localStorage.getItem("kc_custom_themes") || "{}");
-    return { ...BUILTIN_THEMES, ...custom };
-  } catch { return { ...BUILTIN_THEMES }; }
-}
-
-// Resolve a theme by name — falls back to custom themes, then dark
-function resolveTheme(name, themes) {
-  return themes[name] || themes.dark || BUILTIN_THEMES.dark;
-}
-
-// All themes (built-ins + custom) — rebuilt on each App render from state
-let THEMES = loadThemes();
-
-const _savedTheme = localStorage.getItem("kc_theme") || "dark";
-const ThemeCtx = React.createContext(resolveTheme(_savedTheme, THEMES));
+const _savedTheme = sessionStorage.getItem("kc_theme") || "dark";
+const ThemeCtx = React.createContext(THEMES[_savedTheme] || THEMES.dark);
 function useTheme() { return React.useContext(ThemeCtx); }
 
 // ─── IRCv3 Parser ─────────────────────────────────────────────────────────────
@@ -2102,7 +2081,7 @@ function LogsModal({ onClose }) {
 }
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
-function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appToggleTheme, allThemes, onOpenThemePicker }) {
+function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appToggleTheme }) {
   const [state, dispatch] = useReducer(reducer, INIT);
   const [me, setMe]        = useState(_currentUser); // local copy updated on profile save
   const [showAddNet,   setShowAddNet]   = useState(false);
@@ -2860,7 +2839,7 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
         if (args.length < 2) { sys("Usage: /ctcp <nick> <command> [args]"); break; }
         const ctcpCmd=args[1].toUpperCase();
         const ctcpArgs=args.slice(2).join(" ");
-        conn.send(`PRIVMSG ${args[0]} :${ctcpCmd}${ctcpArgs?" "+ctcpArgs:""}`);
+        conn.send(`PRIVMSG ${args[0]} :\x01${ctcpCmd}${ctcpArgs?" "+ctcpArgs:""}\x01`);
         sys(`→ CTCP ${ctcpCmd} to ${args[0]}`);
         break;
       }
@@ -2927,15 +2906,13 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
   const amIop = myPrefix==="~"||myPrefix==="&"||myPrefix==="@";
 
   const theme = appTheme || "dark";
-  const _allThemes = allThemes || BUILTIN_THEMES;
-  const T = _allThemes[theme] || BUILTIN_THEMES.dark;
+  const T = THEMES[theme] || THEMES.dark;
   const toggleTheme = appToggleTheme || (() => {});
 
   return (
     <ThemeCtx.Provider value={T}>
     <div style={{display:"flex",height:"100vh",width:"100%",background:T.bg,
-      overflow:"hidden",color:T.text,fontFamily:"'Inter var','Inter',sans-serif",
-      fontSize: T.fontSize||14}}>
+      overflow:"hidden",color:T.text,fontFamily:"'Inter var','Inter',sans-serif"}}>
 
       {showProfile&&(
         <ProfileModal
@@ -3063,7 +3040,7 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
             <div style={{fontSize:9,color:T.textGhost,marginTop:2,paddingLeft:30,
               fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.06em"}}>IRCv3</div>
           </div>
-          <button onClick={onOpenThemePicker||toggleTheme} title="Themes"
+          <button onClick={toggleTheme} title="Switch theme"
             style={{background:T.accentBg,border:`1px solid ${T.accentDim}`,borderRadius:6,
               color:T.accent,fontSize:13,cursor:"pointer",padding:"4px 7px",lineHeight:1,
               fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}
@@ -3750,42 +3727,17 @@ function App() {
   // "loading" | "setup" | "login" | "chat" | "admin"
   const [view,    setView]    = useState("loading");
   const [me,      setMe]      = useState(null);
-  // Theme lives at root — name key + all custom themes stored in localStorage
-  const [theme,        setTheme]        = useState(() => localStorage.getItem("kc_theme") || "dark");
-  const [customThemes, setCustomThemes] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("kc_custom_themes") || "{}"); } catch { return {}; }
-  });
-  const [showThemePicker, setShowThemePicker] = useState(false);
+  // Theme lives here at the root so Login/Setup/Admin all share it
+  const [theme, setTheme] = useState(() => sessionStorage.getItem("kc_theme") || "dark");
+  const T = THEMES[theme] || THEMES.dark;
 
-  // Rebuild merged theme map whenever custom themes change
-  const allThemes = { ...BUILTIN_THEMES, ...customThemes };
-  const T = allThemes[theme] || BUILTIN_THEMES.dark;
-
-  // Persist and apply a new theme name
-  const applyTheme = (name) => {
-    setTheme(name);
-    localStorage.setItem("kc_theme", name);
+  // Cycle through all available themes
+  const toggleTheme = () => {
+    const keys = Object.keys(THEMES);
+    const next = keys[(keys.indexOf(theme) + 1) % keys.length];
+    setTheme(next);
+    sessionStorage.setItem("kc_theme", next);
   };
-
-  // Save a new or edited custom theme
-  const saveCustomTheme = (themeObj) => {
-    const next = { ...customThemes, [themeObj.name]: themeObj };
-    setCustomThemes(next);
-    localStorage.setItem("kc_custom_themes", JSON.stringify(next));
-    applyTheme(themeObj.name);
-  };
-
-  // Delete a custom theme
-  const deleteCustomTheme = (name) => {
-    const next = { ...customThemes };
-    delete next[name];
-    setCustomThemes(next);
-    localStorage.setItem("kc_custom_themes", JSON.stringify(next));
-    if (theme === name) applyTheme("dark");
-  };
-
-  // Legacy toggle (dark ↔ light) still works
-  const toggleTheme = () => applyTheme(theme === "dark" ? "light" : "dark");
 
   // Keep body background in sync with theme (affects the area behind the app)
   useEffect(() => {
@@ -3844,44 +3796,14 @@ function App() {
     <ThemeCtx.Provider value={T}>
       <div style={{position:"relative",width:"100%",height:"100vh",overflow:"hidden"}}>
         <KoreChat currentUser={me} onLogout={handleLogout} onAdmin={()=>setView("admin")}
-          appTheme={theme} appToggleTheme={toggleTheme}
-          allThemes={allThemes} onOpenThemePicker={()=>setShowThemePicker(true)}/>
+          appTheme={theme} appToggleTheme={toggleTheme}/>
         {view==="admin" && (
           <div style={{position:"fixed",inset:0,zIndex:500,background:T.bg}}>
-            <AdminPanel currentUser={me} onBack={()=>setView("chat")} theme={theme} toggleTheme={toggleTheme}
-              allThemes={allThemes} onOpenThemePicker={()=>setShowThemePicker(true)}/>
+            <AdminPanel currentUser={me} onBack={()=>setView("chat")} theme={theme} toggleTheme={toggleTheme}/>
           </div>
         )}
       </div>
-      {showThemePicker && (
-        <ThemeCtx.Provider value={T}>
-          <ThemePicker
-            allThemes={allThemes}
-            currentTheme={theme}
-            builtinNames={Object.keys(BUILTIN_THEMES)}
-            onApply={applyTheme}
-            onSave={saveCustomTheme}
-            onDelete={deleteCustomTheme}
-            onClose={()=>setShowThemePicker(false)}
-          />
-        </ThemeCtx.Provider>
-      )}
     </ThemeCtx.Provider>
-  );
-}
-
-// ─── ThemePicker (stub) ──────────────────────────────────────────────────────
-function ThemePreviewSwatch({ theme }) { return null; }
-function ThemePicker({ onClose }) {
-  const T = useTheme();
-  return (
-    <div style={{position:"fixed",inset:0,zIndex:900,background:"#00000070",
-      display:"flex",alignItems:"center",justifyContent:"center"}}
-      onClick={onClose}>
-      <div style={{background:T.bgPanel,padding:40,borderRadius:12,color:T.text}}>
-        Theme picker coming soon — click outside to close
-      </div>
-    </div>
   );
 }
 
