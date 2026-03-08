@@ -3764,12 +3764,6 @@ function App() {
     setView("login");
   };
 
-  const toggleTheme = () => {
-    const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    sessionStorage.setItem("kc_theme", next);
-  };
-
   if (view==="loading") return null;
 
   // Auth pages get a simple themed wrapper with a toggle button in the corner
