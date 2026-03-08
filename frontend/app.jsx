@@ -2202,7 +2202,7 @@ function ThemePicker({ T, theme, onSelect }) {
   );
 }
 
-function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appToggleTheme }) {
+function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appToggleTheme, appSetTheme }) {
   const [state, dispatch] = useReducer(reducer, INIT);
   const [me, setMe]        = useState(_currentUser); // local copy updated on profile save
   const [showAddNet,   setShowAddNet]   = useState(false);
@@ -3161,7 +3161,7 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
             <div style={{fontSize:9,color:T.textGhost,marginTop:2,paddingLeft:30,
               fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.06em"}}>IRCv3</div>
           </div>
-          <ThemePicker T={T} theme={theme} onSelect={t=>{setTheme(t);sessionStorage.setItem("kc_theme",t);}} />
+          <ThemePicker T={T} theme={theme} onSelect={appSetTheme} />
         </div>
 
         {/* Add network button */}
@@ -3904,7 +3904,7 @@ function App() {
     <ThemeCtx.Provider value={T}>
       <div style={{position:"relative",width:"100%",height:"100vh",overflow:"hidden"}}>
         <KoreChat currentUser={me} onLogout={handleLogout} onAdmin={()=>setView("admin")}
-          appTheme={theme} appToggleTheme={toggleTheme}/>
+          appTheme={theme} appToggleTheme={toggleTheme} appSetTheme={t=>{setTheme(t);sessionStorage.setItem("kc_theme",t);}}/>
         {view==="admin" && (
           <div style={{position:"fixed",inset:0,zIndex:500,background:T.bg}}>
             <AdminPanel currentUser={me} onBack={()=>setView("chat")} theme={theme} toggleTheme={toggleTheme}/>
