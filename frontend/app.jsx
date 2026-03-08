@@ -2081,6 +2081,127 @@ function LogsModal({ onClose }) {
 }
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
+// ─── Theme Picker Modal ────────────────────────────────────────────────────────
+function ThemePicker({ T, theme, onSelect }) {
+  const [open, setOpen] = React.useState(false);
+
+  const PREVIEW = {
+    dark:       { bg:"#080f1e", bgSide:"#090e1c", bgPanel:"#0d1629", border:"#1e2d4a", text:"#c8d8f0", textDim:"#7a9cc0", accent:"#7eb8f7", green:"#7ef7d0", amber:"#f7d07e", red:"#f7a07e", nick1:"#7eb8f7", nick2:"#7ef7d0", nick3:"#f7a07e" },
+    light:      { bg:"#f0f4fa", bgSide:"#e4ecf7", bgPanel:"#ffffff", border:"#d0daea", text:"#1a2740", textDim:"#4a6080", accent:"#2563eb", green:"#059669", amber:"#d97706", red:"#dc2626", nick1:"#2563eb", nick2:"#059669", nick3:"#dc2626" },
+    newmorning: { bg:"#303e4a", bgSide:"#28333d", bgPanel:"#242a33", border:"#28333d", text:"#f3f3f3", textDim:"#b7c5d1", accent:"#77abd9", green:"#97ea70", amber:"#f39c12", red:"#f92772", nick1:"#77abd9", nick2:"#97ea70", nick3:"#f39c12" },
+    solarized:  { bg:"#002b36", bgSide:"#073642", bgPanel:"#073642", border:"#586e7520", text:"#839496", textDim:"#657b83", accent:"#268bd2", green:"#859900", amber:"#b58900", red:"#dc322f", nick1:"#268bd2", nick2:"#859900", nick3:"#b58900" },
+    dracula:    { bg:"#282a36", bgSide:"#21222c", bgPanel:"#1e1f29", border:"#44475a40", text:"#f8f8f2", textDim:"#6272a4", accent:"#bd93f9", green:"#50fa7b", amber:"#ffb86c", red:"#ff5555", nick1:"#bd93f9", nick2:"#50fa7b", nick3:"#ff5555" },
+  };
+
+  return (
+    <>
+      <button
+        onClick={()=>setOpen(true)}
+        title="Switch theme"
+        style={{background:T.accentBg,border:`1px solid ${T.accentDim}`,borderRadius:6,
+          color:T.accent,fontSize:13,cursor:"pointer",padding:"4px 7px",lineHeight:1,
+          fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}
+        onMouseEnter={e=>e.currentTarget.style.background=T.accentBg2}
+        onMouseLeave={e=>e.currentTarget.style.background=T.accentBg}>
+        🎨
+      </button>
+
+      {open && (
+        <div onClick={e=>{ if(e.target===e.currentTarget) setOpen(false); }}
+          style={{position:"fixed",inset:0,background:"#00000070",zIndex:1000,
+            display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div style={{background:T.bgPanel,border:`1px solid ${T.borderMid}`,borderRadius:12,
+            padding:24,width:680,maxWidth:"95vw",maxHeight:"85vh",overflowY:"auto",
+            boxShadow:"0 20px 60px #00000060"}}>
+
+            {/* Header */}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+              <div>
+                <div style={{fontSize:15,fontWeight:700,color:T.textBright}}>Choose Theme</div>
+                <div style={{fontSize:11,color:T.textFaint,marginTop:2}}>Select a color scheme for KoreChat</div>
+              </div>
+              <button onClick={()=>setOpen(false)}
+                style={{background:"transparent",border:"none",color:T.textDim,fontSize:18,
+                  cursor:"pointer",padding:"2px 6px",borderRadius:4,lineHeight:1}}
+                onMouseEnter={e=>e.currentTarget.style.color=T.text}
+                onMouseLeave={e=>e.currentTarget.style.color=T.textDim}>✕</button>
+            </div>
+
+            {/* Theme grid */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
+              {Object.values(THEMES).map(t => {
+                const P = PREVIEW[t.name] || PREVIEW.dark;
+                const active = theme === t.name;
+                return (
+                  <div key={t.name} onClick={()=>{ onSelect(t.name); setOpen(false); }}
+                    style={{borderRadius:8,overflow:"hidden",cursor:"pointer",
+                      border:`2px solid ${active ? T.accent : T.borderFaint}`,
+                      boxShadow: active ? `0 0 0 1px ${T.accent}40` : "none",
+                      transition:"border-color 0.15s,box-shadow 0.15s"}}
+                    onMouseEnter={e=>{ if(!active) e.currentTarget.style.borderColor=T.borderMid; }}
+                    onMouseLeave={e=>{ e.currentTarget.style.borderColor=active?T.accent:T.borderFaint; }}>
+
+                    {/* Mini IRC preview */}
+                    <div style={{display:"flex",height:110,background:P.bg,fontSize:10,fontFamily:"'JetBrains Mono',monospace"}}>
+                      {/* Sidebar */}
+                      <div style={{width:88,background:P.bgSide,borderRight:`1px solid ${P.border}`,padding:"6px 0",flexShrink:0}}>
+                        <div style={{padding:"2px 8px",fontSize:9,color:P.textDim,marginBottom:3,letterSpacing:"0.08em"}}>NETWORKS</div>
+                        <div style={{padding:"3px 8px",background:P.accent+"22",borderLeft:`2px solid ${P.accent}`,color:P.accent,fontSize:9}}>● Ameth</div>
+                        <div style={{padding:"3px 8px",color:P.textDim,fontSize:9,marginTop:1}}>○ Libera</div>
+                        <div style={{padding:"2px 8px",fontSize:9,color:P.textDim,marginTop:4,letterSpacing:"0.08em"}}>CHANNELS</div>
+                        <div style={{padding:"3px 8px",background:P.accent+"15",color:P.text,fontSize:9}}># general</div>
+                        <div style={{padding:"3px 8px",color:P.textDim,fontSize:9}}># random</div>
+                      </div>
+                      {/* Messages */}
+                      <div style={{flex:1,padding:"6px 8px",display:"flex",flexDirection:"column",gap:4,overflow:"hidden"}}>
+                        <div style={{display:"flex",gap:4,alignItems:"baseline"}}>
+                          <span style={{color:P.textDim,fontSize:8}}>12:34</span>
+                          <span style={{color:P.nick1,fontWeight:600,fontSize:9}}>eerok</span>
+                          <span style={{color:P.text,fontSize:9,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>hey, this theme looks great</span>
+                        </div>
+                        <div style={{display:"flex",gap:4,alignItems:"baseline"}}>
+                          <span style={{color:P.textDim,fontSize:8}}>12:35</span>
+                          <span style={{color:P.nick2,fontWeight:600,fontSize:9}}>alice</span>
+                          <span style={{color:P.text,fontSize:9}}>agreed! very clean 👍</span>
+                        </div>
+                        <div style={{display:"flex",gap:4,alignItems:"baseline"}}>
+                          <span style={{color:P.textDim,fontSize:8}}>12:35</span>
+                          <span style={{color:P.nick3,fontWeight:600,fontSize:9}}>bob</span>
+                          <span style={{color:P.text,fontSize:9,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>the colors work perfectly</span>
+                        </div>
+                        {/* Input bar */}
+                        <div style={{marginTop:"auto",background:P.bgPanel,borderRadius:4,
+                          border:`1px solid ${P.border}`,padding:"2px 6px",
+                          color:P.textDim,fontSize:9}}>
+                          Message #general...
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Label row */}
+                    <div style={{background:T.bgPanel,padding:"8px 10px",
+                      display:"flex",alignItems:"center",justifyContent:"space-between",
+                      borderTop:`1px solid ${T.borderFaint}`}}>
+                      <span style={{fontSize:12,fontWeight:active?700:500,
+                        color:active?T.accent:T.text,fontFamily:"'Inter',sans-serif"}}>
+                        {t.label}
+                      </span>
+                      {active
+                        ? <span style={{fontSize:10,color:T.accent,fontWeight:600}}>✓ Active</span>
+                        : <span style={{fontSize:10,color:T.textFaint}}>Click to apply</span>
+                      }
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appToggleTheme }) {
   const [state, dispatch] = useReducer(reducer, INIT);
   const [me, setMe]        = useState(_currentUser); // local copy updated on profile save
@@ -3040,14 +3161,7 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
             <div style={{fontSize:9,color:T.textGhost,marginTop:2,paddingLeft:30,
               fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.06em"}}>IRCv3</div>
           </div>
-          <button onClick={toggleTheme} title="Switch theme"
-            style={{background:T.accentBg,border:`1px solid ${T.accentDim}`,borderRadius:6,
-              color:T.accent,fontSize:13,cursor:"pointer",padding:"4px 7px",lineHeight:1,
-              fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}
-            onMouseEnter={e=>e.currentTarget.style.background=T.accentBg2}
-            onMouseLeave={e=>e.currentTarget.style.background=T.accentBg}>
-            🎨
-          </button>
+          <ThemePicker T={T} theme={theme} onSelect={t=>{setTheme(t);sessionStorage.setItem("kc_theme",t);}} />
         </div>
 
         {/* Add network button */}
