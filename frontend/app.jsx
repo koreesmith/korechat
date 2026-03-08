@@ -1085,7 +1085,7 @@ function UserMenuPopup({ menu, onClose, onSend, myPrefix, currentNick }) {
           <Row icon="ℹ" label="User Info (WHOIS)"  onClick={()=>send(`/whois ${nick}`)} />
           <Row icon="✉" label="Send Message"        onClick={()=>send(`/msg ${nick}`)} />
 
-          {/* Mode section — visible to half-op and above, hidden for self */}}
+          {/* Mode section — visible to half-op and above, hidden for self */}
           {canSeeOps && nick !== currentNick && (<>
             <Divider/>
             <div style={{...MONO,padding:"4px 12px 2px",fontSize:10,color:T.textFaint,
@@ -2572,10 +2572,12 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
   const isConnected   = activeNetObj?.status==="connected";
   const isStatusChan  = activeChanName===STATUS_CHAN;
 
-  const ops    = Object.entries(activeMembers).filter(([,p])=>p==="~"||p==="&"||p==="@");
-  const halfop = Object.entries(activeMembers).filter(([,p])=>p==="%");
-  const voiced = Object.entries(activeMembers).filter(([,p])=>p==="+");
-  const normal = Object.entries(activeMembers).filter(([,p])=>!p);
+  const owners  = Object.entries(activeMembers).filter(([,p])=>p==="~");
+  const admins  = Object.entries(activeMembers).filter(([,p])=>p==="&");
+  const ops     = Object.entries(activeMembers).filter(([,p])=>p==="@");
+  const halfop  = Object.entries(activeMembers).filter(([,p])=>p==="%");
+  const voiced  = Object.entries(activeMembers).filter(([,p])=>p==="+");
+  const normal  = Object.entries(activeMembers).filter(([,p])=>!p);
 
   // Am I an op (or higher) in the active channel?
   const myPrefix = currentNick ? (activeMembers[currentNick]||"") : "";
@@ -2978,11 +2980,20 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
           {showUsers&&!isStatusChan&&activeChanName&&(
             <div style={{width:190,flexShrink:0,borderLeft:`1px solid ${T.borderFaint}`,
               background:T.bgSide,overflowY:"auto"}}>
-              {[["Operators",ops],["Half-ops",halfop],["Voiced",voiced],["Members",normal]].map(([lbl,list])=>
-                list.length===0?null:(
+              {[
+                ["Owners",   owners,  "#f7d07e"],
+                ["Admins",   admins,  "#f7a07e"],
+                ["Operators",ops,     T.amber||"#f7c07e"],
+                ["Half-ops", halfop,  "#a0f77e"],
+                ["Voiced",   voiced,  "#7eb8f7"],
+                ["Members",  normal,  T.textFaint],
+              ].map(([lbl, list, color]) =>
+                list.length===0 ? null : (
                   <div key={lbl}>
-                    <div style={{...MONO,padding:"9px 10px 4px",fontSize:10,color:T.textFaint,
-                      textTransform:"uppercase",letterSpacing:"0.1em"}}>{lbl} — {list.length}</div>
+                    <div style={{...MONO,padding:"9px 10px 4px",fontSize:10,
+                      color:T.textFaint,textTransform:"uppercase",letterSpacing:"0.1em"}}>
+                      {lbl} — {list.length}
+                    </div>
                     {list.map(([nick,pfx])=>(
                       <div key={nick} style={{display:"flex",alignItems:"center",gap:7,
                         padding:"4px 10px",borderRadius:3,margin:"1px 4px",cursor:"pointer"}}
@@ -2992,8 +3003,8 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
                         <Avatar nick={nick} size={22}/>
                         <span style={{fontSize:13,color:T.textDim,flex:1,overflow:"hidden",
                           textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nick}</span>
-                        {pfx&&<span style={{...MONO,fontSize:11,
-                          color:(pfx==="~"||pfx==="&"||pfx==="@")?T.amber:"#a0f77e",opacity:0.7}}>{pfx}</span>}
+                        {pfx&&<span style={{...MONO,fontSize:11,fontWeight:700,
+                          color,opacity:0.85}}>{pfx}</span>}
                       </div>
                     ))}
                   </div>
