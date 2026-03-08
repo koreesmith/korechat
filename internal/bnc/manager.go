@@ -3,8 +3,8 @@ package bnc
 import (
 	"fmt"
 	"log"
-	"runtime"
 	"sync"
+	"time"
 
 	"github.com/koree/korechat/internal/networks"
 )
@@ -44,7 +44,15 @@ func (m *Manager) Start(nets []*networks.Network) {
 }
 
 // AddNetwork creates and starts a persistent connection for a newly added network.
+// If a connection already exists for this network, it is a no-op.
 func (m *Manager) AddNetwork(n *networks.Network) {
+	m.mu.Lock()
+	_, exists := m.conns[n.ID]
+	m.mu.Unlock()
+	if exists {
+		log.Printf("bnc: AddNetwork called for %s but conn already exists — skipping", n.Name)
+		return
+	}
 	m.store.SetStatus(n.ID, networks.StatusDisconnected, "")
 	m.startConn(n)
 }
@@ -92,11 +100,6 @@ func (m *Manager) DisconnectNetwork(networkID string) {
 // ReconnectNetwork starts a fresh connection for a network that was previously
 // disconnected. Looks up the network from the store.
 func (m *Manager) ReconnectNetwork(n *networks.Network) {
-	// Log caller for debugging double-connect issues
-	buf := make([]byte, 2048)
-	buf = buf[:runtime.Stack(buf, false)]
-	log.Printf("bnc: ReconnectNetwork called for %s — stack:\n%s", n.Name, buf)
-
 	m.store.SetStatus(n.ID, networks.StatusDisconnected, "")
 	m.startConn(n)
 	log.Printf("bnc: reconnecting network %s (%s)", n.Name, n.Addr())
@@ -182,11 +185,16 @@ func (m *Manager) startConn(n *networks.Network) {
 	c := newConn(n, m.store, m, m.logFn)
 
 	m.mu.Lock()
-	if old, ok := m.conns[n.ID]; ok {
-		old.Stop()
-	}
+	old, hadOld := m.conns[n.ID]
 	m.conns[n.ID] = c
 	m.mu.Unlock()
+
+	if hadOld {
+		old.Stop()
+		// Give the old goroutine a moment to unwind before we dial again,
+		// avoiding races where both goroutines try to use the same network slot.
+		time.Sleep(200 * time.Millisecond)
+	}
 
 	c.Start()
 	log.Printf("bnc: started connection for network %s (%s)", n.Name, n.Addr())
