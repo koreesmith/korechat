@@ -2117,13 +2117,14 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                         </div>
                       )}
                     </div>
-                    {notifPerms!=="granted"&&notifPerms!=="denied"&&(
+                    {notifPerms!=="granted"&&(
                       <button onClick={()=>{
                         Notification.requestPermission().then(p=>setNotifPerms(p));
                       }} style={{...MONO,padding:"5px 12px",borderRadius:6,border:"none",
-                        background:T.accent,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",
-                        flexShrink:0}}>
-                        Enable
+                        background:notifPerms==="denied"?T.border:T.accent,
+                        color:notifPerms==="denied"?T.textDim:"#fff",
+                        fontSize:11,fontWeight:700,cursor:"pointer",flexShrink:0}}>
+                        {notifPerms==="denied"?"Try again":"Enable"}
                       </button>
                     )}
                   </div>
