@@ -2103,8 +2103,17 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                           :"Notifications not yet enabled"}
                       </div>
                       {notifPerms==="denied"&&(
-                        <div style={{fontSize:11,color:T.textFaint,marginTop:2}}>
-                          Click the lock icon in your browser's address bar to unblock.
+                        <div style={{fontSize:11,color:T.textFaint,marginTop:2,lineHeight:1.6}}>
+                          {(()=>{
+                            const ua = navigator.userAgent;
+                            const isIOS = /iPad|iPhone|iPod/.test(ua);
+                            const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
+                            if (isIOS) return "iOS requires KoreChat to be installed to your home screen (Share → Add to Home Screen) before notifications can be enabled.";
+                            if (isSafari) return "In Safari: go to Safari → Settings → Websites → Notifications, find this site, and set it to Allow.";
+                            if (/Firefox/.test(ua)) return "In Firefox: click the lock icon or ⚠ in the address bar, then Permissions → Notifications → Allow.";
+                            if (/Edg/.test(ua)) return "In Edge: click the lock icon in the address bar → Permissions for this site → Notifications → Allow.";
+                            return "Click the lock icon or ⚙ in your browser's address bar → Site settings → Notifications → Allow.";
+                          })()}
                         </div>
                       )}
                     </div>
