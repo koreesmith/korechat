@@ -34,7 +34,37 @@
     #errmsg { padding:20px; max-width:900px; font-family:monospace; font-size:11px;
       color:#f7a07e; white-space:pre-wrap; word-break:break-all; }
     #errtitle { font-size:15px; font-weight:700; margin-bottom:12px; color:#f7d07e; }
+    /* ── Mobile responsive ───────────────────────────────────────────────── */
+    @media (max-width: 640px) {
+      .kc-sidebar {
+        position: fixed !important;
+        left: -240px !important;
+        top: 0 !important;
+        height: 100vh !important;
+        z-index: 210 !important;
+        transition: left 0.22s cubic-bezier(0.4,0,0.2,1) !important;
+        box-shadow: none !important;
+      }
+      .kc-sidebar-open {
+        left: 0 !important;
+        box-shadow: 4px 0 24px #00000060 !important;
+      }
+      .kc-mobile-overlay { display: block !important; }
+      .kc-mobile-only { display: flex !important; }
+      .kc-members-panel { display: none !important; }
+    }
+    @media (min-width: 641px) {
+      .kc-mobile-overlay { display: none !important; pointer-events: none !important; }
+      .kc-mobile-only { display: none !important; }
+    }
   </style>
+
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#080f1e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="KoreChat" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
 </head>
 <body>
   <div id="splash">
@@ -94,6 +124,11 @@
       if (s) { s.style.opacity = '0'; setTimeout(function(){ s.remove(); }, 350); }
     };
     setTimeout(window.__korechatReady, 5000);
+
+    // Register service worker for PWA
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(function(){});
+    }
   </script>
 </body>
 </html>

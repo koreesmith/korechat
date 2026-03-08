@@ -2057,6 +2057,74 @@ function LogsModal({ onClose }) {
                     ))}
                   </div>
 
+                  {/* ── Notifications ── */}
+                  <div style={{background:T.bg,borderRadius:8,border:`1px solid ${T.border}`,padding:"16px 18px"}}>
+                    <div style={{...MONO,fontSize:13,fontWeight:700,color:T.textBright,marginBottom:4}}>
+                      Browser Notifications
+                    </div>
+                    <div style={{fontSize:12,color:T.textFaint,lineHeight:1.5,marginBottom:14}}>
+                      Get notified even when the tab is in the background.
+                    </div>
+
+                    {/* Permission status + request button */}
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,
+                      padding:"10px 12px",borderRadius:6,
+                      background: notifPerms==="granted"?T.greenBg:notifPerms==="denied"?T.redBg:T.accentBg,
+                      border:`1px solid ${notifPerms==="granted"?T.greenBorder:notifPerms==="denied"?T.redBorder:T.accentDim}`}}>
+                      <span style={{fontSize:14}}>
+                        {notifPerms==="granted"?"🔔":notifPerms==="denied"?"🔕":"🔔"}
+                      </span>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:12,fontWeight:600,
+                          color:notifPerms==="granted"?T.green:notifPerms==="denied"?T.red:T.accent}}>
+                          {notifPerms==="granted"?"Notifications enabled"
+                            :notifPerms==="denied"?"Notifications blocked by browser"
+                            :"Notifications not yet enabled"}
+                        </div>
+                        {notifPerms==="denied"&&(
+                          <div style={{fontSize:11,color:T.textFaint,marginTop:2}}>
+                            Click the lock icon in your browser's address bar to unblock.
+                          </div>
+                        )}
+                      </div>
+                      {notifPerms!=="granted"&&notifPerms!=="denied"&&(
+                        <button onClick={()=>{
+                          Notification.requestPermission().then(p=>setNotifPerms(p));
+                        }} style={{...MONO,padding:"5px 12px",borderRadius:6,border:"none",
+                          background:T.accent,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",
+                          flexShrink:0}}>
+                          Enable
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Notification toggles */}
+                    {[
+                      ["mentions","Mentions","Notify when someone says your nick in a channel"],
+                      ["dms","Direct Messages","Notify when you receive a private message"],
+                      ["onlyWhenHidden","Only when tab is hidden","Skip notifications when KoreChat is the active tab"],
+                    ].map(([key, label, desc])=>(
+                      <div key={key} style={{display:"flex",alignItems:"center",
+                        justifyContent:"space-between",padding:"8px 0",
+                        borderTop:`1px solid ${T.borderFaint}`}}>
+                        <div>
+                          <div style={{fontSize:13,color:T.text,fontWeight:500}}>{label}</div>
+                          <div style={{fontSize:11,color:T.textFaint,marginTop:2}}>{desc}</div>
+                        </div>
+                        <button
+                          disabled={notifPerms!=="granted"}
+                          onClick={()=>saveNotifPrefs({...notifPrefs,[key]:notifPrefs[key]===false?true:!(notifPrefs[key]??true)})}
+                          style={{...MONO,flexShrink:0,marginLeft:16,padding:"4px 14px",
+                            borderRadius:20,border:"none",cursor:notifPerms==="granted"?"pointer":"not-allowed",
+                            fontSize:11,fontWeight:700,opacity:notifPerms==="granted"?1:0.4,
+                            background:(notifPrefs[key]??true)?T.green:T.border,
+                            color:(notifPrefs[key]??true)?"#fff":T.textFaint}}>
+                          {(notifPrefs[key]??true)?"ON":"OFF"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
                   {/* Save button */}
                   <div style={{display:"flex",alignItems:"center",gap:12}}>
                     <button onClick={saveSettings} disabled={settingsSaving}
@@ -2215,6 +2283,20 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
   const [showLogs,     setShowLogs]     = useState(false);
 
   const [ctxMenu, setCtxMenu] = useState(null); // {x,y,net} for right-click menu
+  const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
+  // Notification preferences (persisted to sessionStorage, loaded once)
+  const [notifPerms, setNotifPerms] = useState(() => Notification?.permission || "default");
+  const [notifPrefs, setNotifPrefs] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("kc_notif_prefs") || "{}"); } catch { return {}; }
+  });
+  // notifPrefs: { mentions: bool, dms: bool, onlyWhenHidden: bool }
+  const notifPrefsRef = React.useRef(notifPrefs);
+  React.useEffect(() => { notifPrefsRef.current = notifPrefs; }, [notifPrefs]);
+  const saveNotifPrefs = (p) => {
+    setNotifPrefs(p);
+    notifPrefsRef.current = p;
+    localStorage.setItem("kc_notif_prefs", JSON.stringify(p));
+  };
 
   // Listen for /ignore and /unignore events dispatched by the command handler
   useEffect(() => {
@@ -2448,6 +2530,37 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
         }
         ensureChan(netId, chan);
         dispatch({ type:"ADD_MSG", netId, chan, msg:msgObj });
+
+        // ── Browser notifications ──────────────────────────────────────────────
+        if (Notification?.permission === "granted") {
+          const prefs = notifPrefsRef.current;
+          const onlyHidden = prefs.onlyWhenHidden !== false; // default true
+          const tabVisible = !document.hidden;
+          if (!onlyHidden || !tabVisible) {
+            const myNick = myNickRef.current[netId] || "";
+            const isDM = !chan.startsWith("#");
+            const isMention = !isDM && myNick && msgObj.text &&
+              msgObj.text.toLowerCase().includes(myNick.toLowerCase()) &&
+              msgObj.nick !== myNick;
+            const shouldNotify =
+              (isDM   && prefs.dms      !== false) ||
+              (isMention && prefs.mentions !== false);
+            if (shouldNotify && msgObj.nick) {
+              const title = isDM
+                ? `DM from ${msgObj.nick}`
+                : `${msgObj.nick} mentioned you in ${chan}`;
+              const body = msgObj.text?.slice(0, 120) || "";
+              try {
+                const n = new Notification(title, {
+                  body,
+                  icon: "/icons/icon-192.png",
+                  tag: `kc-${netId}-${chan}`,
+                });
+                n.onclick = () => { window.focus(); n.close(); };
+              } catch(e) {}
+            }
+          }
+        }
         break;
       }
 
@@ -3144,11 +3257,20 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
         </div>
       )}
 
-      {/* ── Sidebar ── */}
-      <div style={{width:224,flexShrink:0,background:T.bgSide,borderRight:`1px solid ${T.border}`,
-        display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      {/* ── Mobile overlay ── */}
+      {sidebarOpen&&(
+        <div onClick={()=>setSidebarOpen(false)}
+          style={{position:"fixed",inset:0,background:"#00000060",zIndex:200,
+            display:"none"}}
+          className="kc-mobile-overlay" />
+      )}
 
-        {/* Logo + theme toggle */}
+      {/* ── Sidebar ── */}
+      <div className={sidebarOpen?"kc-sidebar kc-sidebar-open":"kc-sidebar"}
+        style={{width:224,flexShrink:0,background:T.bgSide,borderRight:`1px solid ${T.border}`,
+          display:"flex",flexDirection:"column",overflow:"hidden"}}>
+
+        {/* Logo + theme toggle + mobile close */}
         <div style={{padding:"13px 14px 10px",borderBottom:`1px solid ${T.border}`,flexShrink:0,
           display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div>
@@ -3161,7 +3283,16 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
             <div style={{fontSize:9,color:T.textGhost,marginTop:2,paddingLeft:30,
               fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.06em"}}>IRCv3</div>
           </div>
-          <ThemePicker T={T} theme={theme} onSelect={appSetTheme} />
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <ThemePicker T={T} theme={theme} onSelect={appSetTheme} />
+            {/* Mobile close button */}
+            <button className="kc-mobile-only"
+              onClick={()=>setSidebarOpen(false)}
+              style={{background:"transparent",border:"none",color:T.textDim,
+                fontSize:20,cursor:"pointer",padding:"2px 4px",lineHeight:1,display:"none"}}>
+              ✕
+            </button>
+          </div>
         </div>
 
         {/* Add network button */}
@@ -3211,6 +3342,7 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
               dispatch({type:"SET_ACTIVE_NET",id:netId});
               dispatch({type:"SET_ACTIVE_CHAN",netId,chan});
               dispatch({type:"CLEAR_UNREAD",netId,chan});
+              setSidebarOpen(false); // close mobile drawer on channel select
             };
 
             return (
@@ -3365,6 +3497,16 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
         {/* Header */}
         <div style={{padding:"10px 18px",borderBottom:`1px solid ${T.borderFaint}`,background:T.bgSide,
           display:"flex",alignItems:"center",gap:12,flexShrink:0,minHeight:46}}>
+
+          {/* Hamburger - mobile only */}
+          <button className="kc-mobile-only"
+            onClick={()=>setSidebarOpen(true)}
+            style={{background:"transparent",border:"none",color:T.textDim,
+              fontSize:20,cursor:"pointer",padding:"2px 6px",lineHeight:1,
+              flexShrink:0,display:"none"}}>
+            ☰
+          </button>
+
           {activeChanName?(
             <>
               <span style={{...MONO,fontSize:15,fontWeight:700,color:T.textBright,flexShrink:0}}>
@@ -3413,7 +3555,7 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
           </div>
 
           {showUsers&&!isStatusChan&&activeChanName&&(
-            <div style={{width:190,flexShrink:0,borderLeft:`1px solid ${T.borderFaint}`,
+            <div className="kc-members-panel" style={{width:190,flexShrink:0,borderLeft:`1px solid ${T.borderFaint}`,
               background:T.bgSide,overflowY:"auto"}}>
               {[
                 ["Owners",   owners,  "#f7d07e"],
