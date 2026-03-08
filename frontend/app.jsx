@@ -2624,13 +2624,12 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
         <AddNetworkModal
           onClose={()=>setShowAddNet(false)}
           onAdded={net=>{
-            // Add to state first, then connect — net object is passed directly
-            // so connectNetwork never needs to look it up from state
             dispatch({ type:"NET_ADD", net });
             dispatch({ type:"SET_ACTIVE_NET", id:net.id });
             setShowAddNet(false);
-            // Short delay so NET_ADD processes before connect tries to log to STATUS_CHAN
-            setTimeout(() => reconnectNetwork(net), 50);
+            // Backend already started the BNC connection via AddNetwork —
+            // just open the WS, don't call /connect again (would double-connect)
+            setTimeout(() => connectNetwork(net), 50);
           }}
         />
       )}
