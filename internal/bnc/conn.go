@@ -38,7 +38,7 @@ const (
 	dialTimeout      = 15 * time.Second
 	writeTimeout     = 10 * time.Second
 	keepaliveInterval = 120 * time.Second // how often we PING the upstream
-	keepaliveTimeout  = 300 * time.Second // how long without any data before giving up
+	keepaliveTimeout  = 400 * time.Second // how long without any data before giving up
 	BufferSize        = 500               // lines retained per channel/server
 	maxBackoff        = 300 * time.Second
 	initialBackoff    = 5 * time.Second
@@ -350,18 +350,20 @@ func (c *Conn) readLoop(tc net.Conn) {
 			case <-c.stopCh:
 				return
 			case <-ticker.C:
-				// Send PING first
-				c.sendRaw(fmt.Sprintf("PING :%d", time.Now().UnixMilli()))
-				// Then check: if lastPong is older than keepaliveTimeout,
-				// the server hasn't replied to our previous PING either
 				c.mu.Lock()
 				last := c.lastPong
 				c.mu.Unlock()
+				// Check timeout BEFORE sending the next PING.
+				// This means: if we haven't received any data since our
+				// PREVIOUS ping interval, the connection is dead.
+				// Sending PING first then immediately checking gave the
+				// server zero time to respond.
 				if time.Since(last) > keepaliveTimeout {
 					log.Printf("bnc[%s]: keepalive timeout — closing upstream", c.net.ID)
 					tc.Close()
 					return
 				}
+				c.sendRaw(fmt.Sprintf("PING :%d", time.Now().UnixMilli()))
 			}
 		}
 	}()
