@@ -4175,8 +4175,7 @@ function ThemePicker({ allThemes, currentTheme, builtinNames, onApply, onSave, o
                 <div style={{...MONO,fontSize:10,color:T.textDim,marginBottom:8}}>LIVE PREVIEW</div>
                 <ThemePreviewSwatch theme={editState}/>
                 <div style={{marginTop:10,...MONO,fontSize:10,color:T.textFaint,lineHeight:1.7}}>
-                  Tip: use &ldquo;fork&rdquo; on any built-in theme to start from its colors.
-                  Advanced tokens (hover states, alpha variants) are auto-derived when saved.
+                  Tip: use “fork” on any built-in theme to start from its colors. Advanced tokens (hover states, alpha variants) are auto-derived when saved.
                 </div>
               </div>
             </div>
