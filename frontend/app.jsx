@@ -2076,8 +2076,12 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
         if (!namesBufRef.current[key]) namesBufRef.current[key]={};
         (params[3]||"").trim().split(" ").forEach(e=>{
           if (!e) return;
-          const pfx="~&@%+".includes(e[0])?e[0]:"";
-          const nick=pfx?e.slice(1):e;
+          // multi-prefix: server may send multiple prefix chars e.g. "~@nick"
+          // take the first (highest-ranked) prefix
+          let pfxChars="", rest=e;
+          while (rest.length && "~&@%+".includes(rest[0])) { pfxChars+=rest[0]; rest=rest.slice(1); }
+          const pfx=pfxChars[0]||""; // highest prefix only
+          const nick=rest;
           if (nick) namesBufRef.current[key][nick]=pfx;
         });
         break;
@@ -2229,19 +2233,26 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
         if (target?.startsWith("#")) {
           addSys(netId,target,`${from} sets mode ${modeStr}`);
           // Update member prefixes for mode changes that affect them
-          // params[1] = mode string e.g. "+o-v", params[2+] = nick arguments
           const modeChars=params[1]||"";
-          // Map of mode char → sidebar prefix symbol
           const modeToPrefix={"o":"@","h":"%","v":"+","a":"&","q":"~"};
-          let argIdx=2; let dir="+";
+          let argIdx=2; let dir="+"; let memberModeChanged=false;
           for (const ch of modeChars) {
             if (ch==="+"||ch==="-") { dir=ch; continue; }
             if (modeToPrefix[ch]) {
               const nick=params[argIdx++];
-              if (nick) dispatch({ type:"SET_MEMBER_PREFIX", netId, chan:target, nick, prefix:dir==="+"?modeToPrefix[ch]:"" });
+              if (nick) {
+                dispatch({ type:"SET_MEMBER_PREFIX", netId, chan:target, nick, prefix:dir==="+"?modeToPrefix[ch]:"" });
+                memberModeChanged=true;
+              }
             } else if ("beIklLjf".includes(ch)) {
               argIdx++; // these modes consume an argument but aren't member modes
             }
+          }
+          // After any member mode change, request fresh NAMES to get authoritative
+          // prefix state (handles multi-prefix and mode removal correctly)
+          if (memberModeChanged) {
+            const conn=connections.current[netId];
+            if (conn?.ready) conn.send(`NAMES ${target}`);
           }
         }
         break;

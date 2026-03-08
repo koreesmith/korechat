@@ -499,6 +499,7 @@ func (c *Conn) intercept(line string) {
 				"server-time",
 				"message-tags",
 				"chathistory",
+				"multi-prefix",
 			}
 			if useSASL {
 				wantCaps = append(wantCaps, "sasl")
