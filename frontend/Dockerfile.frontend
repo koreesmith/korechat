@@ -9,7 +9,8 @@ COPY nginx.conf /etc/nginx/conf.d/korechat.conf
 # Copy frontend static files
 COPY index.html     /usr/share/nginx/html/index.html
 COPY app.jsx        /usr/share/nginx/html/app.jsx
-COPY manifest.json  /usr/share/nginx/html/manifest.json
+COPY manifest.json    /usr/share/nginx/html/manifest.json
+COPY mobiletest.html  /usr/share/nginx/html/mobiletest.html
 COPY sw.js          /usr/share/nginx/html/sw.js
 COPY icons/         /usr/share/nginx/html/icons/
 

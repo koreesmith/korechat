@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Mobile Test</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    #info { background: #f7a07e; padding: 8px; font: 12px monospace; }
+    #app { display: flex; height: calc(100% - 32px); }
+    #sidebar { width: 224px; background: #1a2a4a; color: #fff; padding: 10px; flex-shrink: 0; }
+    #main { flex: 1; background: #0d1b2e; color: #fff; padding: 10px; }
+    #hamburger { display: none; font-size: 24px; cursor: pointer; padding: 4px 8px; }
+    @media (max-width: 768px) {
+      #sidebar { display: none; }
+      #hamburger { display: block; }
+    }
+  </style>
+</head>
+<body>
+  <div id="info">w=<span id="w"></span> media=<span id="media"></span></div>
+  <div id="app">
+    <div id="sidebar">SIDEBAR<br/>nav here</div>
+    <div id="main">
+      <span id="hamburger" onclick="alert('hamburger!')">☰</span>
+      MAIN CONTENT
+    </div>
+  </div>
+  <script>
+    document.getElementById('w').textContent = window.innerWidth;
+    var mq = window.matchMedia('(max-width: 768px)');
+    document.getElementById('media').textContent = mq.matches ? 'MOBILE' : 'DESKTOP';
+  </script>
+</body>
+</html>

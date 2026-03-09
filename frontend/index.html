@@ -6,12 +6,10 @@
   <title>KoreChat</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body, #root { height: 100%; width: 100%; overflow: hidden; }
-    /* Safari mobile 100vh fix — excludes browser chrome from height */
-    @supports (-webkit-touch-callout: none) {
-      html, body, #root { height: -webkit-fill-available; }
-    }
-    body { background: #080f1e; color: #c8d8f0; }
+    /* TheLounge-style iOS fix: overflow:hidden on body, height:100% on html */
+    html, body { height: 100%; overscroll-behavior: none; }
+    body { overflow: hidden; background: #080f1e; color: #c8d8f0; }
+    #root { height: 100%; width: 100%; }
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #ffffff18; border-radius: 3px; }
@@ -39,22 +37,26 @@
       color:#f7a07e; white-space:pre-wrap; word-break:break-all; }
     #errtitle { font-size:15px; font-weight:700; margin-bottom:12px; color:#f7d07e; }
     /* ── Mobile responsive ───────────────────────────────────────────────── */
-    @media (max-width: 640px) {
+    /* Mobile-only elements hidden by default on desktop */
+    .kc-mobile-only { display: none; }
+    .kc-mobile-overlay { display: none; }
+
+    @media (max-width: 768px) {
       .kc-sidebar {
         position: fixed !important;
-        left: -240px !important;
-        top: 0 !important;
-        height: 100vh !important;
-        z-index: 210 !important;
-        transition: left 0.22s cubic-bezier(0.4,0,0.2,1) !important;
-        box-shadow: none !important;
+        left: -240px;
+        top: 0;
+        height: 100vh;
+        z-index: 210;
+        transition: left 0.22s cubic-bezier(0.4,0,0.2,1);
+        box-shadow: none;
       }
       .kc-sidebar-open {
         left: 0 !important;
-        box-shadow: 4px 0 24px #00000060 !important;
+        box-shadow: 4px 0 24px #00000060;
       }
-      .kc-mobile-overlay { display: block !important; }
-      .kc-mobile-only { display: flex !important; }
+      .kc-mobile-overlay { display: block; }
+      .kc-mobile-only { display: flex; }
       .kc-members-panel { display: none !important; }
     }
     @media (min-width: 641px) {
@@ -92,11 +94,17 @@
       if (s) s.style.display = 'none';
     }
     window.onerror = function(msg, src, line, col, err) {
+      if (msg && msg.indexOf('runtime.sendMessage') !== -1) return true;
       showErr((err ? String(err) + '\n' + (err.stack||'') : msg) + '\nFile: ' + src + ' Line: ' + line);
       return true;
     };
     window.onunhandledrejection = function(e) {
-      showErr('Unhandled rejection: ' + String(e.reason));
+      var msg = String(e.reason);
+      // Ignore browser extension noise
+      if (msg.indexOf('runtime.sendMessage') !== -1 ||
+          msg.indexOf('Extension') !== -1 ||
+          msg.indexOf('extension') !== -1) return;
+      showErr('Unhandled rejection: ' + msg);
     };
   </script>
 
@@ -116,7 +124,6 @@
         .then(function(src) {
           try {
             var out = Babel.transform(src, { presets: ['react'], filename: 'app.jsx' });
-            // Use indirect eval to run in global scope
             (0, eval)(out.code);
           } catch(e) {
             showErr(String(e) + '\n' + (e.stack || ''));
@@ -135,10 +142,16 @@
     };
     setTimeout(window.__korechatReady, 5000);
 
-    // Register service worker for PWA
+    // Register service worker for PWA - unregister old ones first
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(function(){});
+      navigator.serviceWorker.getRegistrations().then(function(regs) {
+        var unregisterAll = regs.map(function(r) { return r.unregister(); });
+        return Promise.all(unregisterAll);
+      }).then(function() {
+        return navigator.serviceWorker.register('/sw.js');
+      }).catch(function(){});
     }
+
   </script>
 </body>
 </html>

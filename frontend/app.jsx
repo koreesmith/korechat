@@ -3,6 +3,22 @@
 const WS_BASE  = (location.protocol === "https:" ? "wss:" : "ws:") + "//" + location.host;
 const API_BASE = location.protocol + "//" + location.host + "/api/v1";
 
+// React hooks — must be available before any component is defined
+const { useState, useEffect, useRef, useCallback, useReducer } = React;
+
+
+// Safe Notification API wrapper — mobile Safari on HTTP throws SecurityError on access
+function getNotifPermission() {
+  try { return (typeof Notification !== "undefined") ? Notification.permission : "unsupported"; }
+  catch(e) { return "unsupported"; }
+}
+function requestNotifPermission() {
+  try {
+    if (typeof Notification === "undefined") return Promise.resolve("unsupported");
+    return Notification.requestPermission();
+  } catch(e) { return Promise.resolve("unsupported"); }
+}
+
 
 // ─── Theme system ─────────────────────────────────────────────────────────────
 // To add a new theme: add an entry to THEMES with the same keys.
@@ -2106,14 +2122,15 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                       {notifPerms==="denied"&&(
                         <div style={{fontSize:11,color:T.textFaint,marginTop:2,lineHeight:1.6}}>
                           {(()=>{
+                            if (location.protocol !== "https:") return "Notifications require HTTPS. This page is loaded over HTTP — switch to a secure connection and try again.";
                             const ua = navigator.userAgent;
                             const isIOS = /iPad|iPhone|iPod/.test(ua);
                             const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
                             if (isIOS) return "iOS requires KoreChat to be installed to your home screen (Share → Add to Home Screen) before notifications can be enabled.";
                             if (isSafari) return "In Safari: go to Settings → Privacy → Manage Website Data, search for this site and Remove it, then reload KoreChat and click Enable.";
-                            if (/Firefox/.test(ua)) return "In Firefox: click the lock icon or ⚠ in the address bar, then Permissions → Notifications → Allow.";
+                            if (/Firefox/.test(ua)) return "In Firefox: click the lock icon or ⚠ in the address bar → Permissions → Notifications → Allow.";
                             if (/Edg/.test(ua)) return "In Edge: click the lock icon in the address bar → Permissions for this site → Notifications → Allow.";
-                            return "Click the lock icon or ⚙ in your browser's address bar → Site settings → Notifications → Allow.";
+                            return "Click the lock icon in your browser's address bar → Site settings → Notifications → Allow.";
                           })()}
                         </div>
                       )}
@@ -2126,7 +2143,7 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                           window.location.reload();
                           return;
                         }
-                        Notification.requestPermission().then(p=>setNotifPerms(p));
+                        requestNotifPermission().then(p=>setNotifPerms(p));
                       }} style={{...MONO,padding:"5px 12px",borderRadius:6,border:"none",
                         background:notifPerms==="denied"?T.border:T.accent,
                         color:notifPerms==="denied"?T.textDim:"#fff",
@@ -2295,11 +2312,18 @@ function ThemePicker({ T, theme, onSelect }) {
 }
 
 function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appToggleTheme, appSetTheme }) {
-  const [state, dispatch] = useReducer(reducer, INIT);
+  const [isMobile, setIsMobile] = useState(()=>window.innerWidth<=768);
+  useEffect(()=>{
+    const handler = ()=>setIsMobile(window.innerWidth<=768);
+    window.addEventListener("resize",handler);
+    return ()=>window.removeEventListener("resize",handler);
+  },[]);
+    const [state, dispatch] = useReducer(reducer, INIT);
   const [me, setMe]        = useState(_currentUser); // local copy updated on profile save
   const [showAddNet,   setShowAddNet]   = useState(false);
   const [netSettings,  setNetSettings]  = useState(null); // network object being edited
   const [showUsers,    setShowUsers]    = useState(true);
+  const [showUsersMobile, setShowUsersMobile] = useState(false);
   const [collapsed,    setCollapsed]    = useState({}); // key: netId+"::channels" | netId+"::dms"
   const [userMenu,     setUserMenu]     = useState(null); // {nick, pfx, x, y, chan, netId}
   const [ignoredNicks, setIgnoredNicks] = useState(new Set()); // client-side ignore list
@@ -2308,11 +2332,13 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
 
   const [ctxMenu, setCtxMenu] = useState(null); // {x,y,net} for right-click menu
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
+
+
   // Notification preferences (persisted to sessionStorage, loaded once)
-  const [notifPerms, setNotifPerms] = useState(() => Notification?.permission || "default");
+  const [notifPerms, setNotifPerms] = useState(() => getNotifPermission() || "default");
   // Re-sync permission state whenever it may have changed (e.g. user updated browser settings)
   React.useEffect(() => {
-    const sync = () => setNotifPerms(Notification?.permission || "default");
+    const sync = () => setNotifPerms(getNotifPermission() || "default");
     sync();
     // Poll every 2s while Settings modal is open — catches Safari's delayed grant
     const id = setInterval(sync, 2000);
@@ -2350,6 +2376,7 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
   const batchBufRef  = useRef({});  // netId+batchId → {type, chan, msgs[]}
   const namesBufRef  = useRef({});  // netId+chan → {nick: prefix} accumulator for 353/366
   const bottomRef    = useRef(null);
+  const msgsRef      = useRef(null);
 
   const { networks, networkOrder, channels, messages, unread,
           activeNet, activeChan, myNick } = state;
@@ -2564,7 +2591,7 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
         dispatch({ type:"ADD_MSG", netId, chan, msg:msgObj });
 
         // ── Browser notifications ──────────────────────────────────────────────
-        if (Notification?.permission === "granted") {
+        if (getNotifPermission() === "granted") {
           const prefs = notifPrefsRef.current;
           const onlyHidden = prefs.onlyWhenHidden !== false; // default true
           const tabVisible = !document.hidden;
@@ -2583,12 +2610,14 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
                 : `${msgObj.nick} mentioned you in ${chan}`;
               const body = msgObj.text?.slice(0, 120) || "";
               try {
-                const n = new Notification(title, {
-                  body,
-                  icon: "/icons/icon-192.png",
-                  tag: `kc-${netId}-${chan}`,
-                });
-                n.onclick = () => { window.focus(); n.close(); };
+                if (typeof Notification !== "undefined") {
+                  const n = new Notification(title, {
+                    body,
+                    icon: "/icons/icon-192.png",
+                    tag: `kc-${netId}-${chan}`,
+                  });
+                  n.onclick = () => { window.focus(); n.close(); };
+                }
               } catch(e) {}
             }
           }
@@ -3180,6 +3209,7 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
     <div style={{display:"flex",height:"100%",width:"100%",background:T.bg,
       overflow:"hidden",color:T.text,fontFamily:"'Inter var','Inter',sans-serif"}}>
 
+
       {showProfile&&(
         <ProfileModal
           currentUser={me}
@@ -3292,17 +3322,18 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
       )}
 
       {/* ── Mobile overlay ── */}
-      {sidebarOpen&&(
+      {sidebarOpen&&isMobile&&(
         <div onClick={()=>setSidebarOpen(false)}
-          style={{position:"fixed",inset:0,background:"#00000060",zIndex:200,
-            display:"none"}}
-          className="kc-mobile-overlay" />
+          style={{position:"fixed",inset:0,background:"#00000060",zIndex:200}} />
       )}
 
       {/* ── Sidebar ── */}
-      <div className={sidebarOpen?"kc-sidebar kc-sidebar-open":"kc-sidebar"}
-        style={{width:224,flexShrink:0,background:T.bgSide,borderRight:`1px solid ${T.border}`,
-          display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      {(!isMobile||sidebarOpen)&&<div style={{
+          width:224,flexShrink:0,background:T.bgSide,borderRight:`1px solid ${T.border}`,
+          display:"flex",flexDirection:"column",overflow:"hidden",
+          ...(isMobile?{position:"fixed",top:0,left:0,height:"100vh",zIndex:210,
+            boxShadow:"4px 0 24px #00000060"}:{}),
+        }}>
 
         {/* Logo + theme toggle + mobile close */}
         <div style={{padding:"13px 14px 10px",borderBottom:`1px solid ${T.border}`,flexShrink:0,
@@ -3320,12 +3351,13 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
             <ThemePicker T={T} theme={theme} onSelect={appSetTheme} />
             {/* Mobile close button */}
-            <button className="kc-mobile-only"
-              onClick={()=>setSidebarOpen(false)}
-              style={{background:"transparent",border:"none",color:T.textDim,
-                fontSize:20,cursor:"pointer",padding:"2px 4px",lineHeight:1,display:"none"}}>
-              ✕
-            </button>
+            {isMobile&&(
+              <button onClick={()=>setSidebarOpen(false)}
+                style={{background:"transparent",border:"none",color:T.textDim,
+                  fontSize:20,cursor:"pointer",padding:"2px 4px",lineHeight:1}}>
+                ✕
+              </button>
+            )}
           </div>
         </div>
 
@@ -3523,23 +3555,23 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
             ⚙ Settings
           </button>
         </div>
-      </div>
+      </div>}
 
       {/* ── Main area ── */}
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minWidth:0}}>
+
 
         {/* Header */}
         <div style={{padding:"10px 18px",borderBottom:`1px solid ${T.borderFaint}`,background:T.bgSide,
           display:"flex",alignItems:"center",gap:12,flexShrink:0,minHeight:46}}>
 
-          {/* Hamburger - mobile only */}
-          <button className="kc-mobile-only"
-            onClick={()=>setSidebarOpen(true)}
-            style={{background:"transparent",border:"none",color:T.textDim,
-              fontSize:20,cursor:"pointer",padding:"2px 6px",lineHeight:1,
-              flexShrink:0,display:"none"}}>
-            ☰
-          </button>
+          {isMobile&&(
+            <button onClick={()=>setSidebarOpen(true)}
+              style={{background:"transparent",border:"none",color:T.textDim,
+                fontSize:20,cursor:"pointer",padding:"2px 6px",lineHeight:1,flexShrink:0}}>
+              ☰
+            </button>
+          )}
 
           {activeChanName?(
             <>
@@ -3558,8 +3590,8 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
                   </span>
                 )}
                 {!isStatusChan&&(
-                  <button onClick={()=>setShowUsers(s=>!s)}
-                    style={{...MONO,background:showUsers?T.accentBg3:"transparent",
+                  <button onClick={()=>isMobile?setShowUsersMobile(s=>!s):setShowUsers(s=>!s)}
+                    style={{...MONO,background:(isMobile?showUsersMobile:showUsers)?T.accentBg3:"transparent",
                       border:`1px solid ${T.borderFaint}`,borderRadius:4,padding:"3px 9px",
                       fontSize:12,color:T.accent,cursor:"pointer"}}>
                     {Object.keys(activeMembers).length} users
@@ -3575,8 +3607,8 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
         </div>
 
         {/* Messages + member list */}
-        <div style={{flex:1,display:"flex",overflow:"hidden"}}>
-          <div style={{flex:1,overflowY:"auto",padding:"8px 0"}}>
+        <div style={{flex:1,display:"flex",overflow:"hidden",position:"relative"}}>
+          <div ref={msgsRef} style={{flex:1,overflowY:"auto",padding:"8px 0"}}>
             {activeMsgs.length===0&&activeChanName&&(
               <div style={{...MONO,padding:"32px 58px",color:T.textFaint,fontSize:13}}>
                 {isStatusChan?"Waiting for server messages…":`No messages yet in ${activeChanName}`}
@@ -3585,12 +3617,18 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
             {activeMsgs.map((msg,i)=>(
               <MsgRow key={msg.id||i} msg={msg} prev={i>0?activeMsgs[i-1]:null} myNick={currentNick}/>
             ))}
-            <div ref={bottomRef}/>
+            <div/>
           </div>
 
-          {showUsers&&!isStatusChan&&activeChanName&&(
-            <div className="kc-members-panel" style={{width:190,flexShrink:0,borderLeft:`1px solid ${T.borderFaint}`,
-              background:T.bgSide,overflowY:"auto"}}>
+          {!isStatusChan&&activeChanName&&(isMobile?showUsersMobile:showUsers)&&(
+            <div style={isMobile?{
+                position:"absolute",top:0,right:0,bottom:0,width:200,zIndex:50,
+                background:T.bgSide,borderLeft:`1px solid ${T.borderFaint}`,
+                overflowY:"auto",boxShadow:"-4px 0 12px #00000040"
+              }:{
+                width:190,flexShrink:0,borderLeft:`1px solid ${T.borderFaint}`,
+                background:T.bgSide,overflowY:"auto"
+              }}>
               {[
                 ["Owners",   owners,  "#f7d07e"],
                 ["Admins",   admins,  "#f7a07e"],
@@ -4078,7 +4116,7 @@ function App() {
   // AdminPanel overlays on top rather than replacing KoreChat, preventing remount/reconnect.
   return (
     <ThemeCtx.Provider value={T}>
-      <div style={{position:"relative",width:"100%",height:"100vh",overflow:"hidden"}}>
+      <div style={{position:"relative",width:"100%",height:"100%",overflow:"hidden"}}>
         <KoreChat currentUser={me} onLogout={handleLogout} onAdmin={()=>setView("admin")}
           appTheme={theme} appToggleTheme={toggleTheme} appSetTheme={t=>{setTheme(t);sessionStorage.setItem("kc_theme",t);}}/>
         {view==="admin" && (
@@ -4092,7 +4130,6 @@ function App() {
 }
 
 // ─── Mount ────────────────────────────────────────────────────────────────────
-const { useState, useEffect, useRef, useCallback, useReducer } = React;
-const _root = ReactDOM.createRoot(document.getElementById("root"));
-_root.render(React.createElement(App));
+const _kcRoot = ReactDOM.createRoot(document.getElementById("root"));
+_kcRoot.render(React.createElement(App));
 if (window.__korechatReady) window.__korechatReady();
