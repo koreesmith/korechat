@@ -35,10 +35,10 @@ import (
 )
 
 const (
-	dialTimeout      = 15 * time.Second
-	writeTimeout     = 10 * time.Second
-	keepaliveInterval = 120 * time.Second // how often we PING the upstream
-	keepaliveTimeout  = 400 * time.Second // how long without any data before giving up
+	dialTimeout       = 15 * time.Second
+	writeTimeout      = 10 * time.Second
+	keepaliveInterval = 60 * time.Second  // how often we PING the upstream
+	keepaliveTimeout  = 180 * time.Second // how long without any data before giving up
 	BufferSize        = 500               // lines retained per channel/server
 	maxBackoff        = 300 * time.Second
 	initialBackoff    = 5 * time.Second
@@ -116,7 +116,8 @@ type Conn struct {
 	stopCh chan struct{}
 
 	// reconnect
-	backoff time.Duration
+	backoff    time.Duration
+	retryCount int // number of reconnect attempts since last successful connect
 
 	// keepalive tracking
 	lastPong time.Time
@@ -253,24 +254,29 @@ func (c *Conn) connectLoop() {
 			c.mu.Unlock()
 			return
 		}
+		c.retryCount++
+		retry := c.retryCount
+		backoff := c.backoff
 		c.mu.Unlock()
 
 		// Exponential backoff
-		log.Printf("bnc[%s]: reconnecting in %v", c.net.ID, c.backoff)
+		log.Printf("bnc[%s]: reconnecting in %v (attempt %d)", c.net.ID, backoff, retry)
 		c.store.SetStatus(c.net.ID, networks.StatusConnecting,
-			fmt.Sprintf("reconnecting in %v…", c.backoff))
-		c.notice(fmt.Sprintf("Reconnecting in %v…", c.backoff))
+			fmt.Sprintf("reconnecting in %v… (attempt %d)", backoff, retry))
+		c.notice(fmt.Sprintf("Reconnecting in %v… (attempt %d)", backoff, retry))
 
 		select {
 		case <-c.stopCh:
 			return
-		case <-time.After(c.backoff):
+		case <-time.After(backoff):
 		}
 
+		c.mu.Lock()
 		c.backoff *= 2
 		if c.backoff > maxBackoff {
 			c.backoff = maxBackoff
 		}
+		c.mu.Unlock()
 	}
 }
 
@@ -686,12 +692,19 @@ func (c *Conn) intercept(line string) {
 		c.currentNick = nick
 		c.connected = true
 		c.backoff = initialBackoff // reset backoff on successful connect
+		c.retryCount = 0           // reset retry counter
+		// Snapshot dynamic channels joined before this reconnect
+		prevChans := make([]string, 0, len(c.joinedChans))
+		for ch := range c.joinedChans {
+			prevChans = append(prevChans, ch)
+		}
+		c.joinedChans = make(map[string]bool) // reset; will repopulate on JOIN
 		c.mu.Unlock()
 
 		c.store.SetStatus(c.net.ID, networks.StatusConnected, "")
 		log.Printf("bnc[%s]: registered on %s as %s", c.net.ID, c.net.Name, nick)
 
-		// Execute OnConnect perform commands, then auto-join channels.
+		// Execute OnConnect perform commands, then rejoin all channels.
 		// Small initial delay lets the server finish its welcome burst.
 		go func() {
 			log.Printf("bnc[%s]: auto-join goroutine started, sleeping 500ms", c.net.ID)
@@ -724,21 +737,33 @@ func (c *Conn) intercept(line string) {
 				time.Sleep(800 * time.Millisecond)
 			}
 
-			// Auto-join channels
-			c.mu.Lock()
-			chans := make([]string, 0, len(c.net.AutoJoin))
-			for _, ch := range c.net.AutoJoin {
+			// Build deduplicated join list: configured auto-join + previously
+			// joined dynamic channels (e.g. from /join during a prior session).
+			seen := make(map[string]bool)
+			var chans []string
+			addChan := func(ch string) {
 				ch = strings.TrimSpace(ch)
 				if ch == "" {
-					continue
+					return
 				}
 				if !strings.HasPrefix(ch, "#") {
 					ch = "#" + ch
 				}
-				chans = append(chans, ch)
+				if !seen[ch] {
+					seen[ch] = true
+					chans = append(chans, ch)
+				}
+			}
+			c.mu.Lock()
+			for _, ch := range c.net.AutoJoin {
+				addChan(ch)
 			}
 			c.mu.Unlock()
-			log.Printf("bnc[%s]: auto-join: %d channel(s): %v", c.net.ID, len(chans), chans)
+			for _, ch := range prevChans {
+				addChan(ch)
+			}
+
+			log.Printf("bnc[%s]: joining %d channel(s): %v", c.net.ID, len(chans), chans)
 			for _, ch := range chans {
 				c.sendRaw("JOIN " + ch)
 			}

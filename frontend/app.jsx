@@ -2409,12 +2409,15 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
     const chans = channelsRef.current;
 
     switch (command) {
-      case "001":
+      case "001": {
+        const wasConnected = nets[netId]?.status === "connected";
         dispatch({ type:"SET_NICK",   netId, nick:params[0] });
         dispatch({ type:"NET_STATUS", id:netId, status:"connected" });
         ensureChan(netId, STATUS_CHAN);
-        addSys(netId, STATUS_CHAN, `✓ Connected to ${nets[netId]?.name||netId} as ${params[0]}`);
+        const connVerb = wasConnected ? "Reconnected to" : "Connected to";
+        addSys(netId, STATUS_CHAN, `✓ ${connVerb} ${nets[netId]?.name||netId} as ${params[0]}`);
         break;
+      }
 
       case "372": case "375": case "376":
         ensureChan(netId, STATUS_CHAN);
@@ -2566,6 +2569,17 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
                 })
                 .catch(() => {});
             });
+            break;
+          }
+          // Reconnect notices: suppress "Reconnecting in 5s… (attempt 1)" to avoid
+          // alarming the user on brief hiccups. Show from attempt 2 onwards.
+          if (text.startsWith("Reconnecting in ")) {
+            const attemptMatch = text.match(/attempt (\d+)/);
+            const attempt = attemptMatch ? parseInt(attemptMatch[1]) : 1;
+            if (attempt > 1) {
+              ensureChan(netId, STATUS_CHAN);
+              addSys(netId, STATUS_CHAN, `⚠ ${text}`);
+            }
             break;
           }
           // All other BNC/korechat notices → show in status channel
@@ -3305,7 +3319,7 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
                 onMouseEnter={e=>e.currentTarget.style.background=T.border}
                 onMouseLeave={e=>e.currentTarget.style.background="transparent"}
                 onClick={()=>{reconnectNetwork(ctxMenu.net);setCtxMenu(null);}}>
-                ⚡ Connect
+                ⚡ Connect to IRC
               </div>
             )}
             {ctxMenu.net.status==="connected"&&(
@@ -3314,7 +3328,7 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
                 onMouseEnter={e=>e.currentTarget.style.background=T.border}
                 onMouseLeave={e=>e.currentTarget.style.background="transparent"}
                 onClick={()=>{disconnectNetwork(ctxMenu.net.id);setCtxMenu(null);}}>
-                ✕ Disconnect
+                ✕ Disconnect from IRC
               </div>
             )}
           </div>
@@ -3432,22 +3446,14 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
                   {!net.tls&&net.status==="connected"&&(
                     <span title="Unencrypted connection" style={{fontSize:10,opacity:0.5,flexShrink:0}}>🔓</span>
                   )}
-                  {(net.status==="disconnected"||net.status==="error")&&(
-                    <button onClick={e=>{e.stopPropagation();reconnectNetwork(net);}}
-                      style={{...MONO,background:T.greenBg,border:`1px solid ${T.greenBorder}`,
-                        borderRadius:3,color:T.green,fontSize:9,padding:"1px 5px",cursor:"pointer"}}>
-                      connect
-                    </button>
-                  )}
                   {net.status==="connected"&&(
-                    <button onClick={e=>{e.stopPropagation();disconnectNetwork(netId);}}
-                      style={{...MONO,background:"transparent",border:`1px solid ${T.redBorder}`,
-                        borderRadius:3,color:T.red+"99",fontSize:9,padding:"1px 5px",cursor:"pointer"}}>
-                      dc
-                    </button>
+                    <span title="Connected" style={{fontSize:9,color:T.green,flexShrink:0}}>●</span>
                   )}
                   {net.status==="connecting"&&(
-                    <span style={{...MONO,fontSize:9,color:T.amber+"99"}}>…</span>
+                    <span title="Connecting…" style={{fontSize:9,color:T.amber,flexShrink:0}}>●</span>
+                  )}
+                  {(net.status==="disconnected"||net.status==="error")&&(
+                    <span title={net.status==="error"?"Connection error — will retry":"Disconnected"} style={{fontSize:9,color:T.red+"99",flexShrink:0}}>●</span>
                   )}
                   <span title="Settings" onClick={e=>{e.stopPropagation();setNetSettings(net);}}
                     style={{fontSize:11,opacity:0.4,cursor:"pointer",flexShrink:0,lineHeight:1,
