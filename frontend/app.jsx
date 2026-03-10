@@ -2981,7 +2981,53 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   const activeMsgKey   = activeNet&&activeChanName ? CHAN_KEY(activeNet,activeChanName) : null;
   const activeMsgs     = (activeMsgKey ? (messages[activeMsgKey]||[]) : []).filter(m=>!m.nick||!ignoredNicks.has(m.nick));
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({behavior:"smooth"}); }, [activeMsgs.length]);
+  // ── Scroll management ──────────────────────────────────────────────────────
+  const [newMsgCount, setNewMsgCount] = useState(0);
+  const isAtBottomRef = useRef(true);
+
+  const scrollToBottom = useCallback((smooth=false) => {
+    const el = msgsRef.current;
+    if (!el) return;
+    if (smooth) el.scrollTop = el.scrollHeight; // instant on mobile too
+    else el.scrollTop = el.scrollHeight;
+    setNewMsgCount(0);
+    isAtBottomRef.current = true;
+  }, []);
+
+  // Scroll to bottom whenever the active channel changes, reset badge
+  useEffect(() => {
+    setNewMsgCount(0);
+    prevMsgLenRef.current = 0;
+    scrollToBottom();
+  }, [activeNet, activeChanName]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When new messages arrive: scroll if at bottom, else increment badge
+  const prevMsgLenRef = useRef(0);
+  useEffect(() => {
+    const len = activeMsgs.length;
+    if (len === 0) { prevMsgLenRef.current = 0; return; }
+    const added = len - prevMsgLenRef.current;
+    prevMsgLenRef.current = len;
+    if (added <= 0) return; // history prepend — don't badge, scroll handled by channel switch
+    if (isAtBottomRef.current) {
+      scrollToBottom();
+    } else {
+      setNewMsgCount(n => n + added);
+    }
+  }, [activeMsgs.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Track whether user is scrolled to the bottom
+  useEffect(() => {
+    const el = msgsRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+      isAtBottomRef.current = atBottom;
+      if (atBottom) setNewMsgCount(0);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [activeNet, activeChanName]); // re-attach when channel changes
   useEffect(() => {
     if (activeNet&&activeChanName)
       dispatch({ type:"CLEAR_UNREAD", netId:activeNet, chan:activeChanName });
@@ -3957,8 +4003,23 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
               }
               return rows;
             })()}
-            <div/>
+            <div ref={bottomRef}/>
           </div>
+
+          {/* New messages badge — floats over message panel when scrolled up */}
+          {newMsgCount > 0 && (
+            <div onClick={()=>scrollToBottom(true)}
+              style={{position:"absolute",bottom:12,left:"50%",transform:"translateX(-50%)",
+                zIndex:20,cursor:"pointer",
+                background:T.accent,color:"#fff",
+                borderRadius:20,padding:"5px 16px",
+                fontSize:13,fontFamily:"'JetBrains Mono',monospace",fontWeight:600,
+                boxShadow:"0 2px 8px rgba(0,0,0,0.3)",
+                display:"flex",alignItems:"center",gap:6,userSelect:"none",
+                whiteSpace:"nowrap"}}>
+              ↓ {newMsgCount} new message{newMsgCount===1?"":"s"}
+            </div>
+          )}
 
           {!isStatusChan&&activeChanName&&(isMobile?showUsersMobile:showUsers)&&(
             <div style={isMobile?{
