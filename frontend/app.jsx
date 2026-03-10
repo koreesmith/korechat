@@ -369,6 +369,7 @@ const INIT = {
   channels:{}, messages:{}, unread:{},
   activeNet:null, activeChan:{}, myNick:{},
   seenMsgIds:{}, // msgid→true for dedup of server history replay
+  replaying:new Set(), // netIds currently in BNC ring buffer replay — suppress unread
 };
 
 function reducer(s, a) {
@@ -481,10 +482,11 @@ function reducer(s, a) {
       if (a.msg.id && s.seenMsgIds[a.msg.id]) return s;
       const msgs=[...(s.messages[k]||[]),a.msg].slice(-1000);
       const isActive=s.activeNet===a.netId&&s.activeChan[a.netId]===a.chan;
+      const isReplaying=s.replaying.has(a.netId);
       return { ...s,
         messages:   {...s.messages,  [k]:msgs},
         seenMsgIds: a.msg.id ? {...s.seenMsgIds, [a.msg.id]:true} : s.seenMsgIds,
-        unread:     {...s.unread,    [k]:isActive?0:(s.unread[k]||0)+1},
+        unread:     {...s.unread,    [k]:isActive||isReplaying?0:(s.unread[k]||0)+1},
       };
     }
     case "PREPEND_MSGS": {
@@ -521,6 +523,14 @@ function reducer(s, a) {
         messages:   {...s.messages,  [k]:combined},
         seenMsgIds: newSeen,
       };
+    }
+    case "REPLAY_START": {
+      const r=new Set(s.replaying); r.add(a.netId);
+      return { ...s, replaying:r };
+    }
+    case "REPLAY_DONE": {
+      const r=new Set(s.replaying); r.delete(a.netId);
+      return { ...s, replaying:r };
     }
     case "SORT_MSGS": {
       // Sort all message arrays for a network chronologically after BNC replay.
@@ -2624,6 +2634,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       case "001": {
         dispatch({ type:"SET_NICK",   netId, nick:params[0] });
         dispatch({ type:"NET_STATUS", id:netId, status:"connected" });
+        dispatch({ type:"REPLAY_START", netId }); // suppress unread during BNC ring buffer replay
         ensureChan(netId, STATUS_CHAN);
         // History loaded by replay-done after ring buffer replay completes
         break;
@@ -2746,6 +2757,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           if (text.startsWith("replay-done")) {
             const nickMatch=text.match(/nick:(\S+)/);
             if (nickMatch) dispatch({ type:"SET_NICK", netId, nick:nickMatch[1] });
+            dispatch({ type:"REPLAY_DONE", netId }); // re-enable unread counting
             ensureChan(netId, STATUS_CHAN);
 
             // Sort all channel message arrays — the BNC ring buffer replays messages
