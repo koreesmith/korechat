@@ -2784,6 +2784,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         // If the sender has no ! it's a server hostname, not a user — fold into status channel
         const isServer=!prefix.includes("!");
         const chan=isServer?STATUS_CHAN:isDM?from:target;
+
         if (!chan) break;
         const msgObj={ type:"message", nick:from, text:displayText, time, id:tags.msgid||Math.random().toString(36) };
         // If this message carries a batch tag, route it into the batch accumulator
@@ -2997,7 +2998,14 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   // ── scroll to bottom ───────────────────────────────────────────────────────
   const activeChanName = activeNet ? activeChan[activeNet] : null;
   const activeMsgKey   = activeNet&&activeChanName ? CHAN_KEY(activeNet,activeChanName) : null;
-  const activeMsgs     = (activeMsgKey ? (messages[activeMsgKey]||[]) : []).filter(m=>!m.nick||!ignoredNicks.has(m.nick));
+  const activeMsgs     = (activeMsgKey ? (messages[activeMsgKey]||[]) : []).filter(m=>{
+    if (m.nick && ignoredNicks.has(m.nick)) return false;
+    // Status channel: suppress regular user PRIVMSG that got misrouted via stale ring buffer.
+    // Legitimate server messages come from hostnames (contain ".") or have no nick.
+    // System messages (joins, parts, notices) are always shown.
+    if (activeChanName===STATUS_CHAN && m.type==="message" && m.nick && !m.nick.includes(".")) return false;
+    return true;
+  });
 
   // ── Scroll management ──────────────────────────────────────────────────────
   const [newMsgCount, setNewMsgCount] = useState(0);
