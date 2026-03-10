@@ -877,6 +877,18 @@ func (c *Conn) buffer(line string) {
 	// PRIVMSG/NOTICE/JOIN/PART/KICK/TOPIC lines have a channel target
 	chan_ := channelFromLine(line)
 
+	// Stamp @time tag if not already present so replayed lines have correct timestamps.
+	hasTime := strings.HasPrefix(line, "@") && strings.Contains(strings.SplitN(line+" ", " ", 2)[0], "time=")
+	if !hasTime {
+		ts := "@time=" + time.Now().UTC().Format(time.RFC3339Nano)
+		if strings.HasPrefix(line, "@") {
+			// Already has tags but no time — append time to existing tag block
+			line = line[:1] + "time=" + time.Now().UTC().Format(time.RFC3339Nano) + ";" + line[1:]
+		} else {
+			line = ts + " " + line
+		}
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

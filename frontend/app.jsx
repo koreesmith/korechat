@@ -510,14 +510,28 @@ function reducer(s, a) {
         return true;
       });
       if (!fresh.length) return s;
-      // Sort combined chronologically
+      // Sort combined chronologically; use original index as tiebreaker for same-timestamp msgs
       const combined=[...fresh,...existing]
-        .sort((a,b)=>new Date(a.time)-new Date(b.time))
+        .sort((a,b)=>{
+          const td=new Date(a.time)-new Date(b.time);
+          return td !== 0 ? td : 0;
+        })
         .slice(-1000);
       return { ...s,
         messages:   {...s.messages,  [k]:combined},
         seenMsgIds: newSeen,
       };
+    }
+    case "SORT_MSGS": {
+      // Sort all message arrays for a network chronologically after BNC replay.
+      const prefix = a.netId + "::";
+      const updated = {...s.messages};
+      Object.keys(updated).forEach(k => {
+        if (k.startsWith(prefix)) {
+          updated[k] = [...updated[k]].sort((a,b) => new Date(a.time) - new Date(b.time));
+        }
+      });
+      return { ...s, messages: updated };
     }
     case "CLEAR_UNREAD": {
       const k=CHAN_KEY(a.netId,a.chan);
@@ -2611,8 +2625,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         dispatch({ type:"SET_NICK",   netId, nick:params[0] });
         dispatch({ type:"NET_STATUS", id:netId, status:"connected" });
         ensureChan(netId, STATUS_CHAN);
-        // Load history for the status window silently on connect
-        loadHistory(netId, STATUS_CHAN);
+        // History loaded by replay-done after ring buffer replay completes
         break;
       }
 
@@ -2735,15 +2748,20 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             if (nickMatch) dispatch({ type:"SET_NICK", netId, nick:nickMatch[1] });
             ensureChan(netId, STATUS_CHAN);
 
-            // Load history for all open channels/DMs not yet loaded this session.
-            // Already-loaded channels skip (dedup via loadedHistoryRef).
-            // The CHATHISTORY gap-fill inside loadHistory handles any missed messages.
+            // Sort all channel message arrays — the BNC ring buffer replays messages
+            // in storage order which can be out of chronological sequence when
+            // messages from multiple sessions are interleaved in the buffer.
+            dispatch({ type:"SORT_MSGS", netId });
+
+            // Then load DB history for anything older than the ring buffer.
             const prefix = netId + "::";
             const openKeys = Object.keys(channelsRef.current).filter(k => k.startsWith(prefix));
-            openKeys.forEach(k => {
-              const chan = k.slice(prefix.length);
-              loadHistory(netId, chan); // no force — skip if already loaded this session
-            });
+            setTimeout(() => {
+              openKeys.forEach(k => {
+                const chan = k.slice(prefix.length);
+                loadHistory(netId, chan);
+              });
+            }, 100);
             break;
           }
           // Reconnect notices: suppress "Reconnecting in 5s… (attempt 1)" to avoid
@@ -3743,7 +3761,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
               dispatch({type:"SET_ACTIVE_CHAN",netId,chan});
               dispatch({type:"CLEAR_UNREAD",netId,chan});
               setSidebarOpen(false); // close mobile drawer on channel select
-              loadHistory(netId, chan); // load logs on first visit (no-op if already loaded)
+              setTimeout(() => loadHistory(netId, chan), 100); // let messagesRef sync first
             };
 
             return (

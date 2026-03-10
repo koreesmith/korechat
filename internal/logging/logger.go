@@ -315,11 +315,22 @@ func (l *Logger) runRetention() {
 func parseIRCLine(raw, networkID, networkName string) *Entry {
 	line := strings.TrimRight(raw, "\r\n")
 
-	// Strip IRCv3 tags (@tag=val ...)
+	// Parse IRCv3 tags (@tag=val ...) — extract server-time before stripping
+	var serverTime time.Time
 	if strings.HasPrefix(line, "@") {
 		sp := strings.Index(line, " ")
 		if sp < 0 {
 			return nil
+		}
+		tagStr := line[1:sp]
+		for _, tag := range strings.Split(tagStr, ";") {
+			if strings.HasPrefix(tag, "time=") {
+				if t, err := time.Parse(time.RFC3339Nano, tag[5:]); err == nil {
+					serverTime = t.UTC()
+				} else if t, err := time.Parse(time.RFC3339, tag[5:]); err == nil {
+					serverTime = t.UTC()
+				}
+			}
 		}
 		line = strings.TrimSpace(line[sp+1:])
 	}
@@ -358,6 +369,9 @@ func parseIRCLine(raw, networkID, networkName string) *Entry {
 
 	nick := nickFrom(prefix)
 	now := time.Now().UTC()
+	if !serverTime.IsZero() {
+		now = serverTime
+	}
 
 	e := &Entry{
 		NetworkID:   networkID,
