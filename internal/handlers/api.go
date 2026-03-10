@@ -595,7 +595,19 @@ func (a *API) QueryLogs(w http.ResponseWriter, r *http.Request) {
 			p.DateTo = t.Add(24*time.Hour - time.Second)
 		}
 	}
+	// `since` accepts an ISO-8601 datetime — returns entries strictly after that timestamp.
+	// Used by the frontend to fetch "what did we miss since our last log entry".
+	if v := q.Get("since"); v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			p.DateFrom = t.Add(time.Millisecond) // strictly after
+		} else if t, err := time.Parse("2006-01-02T15:04:05", v); err == nil {
+			p.DateFrom = t.Add(time.Millisecond)
+		}
+	}
 
+	if q.Get("order") == "asc" {
+		p.Ascending = true
+	}
 	result, err := a.logger.Query(claims.UserID, p)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -624,6 +636,15 @@ func (a *API) ExportLogs(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("date_to"); v != "" {
 		if t, err := time.Parse("2006-01-02", v); err == nil {
 			p.DateTo = t.Add(24*time.Hour - time.Second)
+		}
+	}
+	// `since` accepts an ISO-8601 datetime — returns entries strictly after that timestamp.
+	// Used by the frontend to fetch "what did we miss since our last log entry".
+	if v := q.Get("since"); v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			p.DateFrom = t.Add(time.Millisecond) // strictly after
+		} else if t, err := time.Parse("2006-01-02T15:04:05", v); err == nil {
+			p.DateFrom = t.Add(time.Millisecond)
 		}
 	}
 

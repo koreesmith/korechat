@@ -136,6 +136,7 @@ type QueryParams struct {
 	DateTo    time.Time
 	Limit     int
 	Offset    int
+	Ascending bool // if true, return oldest-first (for history display)
 }
 
 type QueryResult struct {
@@ -159,11 +160,15 @@ func (l *Logger) Query(userID string, p QueryParams) (*QueryResult, error) {
 	}
 
 	args = append(args, p.Limit, p.Offset)
+	orderDir := "DESC"
+	if p.Ascending {
+		orderDir = "ASC"
+	}
 	q := fmt.Sprintf(`
 		SELECT id, user_id, network_id, network_name, channel, nick, type, text, timestamp
 		FROM message_logs WHERE %s
-		ORDER BY timestamp DESC
-		LIMIT $%d OFFSET $%d`, where, len(args)-1, len(args))
+		ORDER BY timestamp %s
+		LIMIT $%d OFFSET $%d`, where, orderDir, len(args)-1, len(args))
 
 	rows, err := l.db.Query(q, args...)
 	if err != nil {

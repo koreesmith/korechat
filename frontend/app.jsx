@@ -2452,6 +2452,60 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
     dispatch({ type:"CHAN_JOIN", netId, chan });
   }, []);
 
+  // ── History loading ─────────────────────────────────────────────────────────
+  // loadHistory: silently load logs for a channel/DM/server window.
+  // 1. Fetches up to `limit` recent messages from our own Postgres logs (fast, always available).
+  // 2. If the BNC is connected and the server supports CHATHISTORY, sends a CHATHISTORY LATEST
+  //    request for any gap between the last log entry and now (catches messages we missed
+  //    while logged out). Silent — no announcements either way.
+  const loadedHistoryRef = useRef(new Set()); // keys we've already loaded this session
+
+  const loadHistory = useCallback((netId, chan, { limit=150, force=false }={}) => {
+    const key = `${netId}::${chan}`;
+    if (!force && loadedHistoryRef.current.has(key)) return;
+    loadedHistoryRef.current.add(key);
+
+    const isChannel = chan.startsWith("#") || chan.startsWith("&");
+    const isDM = !isChannel && chan !== "__status__";
+
+    const params = new URLSearchParams({
+      network_id: netId,
+      limit: String(limit),
+      order: "asc",
+    });
+    if (isChannel) params.set("channel", chan);
+    else if (isDM)  params.set("nick", chan); // DM: query by their nick
+    // server/__status__: no channel or nick filter → gets server messages for this network
+
+    fetch(`/api/v1/logs?${params}`, { credentials:"include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data?.entries?.length) return;
+        const msgs = data.entries.map(e => ({
+          type:  "message",
+          nick:  e.nick,
+          text:  e.text,
+          time:  e.timestamp,
+          id:    `log-${e.id}`,
+        }));
+        ensureChan(netId, chan);
+        dispatch({ type:"PREPEND_MSGS", netId, chan, msgs });
+
+        // Step 2: ask the IRC server for anything newer than our last log entry.
+        // Only for channels (not DMs/server — CHATHISTORY is channel-scoped on most servers).
+        if (!isChannel) return;
+        const lastTs = data.entries[data.entries.length - 1]?.timestamp;
+        if (!lastTs) return;
+        const conn = connections.current?.[netId];
+        if (!conn) return;
+        // Defer slightly so the prepend has settled
+        setTimeout(() => {
+          conn.send(`CHATHISTORY LATEST ${chan} timestamp=${lastTs} 100`);
+        }, 200);
+      })
+      .catch(() => {});
+  }, [ensureChan]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── IRC line handler ────────────────────────────────────────────────────────
   // Uses refs so it never needs to be recreated when state changes
   const handleLine = useCallback((netId, raw) => {
@@ -2464,12 +2518,11 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
 
     switch (command) {
       case "001": {
-        const wasConnected = nets[netId]?.status === "connected";
         dispatch({ type:"SET_NICK",   netId, nick:params[0] });
         dispatch({ type:"NET_STATUS", id:netId, status:"connected" });
         ensureChan(netId, STATUS_CHAN);
-        const connVerb = wasConnected ? "Reconnected to" : "Connected to";
-        addSys(netId, STATUS_CHAN, `✓ ${connVerb} ${nets[netId]?.name||netId} as ${params[0]}`);
+        // Load history for the status window silently on connect
+        loadHistory(netId, STATUS_CHAN, { force: true });
         break;
       }
 
@@ -2504,7 +2557,8 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         dispatch({ type:"CHAN_JOIN", netId, chan });
         if (from===me) {
           dispatch({ type:"SET_ACTIVE_CHAN", netId, chan });
-          addSys(netId, chan, `You joined ${chan}`);
+          // Load history for the channel we just joined
+          loadHistory(netId, chan);
         } else {
           dispatch({ type:"SET_MEMBERS", netId, chan, members:{[from]:""} });
           addSys(netId, chan, `→ ${from} joined`);
@@ -2584,44 +2638,20 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             dispatch({ type:"NET_STATUS", id:netId, status });
             break;
           }
-          // replay-done nick:<nick> — buffer replay complete, update our nick
+          // replay-done nick:<nick> — BNC ring buffer replay complete, update our nick.
+          // Now silently load full history for all open windows from our own logs.
           if (text.startsWith("replay-done")) {
             const nickMatch=text.match(/nick:(\S+)/);
             if (nickMatch) dispatch({ type:"SET_NICK", netId, nick:nickMatch[1] });
             ensureChan(netId, STATUS_CHAN);
-            addSys(netId, STATUS_CHAN, "✓ Reconnected — message history restored");
 
-            // Load recent log history for each joined channel from Postgres
-            // This fills in history even when the IRC server doesn't support CHATHISTORY
-            const chans = channelsRef.current;
+            // Load history for all open channels and DMs for this network.
+            // force=true so we always refresh on reconnect (clears stale seen set).
             const prefix = netId + "::";
-            const chanNames = Object.keys(chans)
-              .filter(k => k.startsWith(prefix) && !k.endsWith("::__status__"))
-              .map(k => k.slice(prefix.length))
-              .filter(c => c.startsWith("#") || c.startsWith("&"));
-
-            chanNames.forEach(chan => {
-              const params = new URLSearchParams({
-                network_id: netId,
-                channel:    chan,
-                limit:      "100",
-                type:       "PRIVMSG",
-              });
-              fetch(`/api/v1/logs?${params}`, { credentials:"include" })
-                .then(r => r.ok ? r.json() : null)
-                .then(data => {
-                  if (!data?.entries?.length) return;
-                  const msgs = data.entries.map(e => ({
-                    type: "message",
-                    nick: e.nick,
-                    text: e.text,
-                    time: e.timestamp,
-                    id:   `log-${e.id}`,
-                  }));
-                  ensureChan(netId, chan);
-                  dispatch({ type:"PREPEND_MSGS", netId, chan, msgs });
-                })
-                .catch(() => {});
+            const openKeys = Object.keys(channelsRef.current).filter(k => k.startsWith(prefix));
+            openKeys.forEach(k => {
+              const chan = k.slice(prefix.length);
+              loadHistory(netId, chan, { force: true });
             });
             break;
           }
@@ -2657,6 +2687,10 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         }
         ensureChan(netId, chan);
         dispatch({ type:"ADD_MSG", netId, chan, msg:msgObj });
+        // If this is a new DM window opening, load its history
+        if (!chan.startsWith("#") && chan !== STATUS_CHAN) {
+          loadHistory(netId, chan);
+        }
 
         // ── Browser notifications ──────────────────────────────────────────────
         if (getNotifPermission() === "granted") {
@@ -2719,7 +2753,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             Object.entries(byChan).forEach(([chan,msgs])=>{
               ensureChan(netId, chan);
               dispatch({ type:"PREPEND_MSGS", netId, chan, msgs });
-              addSys(netId, chan, `↑ ${msgs.length} line${msgs.length===1?"":"s"} of server history loaded`);
+              // Silent — no announcement for server history
             });
           } else {
             // Non-history batch — dispatch messages normally
@@ -2938,6 +2972,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         const [tgt,...mp]=args;
         ensureChan(netId,tgt);
         dispatch({ type:"SET_ACTIVE_CHAN", netId, chan:tgt });
+        loadHistory(netId, tgt); // load DM history
         if (mp.length>0) {
           const msgText=mp.join(" ");
           conn.send(`PRIVMSG ${tgt} :${msgText}`);
@@ -3573,6 +3608,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
               dispatch({type:"SET_ACTIVE_CHAN",netId,chan});
               dispatch({type:"CLEAR_UNREAD",netId,chan});
               setSidebarOpen(false); // close mobile drawer on channel select
+              loadHistory(netId, chan); // load logs on first visit (no-op if already loaded)
             };
 
             return (
