@@ -488,14 +488,25 @@ function reducer(s, a) {
       };
     }
     case "PREPEND_MSGS": {
-      // Insert historical messages before existing ones, deduplicating by id.
-      // Used when server delivers chathistory batch.
+      // Insert historical messages before existing ones, deduplicating by id
+      // and by content fingerprint (catches BNC replay msgs with random IDs
+      // that duplicate log entries).
       const k=CHAN_KEY(a.netId,a.chan);
       const existing=s.messages[k]||[];
       let newSeen={...s.seenMsgIds};
+      // Build a fingerprint set from existing messages for content-based dedup
+      const existingFps=new Set(existing.map(m=>{
+        const t=m.time?new Date(m.time).toISOString().slice(0,16):""; // minute precision
+        return `${m.nick}|${t}|${(m.text||"").slice(0,40)}`;
+      }));
       const fresh=a.msgs.filter(m=>{
         if (m.id && newSeen[m.id]) return false;
         if (m.id) newSeen[m.id]=true;
+        // Content fingerprint dedup
+        const t=m.time?new Date(m.time).toISOString().slice(0,16):"";
+        const fp=`${m.nick}|${t}|${(m.text||"").slice(0,40)}`;
+        if (existingFps.has(fp)) return false;
+        existingFps.add(fp);
         return true;
       });
       if (!fresh.length) return s;
@@ -578,6 +589,19 @@ function StatusDot({ status }) {
 }
 
 // ─── Message row ──────────────────────────────────────────────────────────────
+// DaySeparator: horizontal rule with date label between messages from different days
+function DaySeparator({ label }) {
+  const T=useTheme();
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 16px 6px",userSelect:"none"}}>
+      <div style={{flex:1,height:1,background:T.border}}/>
+      <span style={{fontSize:11,color:T.textFaint,fontFamily:"'JetBrains Mono',monospace",
+        fontWeight:500,letterSpacing:"0.05em",whiteSpace:"nowrap"}}>{label}</span>
+      <div style={{flex:1,height:1,background:T.border}}/>
+    </div>
+  );
+}
+
 // MembershipGroup: collapsible block for consecutive join/part/quit/kick events.
 // Always collapsed by default — click the summary line to expand.
 function MembershipGroup({ msgs }) {
@@ -2476,6 +2500,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   const networksRef  = useRef({});  // always-current mirror of state.networks
   const myNickRef    = useRef({});  // always-current mirror of state.myNick
   const channelsRef  = useRef({});  // always-current mirror of state.channels
+  const messagesRef  = useRef({});  // always-current mirror of state.messages
   const batchBufRef  = useRef({});  // netId+batchId → {type, chan, msgs[]}
   const namesBufRef  = useRef({});  // netId+chan → {nick: prefix} accumulator for 353/366
   const bottomRef    = useRef(null);
@@ -2488,6 +2513,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   useEffect(() => { networksRef.current = networks; },  [networks]);
   useEffect(() => { myNickRef.current   = myNick; },    [myNick]);
   useEffect(() => { channelsRef.current = channels; },  [channels]);
+  useEffect(() => { messagesRef.current  = messages; },  [messages]);
 
   const MONO = { fontFamily:"'JetBrains Mono',monospace" };
 
@@ -2512,10 +2538,20 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   const loadHistory = useCallback((netId, chan, { limit=150, force=false }={}) => {
     const key = `${netId}::${chan}`;
     if (!force && loadedHistoryRef.current.has(key)) return;
+    if (force) loadedHistoryRef.current.delete(key);
     loadedHistoryRef.current.add(key);
 
     const isChannel = chan.startsWith("#") || chan.startsWith("&");
     const isDM = !isChannel && chan !== "__status__";
+
+    // Find the oldest message already in state for this channel.
+    // We only want log entries OLDER than what we already have — this prevents
+    // re-fetching messages that the BNC ring buffer already replayed.
+    const existingMsgs = messagesRef.current[`${netId}::${chan}`] || [];
+    const existingTimes = existingMsgs
+      .map(m => m.time ? new Date(m.time).getTime() : 0)
+      .filter(t => t > 0);
+    const oldestExisting = existingTimes.length ? Math.min(...existingTimes) : null;
 
     const params = new URLSearchParams({
       network_id: netId,
@@ -2523,8 +2559,13 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       order: "asc",
     });
     if (isChannel) params.set("channel", chan);
-    else if (isDM)  params.set("nick", chan); // DM: query by their nick
-    // server/__status__: no channel or nick filter → gets server messages for this network
+    else if (isDM)  params.set("nick", chan);
+    // If we already have messages, only fetch history before the oldest one.
+    // Add a 5-second buffer to catch any borderline messages.
+    if (oldestExisting) {
+      const beforeTs = new Date(oldestExisting + 5000).toISOString();
+      params.set("date_to_iso", beforeTs);
+    }
 
     fetch(`/api/v1/logs?${params}`, { credentials:"include" })
       .then(r => r.ok ? r.json() : null)
@@ -2542,14 +2583,12 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         ensureChan(netId, chan);
         dispatch({ type:"PREPEND_MSGS", netId, chan, msgs });
 
-        // Step 2: ask the IRC server for anything newer than our last log entry.
-        // Only for channels (not DMs/server — CHATHISTORY is channel-scoped on most servers).
+        // Ask the IRC server for anything newer than our last log entry (gap-fill).
         if (!isChannel) return;
         const lastTs = data.entries[data.entries.length - 1]?.timestamp;
         if (!lastTs) return;
         const conn = connections.current?.[netId];
         if (!conn) return;
-        // Defer slightly so the prepend has settled
         setTimeout(() => {
           conn.send(`CHATHISTORY LATEST ${chan} timestamp=${lastTs} 100`);
         }, 200);
@@ -2573,7 +2612,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         dispatch({ type:"NET_STATUS", id:netId, status:"connected" });
         ensureChan(netId, STATUS_CHAN);
         // Load history for the status window silently on connect
-        loadHistory(netId, STATUS_CHAN, { force: true });
+        loadHistory(netId, STATUS_CHAN);
         break;
       }
 
@@ -2608,8 +2647,8 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         dispatch({ type:"CHAN_JOIN", netId, chan });
         if (from===me) {
           dispatch({ type:"SET_ACTIVE_CHAN", netId, chan });
-          // Load history for the channel we just joined
-          loadHistory(netId, chan);
+          // History is loaded by replay-done after the full BNC replay completes.
+          // Loading here would race with the replay sequence.
         } else {
           dispatch({ type:"SET_MEMBERS", netId, chan, members:{[from]:""} });
           addSys(netId, chan, `→ ${from} joined`, "membership");
@@ -2696,13 +2735,14 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             if (nickMatch) dispatch({ type:"SET_NICK", netId, nick:nickMatch[1] });
             ensureChan(netId, STATUS_CHAN);
 
-            // Load history for all open channels and DMs for this network.
-            // force=true so we always refresh on reconnect (clears stale seen set).
+            // Load history for all open channels/DMs not yet loaded this session.
+            // Already-loaded channels skip (dedup via loadedHistoryRef).
+            // The CHATHISTORY gap-fill inside loadHistory handles any missed messages.
             const prefix = netId + "::";
             const openKeys = Object.keys(channelsRef.current).filter(k => k.startsWith(prefix));
             openKeys.forEach(k => {
               const chan = k.slice(prefix.length);
-              loadHistory(netId, chan, { force: true });
+              loadHistory(netId, chan); // no force — skip if already loaded this session
             });
             break;
           }
@@ -2738,10 +2778,8 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         }
         ensureChan(netId, chan);
         dispatch({ type:"ADD_MSG", netId, chan, msg:msgObj });
-        // If this is a new DM window opening, load its history
-        if (!chan.startsWith("#") && chan !== STATUS_CHAN) {
-          loadHistory(netId, chan);
-        }
+        // History for DMs is loaded when the user navigates to the window (goTo)
+        // or opens it via /msg. Loading here would race with incoming messages.
 
         // ── Browser notifications ──────────────────────────────────────────────
         if (getNotifPermission() === "granted") {
@@ -3869,26 +3907,47 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
               </div>
             )}
             {(()=>{
+              // Inject day separator markers between messages that span midnight.
+              const msgsWithDays=[];
+              let lastDay="";
+              for (const m of activeMsgs) {
+                if (m.time) {
+                  const d=new Date(m.time);
+                  const day=d.toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric",year:"numeric"});
+                  if (day!==lastDay) {
+                    msgsWithDays.push({type:"__daysep__",text:day,time:m.time});
+                    lastDay=day;
+                  }
+                }
+                msgsWithDays.push(m);
+              }
+
               // Group consecutive membership events (join/part/quit/kick) into collapsible blocks.
               // All other messages render normally via MsgRow.
               const rows=[];
               let i=0;
-              while(i<activeMsgs.length){
-                const msg=activeMsgs[i];
-                if(msg.type==="system"&&msg.subtype==="membership"){
-                  // Collect run of consecutive membership events
+              const msgs=msgsWithDays;
+              while(i<msgs.length){
+                const msg=msgs[i];
+                if(msg.type==="__daysep__"){
+                  rows.push(
+                    <DaySeparator key={`day-${msg.time}`} label={msg.text}/>
+                  );
+                  i++;
+                } else if(msg.type==="system"&&msg.subtype==="membership"){
+                  // Collect run of consecutive membership events (skip day seps)
                   const group=[msg];
                   let j=i+1;
-                  while(j<activeMsgs.length&&
-                    activeMsgs[j].type==="system"&&
-                    activeMsgs[j].subtype==="membership"){
-                    group.push(activeMsgs[j]);
+                  while(j<msgs.length&&
+                    msgs[j].type==="system"&&
+                    msgs[j].subtype==="membership"){
+                    group.push(msgs[j]);
                     j++;
                   }
                   rows.push(<MembershipGroup key={`mg-${i}`} msgs={group}/>);
                   i=j;
                 } else {
-                  const prev=i>0?activeMsgs[i-1]:null;
+                  const prev=i>0?msgs[i-1]:null;
                   rows.push(
                     <MsgRow key={msg.id||i} msg={msg} prev={prev} myNick={currentNick}
                       onNickClick={(nick,e)=>{if(nick!==currentNick)setMsgNickMenu({x:e.clientX,y:e.clientY,netId:activeNet,nick});}}/>
