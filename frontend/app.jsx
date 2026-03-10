@@ -578,6 +578,55 @@ function StatusDot({ status }) {
 }
 
 // ─── Message row ──────────────────────────────────────────────────────────────
+// MembershipGroup: collapsible block for consecutive join/part/quit/kick events.
+// Always collapsed by default — click the summary line to expand.
+function MembershipGroup({ msgs }) {
+  const T=useTheme();
+  const [open, setOpen] = useState(false);
+  if (msgs.length === 0) return null;
+
+  // Build a compact summary: "→ alice, ← bob, ✕ carol"
+  const summary = msgs.map(m => m.text).join("  ·  ");
+  const label = msgs.length === 1
+    ? msgs[0].text
+    : `${msgs.length} membership events`;
+
+  return (
+    <div style={{padding:"0 16px 0 58px",userSelect:"none"}}>
+      {open ? (
+        <div style={{borderLeft:`2px solid ${T.borderFaint}`,paddingLeft:8,margin:"2px 0"}}>
+          {msgs.map((m,i) => (
+            <div key={i} style={{display:"flex",alignItems:"baseline",gap:8,padding:"1px 0"}}>
+              <span style={{fontSize:12,color:T.textFaint,fontStyle:"italic",
+                fontFamily:"'JetBrains Mono',monospace",flex:1,userSelect:"text"}}>{m.text}</span>
+              {m.time&&<span style={{fontSize:10,color:T.textFaint,
+                fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>{fmtTime(m.time)}</span>}
+            </div>
+          ))}
+          <span onClick={()=>setOpen(false)}
+            style={{fontSize:10,color:T.textFaint,cursor:"pointer",
+              fontFamily:"'JetBrains Mono',monospace",fontStyle:"italic",userSelect:"none",
+              display:"inline-block",marginTop:1}}
+            onMouseEnter={e=>e.currentTarget.style.color=T.textDim}
+            onMouseLeave={e=>e.currentTarget.style.color=T.textFaint}>
+            ▲ hide
+          </span>
+        </div>
+      ) : (
+        <span onClick={()=>setOpen(true)}
+          title={summary}
+          style={{fontSize:11,color:T.textFaint,cursor:"pointer",
+            fontFamily:"'JetBrains Mono',monospace",fontStyle:"italic",userSelect:"none",
+            display:"inline-block",padding:"1px 0"}}
+          onMouseEnter={e=>e.currentTarget.style.color=T.textDim}
+          onMouseLeave={e=>e.currentTarget.style.color=T.textFaint}>
+          ▶ {label}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function MsgRow({ msg, prev, myNick, onNickClick }) {
   const T=useTheme();
   if (msg.type==="system") return (
@@ -2443,9 +2492,9 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   const MONO = { fontFamily:"'JetBrains Mono',monospace" };
 
   // ── helpers ────────────────────────────────────────────────────────────────
-  const addSys = useCallback((netId, chan, text) => {
+  const addSys = useCallback((netId, chan, text, subtype) => {
     dispatch({ type:"ADD_MSG", netId, chan,
-      msg:{ type:"system", text, time:new Date().toISOString() } });
+      msg:{ type:"system", subtype, text, time:new Date().toISOString() } });
   }, []);
 
   const ensureChan = useCallback((netId, chan) => {
@@ -2481,12 +2530,14 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data?.entries?.length) return;
+        const MEMBERSHIP_TYPES = new Set(["JOIN","PART","QUIT","KICK","MODE"]);
         const msgs = data.entries.map(e => ({
-          type:  "message",
-          nick:  e.nick,
-          text:  e.text,
-          time:  e.timestamp,
-          id:    `log-${e.id}`,
+          type:    MEMBERSHIP_TYPES.has(e.type) ? "system" : "message",
+          subtype: MEMBERSHIP_TYPES.has(e.type) ? "membership" : undefined,
+          nick:    e.nick,
+          text:    e.text,
+          time:    e.timestamp,
+          id:      `log-${e.id}`,
         }));
         ensureChan(netId, chan);
         dispatch({ type:"PREPEND_MSGS", netId, chan, msgs });
@@ -2561,7 +2612,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           loadHistory(netId, chan);
         } else {
           dispatch({ type:"SET_MEMBERS", netId, chan, members:{[from]:""} });
-          addSys(netId, chan, `→ ${from} joined`);
+          addSys(netId, chan, `→ ${from} joined`, "membership");
         }
         break;
       }
@@ -2569,14 +2620,14 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       case "PART": {
         const chan=params[0]; if (!chan) break;
         if (from===me) dispatch({ type:"CHAN_PART", netId, chan });
-        else { dispatch({ type:"DEL_MEMBER", netId, chan, nick:from }); addSys(netId, chan, `← ${from} left${params[1]?": "+params[1]:""}`); }
+        else { dispatch({ type:"DEL_MEMBER", netId, chan, nick:from }); addSys(netId, chan, `← ${from} left${params[1]?": "+params[1]:""}`, "membership"); }
         break;
       }
 
       case "KICK": {
         const [chan,target,,reason=""] = params;
         dispatch({ type:"DEL_MEMBER", netId, chan, nick:target });
-        addSys(netId, chan, `✕ ${target} was kicked by ${from}${reason?": "+reason:""}`);
+        addSys(netId, chan, `✕ ${target} was kicked by ${from}${reason?": "+reason:""}`, "membership");
         if (target===me) dispatch({ type:"CHAN_PART", netId, chan });
         break;
       }
@@ -2587,7 +2638,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           const chan=k.split("::")[1];
           if (chans[k]?.members && from in chans[k].members) {
             dispatch({ type:"DEL_MEMBER", netId, chan, nick:from });
-            addSys(netId, chan, `✕ ${from} quit${reason?": "+reason:""}`);
+            addSys(netId, chan, `✕ ${from} quit${reason?": "+reason:""}`, "membership");
           }
         });
         break;
@@ -2780,7 +2831,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       case "MODE": {
         const target=params[0], modeStr=params.slice(1).join(" ");
         if (target?.startsWith("#")) {
-          addSys(netId,target,`${from} sets mode ${modeStr}`);
+          addSys(netId,target,`${from} sets mode ${modeStr}`,"membership");
           // Update member prefixes for mode changes that affect them
           const modeChars=params[1]||"";
           const modeToPrefix={"o":"@","h":"%","v":"+","a":"&","q":"~"};
@@ -3648,6 +3699,9 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                     onMouseLeave={e=>e.currentTarget.style.opacity="0.4"}>⚙</span>
                 </div>
 
+                {/* Indented content under this network */}
+                <div style={{borderLeft:`1px solid ${T.borderFaint}`,marginLeft:14,paddingLeft:2}}>
+
                 {/* Server tab */}
                 {serverTab&&(
                   <SidebarItem chanName={STATUS_CHAN} kind="server"
@@ -3704,6 +3758,8 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                     + join channel
                   </div>
                 )}
+
+                </div>{/* end indent wrapper */}
               </div>
             );
           })}
@@ -3812,9 +3868,36 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                 {isStatusChan?"Waiting for server messages…":`No messages yet in ${activeChanName}`}
               </div>
             )}
-            {activeMsgs.map((msg,i)=>(
-              <MsgRow key={msg.id||i} msg={msg} prev={i>0?activeMsgs[i-1]:null} myNick={currentNick} onNickClick={(nick,e)=>{if(nick!==currentNick)setMsgNickMenu({x:e.clientX,y:e.clientY,netId:activeNet,nick});}}/>
-            ))}
+            {(()=>{
+              // Group consecutive membership events (join/part/quit/kick) into collapsible blocks.
+              // All other messages render normally via MsgRow.
+              const rows=[];
+              let i=0;
+              while(i<activeMsgs.length){
+                const msg=activeMsgs[i];
+                if(msg.type==="system"&&msg.subtype==="membership"){
+                  // Collect run of consecutive membership events
+                  const group=[msg];
+                  let j=i+1;
+                  while(j<activeMsgs.length&&
+                    activeMsgs[j].type==="system"&&
+                    activeMsgs[j].subtype==="membership"){
+                    group.push(activeMsgs[j]);
+                    j++;
+                  }
+                  rows.push(<MembershipGroup key={`mg-${i}`} msgs={group}/>);
+                  i=j;
+                } else {
+                  const prev=i>0?activeMsgs[i-1]:null;
+                  rows.push(
+                    <MsgRow key={msg.id||i} msg={msg} prev={prev} myNick={currentNick}
+                      onNickClick={(nick,e)=>{if(nick!==currentNick)setMsgNickMenu({x:e.clientX,y:e.clientY,netId:activeNet,nick});}}/>
+                  );
+                  i++;
+                }
+              }
+              return rows;
+            })()}
             <div/>
           </div>
 
