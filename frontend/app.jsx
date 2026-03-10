@@ -410,8 +410,9 @@ function reducer(s, a) {
     case "SET_ACTIVE_CHAN": return { ...s, activeChan:{...s.activeChan,[a.netId]:a.chan} };
     case "CHAN_JOIN": {
       const k=CHAN_KEY(a.netId,a.chan);
+      const existing = s.channels[k] || {topic:"",members:{}};
       return { ...s,
-        channels:   {...s.channels,  [k]: s.channels[k]  || {topic:"",members:{}}},
+        channels:   {...s.channels,  [k]: {...existing, left:false}},
         messages:   {...s.messages,  [k]: s.messages[k]  || []},
         unread:     {...s.unread,    [k]: s.unread[k]    || 0},
         activeChan: s.activeChan[a.netId] ? s.activeChan : {...s.activeChan,[a.netId]:a.chan},
@@ -419,6 +420,21 @@ function reducer(s, a) {
       };
     }
     case "CHAN_PART": {
+      const k=CHAN_KEY(a.netId,a.chan);
+      // Keep the channel in state (preserving history) but mark it as left.
+      // CHAN_PART_REMOVE (used when user explicitly closes it) actually removes it.
+      const channels={...s.channels, [k]:{...s.channels[k], left:true, members:{}}};
+      const unread  ={...s.unread, [k]:0};
+      const rem=Object.keys(s.channels).filter(x=>x.startsWith(a.netId+"::") && x!==k);
+      const newChan=rem.length ? rem[rem.length-1].split("::")[1] : STATUS_CHAN;
+      return { ...s, channels, unread, activeChan:{...s.activeChan,[a.netId]:newChan} };
+    }
+    case "CHAN_REJOIN": {
+      const k=CHAN_KEY(a.netId,a.chan);
+      if (!s.channels[k]) return s;
+      return { ...s, channels:{...s.channels,[k]:{...s.channels[k],left:false,members:{}}} };
+    }
+    case "CHAN_PART_REMOVE": {
       const k=CHAN_KEY(a.netId,a.chan);
       const channels={...s.channels}; delete channels[k];
       const messages={...s.messages}; delete messages[k];
@@ -562,7 +578,7 @@ function StatusDot({ status }) {
 }
 
 // ─── Message row ──────────────────────────────────────────────────────────────
-function MsgRow({ msg, prev, myNick }) {
+function MsgRow({ msg, prev, myNick, onNickClick }) {
   const T=useTheme();
   if (msg.type==="system") return (
     <div style={{padding:"2px 16px 2px 58px",userSelect:"text"}}>
@@ -578,11 +594,18 @@ function MsgRow({ msg, prev, myNick }) {
       borderLeft:mentioned?`2px solid ${T.mentionBdr}`:"2px solid transparent"}}
       onMouseEnter={e=>e.currentTarget.style.background=mentioned?T.mentionBg2:T.msgHover}
       onMouseLeave={e=>e.currentTarget.style.background=mentioned?T.mentionBg:"transparent"}>
-      <div style={{width:32,flexShrink:0,paddingTop:cont?0:2}}>{!cont&&<Avatar nick={msg.nick} size={32}/>}</div>
+      <div style={{width:32,flexShrink:0,paddingTop:cont?0:2,cursor:msg.nick?"pointer":"default"}}
+        onClick={e=>{if(msg.nick&&onNickClick){e.stopPropagation();onNickClick(msg.nick,e);}}}>
+        {!cont&&<Avatar nick={msg.nick} size={32}/>}
+      </div>
       <div style={{flex:1,minWidth:0,userSelect:"text"}}>
         {!cont&&(
           <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:2}}>
-            <span style={{fontWeight:700,fontSize:14,color:nickColor(msg.nick),fontFamily:"'JetBrains Mono',monospace"}}>{msg.nick}</span>
+            <span style={{fontWeight:700,fontSize:14,color:nickColor(msg.nick),fontFamily:"'JetBrains Mono',monospace",
+              cursor:"pointer"}}
+              onClick={e=>{if(onNickClick){e.stopPropagation();onNickClick(msg.nick,e);}}}
+              onContextMenu={e=>{if(onNickClick){e.preventDefault();onNickClick(msg.nick,e);}}}
+            >{msg.nick}</span>
             <span style={{fontSize:11,color:T.textDim,fontFamily:"'JetBrains Mono',monospace"}}>{fmtTime(msg.time)}</span>
           </div>
         )}
@@ -1547,9 +1570,27 @@ function InputBar({ onSend, label, nick, disabled }) {
   );
 }
 
+// ─── CtxItem: reusable context menu row ─────────────────────────────────────
+function CtxItem({ icon, label, onClick, color, danger }) {
+  const T = useTheme();
+  const [hov, setHov] = useState(false);
+  return (
+    <div onClick={onClick}
+      onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
+      style={{display:"flex",alignItems:"center",gap:8,padding:"6px 12px",
+        fontSize:13,cursor:"pointer",borderRadius:4,margin:"1px 4px",
+        background:hov?T.border:"transparent",
+        color:color||(danger?T.red:T.text),
+        fontFamily:"'Inter var','Inter',sans-serif"}}>
+      <span style={{width:16,textAlign:"center",fontSize:13,flexShrink:0}}>{icon}</span>
+      <span>{label}</span>
+    </div>
+  );
+}
+
 // ─── Sidebar item (channel, DM, or server tab) ───────────────────────────────
 // kind: "channel" | "dm" | "server"
-function SidebarItem({ chanName, kind, active, unread, onClick }) {
+function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, left }) {
   const T=useTheme();
   const [hov, setHov] = useState(false);
 
@@ -1561,21 +1602,31 @@ function SidebarItem({ chanName, kind, active, unread, onClick }) {
     icon = <Avatar nick={chanName} size={16}/>;
     label = chanName;
   } else {
-    // channel
-    icon = <span style={{fontSize:12,opacity:0.7,flexShrink:0,fontFamily:"'JetBrains Mono',monospace"}}>#</span>;
+    // channel — show dimmed lock icon if left
+    icon = left
+      ? <span style={{fontSize:11,opacity:0.35,flexShrink:0,fontFamily:"'JetBrains Mono',monospace"}}>#</span>
+      : <span style={{fontSize:12,opacity:0.7,flexShrink:0,fontFamily:"'JetBrains Mono',monospace"}}>#</span>;
     label = chanName.replace(/^#/,"");
   }
 
+  const textColor = left
+    ? T.textFaint
+    : active ? T.text : unread>0 ? T.accent : T.textDim;
+
   return (
-    <div onClick={onClick} onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
+    <div onClick={onClick}
+      onContextMenu={onContextMenu}
+      onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
       style={{display:"flex",alignItems:"center",justifyContent:"space-between",
         padding:"4px 10px 4px 24px",margin:"1px 6px",borderRadius:4,cursor:"pointer",
         background:active?T.accentBg2:hov?T.border:"transparent",
-        color:active?T.text:unread>0?T.accent:T.textDim,
-        fontWeight:active||unread>0?600:400,fontSize:14,gap:6}}>
+        color:textColor,
+        fontWeight:active||unread>0?600:400,fontSize:14,gap:6,
+        opacity:left?0.55:1}}>
       <span style={{display:"flex",alignItems:"center",gap:5,overflow:"hidden",minWidth:0}}>
         {icon}
-        <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</span>
+        <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+          fontStyle:left?"italic":"normal"}}>{label}</span>
       </span>
       {unread>0&&!active&&(
         <span style={{background:T.accent,color:T.bg,fontSize:10,fontWeight:800,
@@ -2330,7 +2381,10 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
   const [showProfile,  setShowProfile]  = useState(false);
   const [showLogs,     setShowLogs]     = useState(false);
 
-  const [ctxMenu, setCtxMenu] = useState(null); // {x,y,net} for right-click menu
+  const [ctxMenu, setCtxMenu] = useState(null);     // {x,y,net} network right-click
+const [chanCtxMenu, setChanCtxMenu] = useState(null); // {x,y,netId,chan,left} channel right-click
+const [dmCtxMenu, setDmCtxMenu] = useState(null);     // {x,y,netId,nick} DM right-click
+const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick click in messages
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
 
 
@@ -2678,13 +2732,14 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
         break;
       }
 
-      // Numeric replies — WHOIS goes to current active channel for inline display
-      case "311": { const dest=activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); addSys(netId,dest,`[whois] ${params[1]} (${params[2]}@${params[3]}): ${params[5]||""}`); break; }
-      case "312": { const dest=activeChan[netId]||STATUS_CHAN; addSys(netId,dest,`[whois] ${params[1]} on ${params[2]}: ${params[3]||""}`); break; }
-      case "317": { const dest=activeChan[netId]||STATUS_CHAN; addSys(netId,dest,`[whois] ${params[1]} idle ${params[2]}s`); break; }
-      case "318": { const dest=activeChan[netId]||STATUS_CHAN; addSys(netId,dest,`[whois] End of /WHOIS for ${params[1]}`); break; }
-      case "319": { const dest=activeChan[netId]||STATUS_CHAN; addSys(netId,dest,`[whois] ${params[1]} on: ${params[2]||""}`); break; }
-      case "330": { const dest=activeChan[netId]||STATUS_CHAN; addSys(netId,dest,`[whois] ${params[1]} logged in as ${params[2]}`); break; }
+      // Numeric replies — WHOIS results route to the target nick's DM window
+      // so they're always easy to find and don't pollute channel chat
+      case "311": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); addSys(netId,dest,`⦿ ${params[1]}  (${params[2]}@${params[3]})  — ${params[5]||""}`); break; }
+      case "312": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); addSys(netId,dest,`  Server: ${params[2]}  (${params[3]||""})`); break; }
+      case "317": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); const idle=parseInt(params[2]||0); const h=Math.floor(idle/3600),m=Math.floor((idle%3600)/60),s=idle%60; addSys(netId,dest,`  Idle: ${h?h+"h ":""}${m?m+"m ":""}${s}s`); break; }
+      case "318": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); addSys(netId,dest,`  ─── end of whois ───`); break; }
+      case "319": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); addSys(netId,dest,`  Channels: ${params[2]||""}`); break; }
+      case "330": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); addSys(netId,dest,`  Account: ${params[2]}`); break; }
       case "321": break;
       case "322": ensureChan(netId,STATUS_CHAN); addSys(netId,STATUS_CHAN,`  ${params[1]}  (${params[2]} users)  ${params[3]||""}`); break;
       case "323": addSys(netId,STATUS_CHAN,"End of /LIST"); break;
@@ -3299,38 +3354,133 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
         />
       )}
 
-      {/* Context menu for right-click on network */}
+      {/* Context menu for network (left-click or right-click) */}
       {ctxMenu&&(
         <div style={{position:"fixed",inset:0,zIndex:150}} onClick={()=>setCtxMenu(null)}>
           <div style={{position:"fixed",left:ctxMenu.x,top:ctxMenu.y,zIndex:151,
             background:T.bgPanel,border:`1px solid ${T.border}`,
-            borderRadius:6,boxShadow:"0 4px 20px #0006",minWidth:160,padding:4}}
+            borderRadius:6,boxShadow:"0 4px 20px #0006",minWidth:175,padding:4}}
             onClick={e=>e.stopPropagation()}>
-            <div style={{padding:"6px 14px",fontSize:13,cursor:"pointer",borderRadius:4,
-              color:T.text,fontFamily:"'Inter var','Inter',sans-serif"}}
-              onMouseEnter={e=>e.currentTarget.style.background=T.border}
-              onMouseLeave={e=>e.currentTarget.style.background="transparent"}
-              onClick={()=>{setNetSettings(ctxMenu.net);setCtxMenu(null);}}>
-              ⚙ Settings
-            </div>
-            {(ctxMenu.net.status==="disconnected"||ctxMenu.net.status==="error")&&(
-              <div style={{padding:"6px 14px",fontSize:13,cursor:"pointer",borderRadius:4,
-                color:T.green,fontFamily:"'Inter var','Inter',sans-serif"}}
-                onMouseEnter={e=>e.currentTarget.style.background=T.border}
-                onMouseLeave={e=>e.currentTarget.style.background="transparent"}
-                onClick={()=>{reconnectNetwork(ctxMenu.net);setCtxMenu(null);}}>
-                ⚡ Connect to IRC
+            {/* Header */}
+            <div style={{padding:"6px 12px 4px",borderBottom:`1px solid ${T.borderFaint}`,marginBottom:2}}>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <StatusDot status={ctxMenu.net.status||"disconnected"}/>
+                <span style={{fontSize:13,fontWeight:700,color:T.textBright}}>{ctxMenu.net.name}</span>
               </div>
+              <span style={{fontSize:11,color:T.textFaint,fontFamily:"'JetBrains Mono',monospace"}}>
+                {ctxMenu.net.host}:{ctxMenu.net.port}
+              </span>
+            </div>
+            <CtxItem icon="⚙" label="Edit Settings" onClick={()=>{setNetSettings(ctxMenu.net);setCtxMenu(null);}}/>
+            {(ctxMenu.net.status==="disconnected"||ctxMenu.net.status==="error")&&(
+              <CtxItem icon="⚡" label="Connect to IRC" color={T.green} onClick={()=>{reconnectNetwork(ctxMenu.net);setCtxMenu(null);}}/>
             )}
             {ctxMenu.net.status==="connected"&&(
-              <div style={{padding:"6px 14px",fontSize:13,cursor:"pointer",borderRadius:4,
-                color:T.red,fontFamily:"'Inter var','Inter',sans-serif"}}
-                onMouseEnter={e=>e.currentTarget.style.background=T.border}
-                onMouseLeave={e=>e.currentTarget.style.background="transparent"}
-                onClick={()=>{disconnectNetwork(ctxMenu.net.id);setCtxMenu(null);}}>
-                ✕ Disconnect from IRC
-              </div>
+              <CtxItem icon="✕" label="Disconnect from IRC" color={T.red} onClick={()=>{disconnectNetwork(ctxMenu.net.id);setCtxMenu(null);}}/>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Channel context menu ── */}
+      {chanCtxMenu&&(
+        <div style={{position:"fixed",inset:0,zIndex:150}} onClick={()=>setChanCtxMenu(null)}>
+          <div style={{position:"fixed",left:chanCtxMenu.x,top:chanCtxMenu.y,zIndex:151,
+            background:T.bgPanel,border:`1px solid ${T.border}`,
+            borderRadius:6,boxShadow:"0 4px 20px #0006",minWidth:160,padding:4}}
+            onClick={e=>e.stopPropagation()}>
+            {/* Header */}
+            <div style={{padding:"6px 12px 4px",borderBottom:`1px solid ${T.borderFaint}`,
+              marginBottom:2}}>
+              <span style={{...MONO,fontSize:11,color:T.textDim}}>{chanCtxMenu.chan}</span>
+            </div>
+            {chanCtxMenu.left ? (
+              <CtxItem color={T.green} icon="↩" label="Rejoin Channel" onClick={()=>{
+                const c=connections.current[chanCtxMenu.netId];
+                if (c) c.send(`JOIN ${chanCtxMenu.chan}`);
+                setChanCtxMenu(null);
+              }}/>
+            ) : (
+              <CtxItem color={T.red} icon="✕" label="Leave Channel" onClick={()=>{
+                const c=connections.current[chanCtxMenu.netId];
+                if (c) c.send(`PART ${chanCtxMenu.chan} :Leaving`);
+                setChanCtxMenu(null);
+              }}/>
+            )}
+            <CtxItem icon="🗑" label="Close & Remove" color={T.textDim} onClick={()=>{
+              dispatch({type:"CHAN_PART_REMOVE",netId:chanCtxMenu.netId,chan:chanCtxMenu.chan});
+              setChanCtxMenu(null);
+            }}/>
+          </div>
+        </div>
+      )}
+
+      {/* ── DM context menu ── */}
+      {dmCtxMenu&&(
+        <div style={{position:"fixed",inset:0,zIndex:150}} onClick={()=>setDmCtxMenu(null)}>
+          <div style={{position:"fixed",left:dmCtxMenu.x,top:dmCtxMenu.y,zIndex:151,
+            background:T.bgPanel,border:`1px solid ${T.border}`,
+            borderRadius:6,boxShadow:"0 4px 20px #0006",minWidth:160,padding:4}}
+            onClick={e=>e.stopPropagation()}>
+            {/* Header */}
+            <div style={{padding:"6px 12px 4px",borderBottom:`1px solid ${T.borderFaint}`,
+              marginBottom:2,display:"flex",alignItems:"center",gap:8}}>
+              <Avatar nick={dmCtxMenu.nick} size={20}/>
+              <span style={{fontSize:13,fontWeight:600,color:T.textBright}}>{dmCtxMenu.nick}</span>
+            </div>
+            <CtxItem icon="✉" label="Send Message" onClick={()=>{
+              dispatch({type:"SET_ACTIVE_NET",id:dmCtxMenu.netId});
+              dispatch({type:"SET_ACTIVE_CHAN",netId:dmCtxMenu.netId,chan:dmCtxMenu.nick});
+              setDmCtxMenu(null);
+            }}/>
+            <CtxItem icon="ℹ" label="WHOIS" onClick={()=>{
+              const c=connections.current[dmCtxMenu.netId];
+              if (c) c.send(`WHOIS ${dmCtxMenu.nick}`);
+              setDmCtxMenu(null);
+            }}/>
+            <CtxItem icon="🔇" label="Ignore" color={T.textDim} onClick={()=>{
+              setIgnoredNicks(prev=>{const n=new Set(prev);n.add(dmCtxMenu.nick);return n;});
+              setDmCtxMenu(null);
+            }}/>
+            <CtxItem icon="🗑" label="Close" color={T.textDim} onClick={()=>{
+              dispatch({type:"CHAN_PART_REMOVE",netId:dmCtxMenu.netId,chan:dmCtxMenu.nick});
+              setDmCtxMenu(null);
+            }}/>
+          </div>
+        </div>
+      )}
+
+      {/* ── Message nick context menu ── */}
+      {msgNickMenu&&(
+        <div style={{position:"fixed",inset:0,zIndex:150}} onClick={()=>setMsgNickMenu(null)}>
+          <div style={{position:"fixed",left:msgNickMenu.x,top:msgNickMenu.y,zIndex:151,
+            background:T.bgPanel,border:`1px solid ${T.border}`,
+            borderRadius:6,boxShadow:"0 4px 20px #0006",minWidth:160,padding:4}}
+            onClick={e=>e.stopPropagation()}>
+            {/* Header */}
+            <div style={{padding:"6px 12px 5px",borderBottom:`1px solid ${T.borderFaint}`,
+              marginBottom:2,display:"flex",alignItems:"center",gap:8}}>
+              <Avatar nick={msgNickMenu.nick} size={22}/>
+              <span style={{fontSize:14,fontWeight:700,color:T.textBright}}>{msgNickMenu.nick}</span>
+            </div>
+            <CtxItem icon="✉" label="Message" onClick={()=>{
+              // Open or navigate to DM
+              const netId=msgNickMenu.netId, nick=msgNickMenu.nick;
+              const k=`${netId}::${nick}`;
+              if (!channels[k]) dispatch({type:"CHAN_JOIN",netId,chan:nick});
+              dispatch({type:"SET_ACTIVE_NET",id:netId});
+              dispatch({type:"SET_ACTIVE_CHAN",netId,chan:nick});
+              setMsgNickMenu(null);
+            }}/>
+            <CtxItem icon="ℹ" label="WHOIS" onClick={()=>{
+              const c=connections.current[msgNickMenu.netId];
+              if (c) c.send(`WHOIS ${msgNickMenu.nick}`);
+              setMsgNickMenu(null);
+            }}/>
+            <CtxItem icon="🔇" label="Ignore" color={T.textDim} onClick={()=>{
+              setIgnoredNicks(prev=>{const n=new Set(prev);n.add(msgNickMenu.nick);return n;});
+              setMsgNickMenu(null);
+            }}/>
           </div>
         </div>
       )}
@@ -3430,7 +3580,7 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
                 {/* Network header */}
                 <div style={{padding:"5px 10px 3px",display:"flex",alignItems:"center",gap:6,
                   cursor:"pointer",borderRadius:4,margin:"0 4px"}}
-                  onClick={()=>dispatch({type:"SET_ACTIVE_NET",id:netId})}
+                  onClick={e=>{setCtxMenu({x:e.clientX,y:e.clientY,net});dispatch({type:"SET_ACTIVE_NET",id:netId});}}
                   onContextMenu={e=>{e.preventDefault();setCtxMenu({x:e.clientX,y:e.clientY,net});}}
                   onMouseEnter={e=>e.currentTarget.style.background=T.border}
                   onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
@@ -3475,12 +3625,17 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
                   <>
                     <SectionHeader label="Channels" count={chans.length}
                       open={chansOpen} onToggle={()=>toggle(chansKey)}/>
-                    {chansOpen&&chans.map(chanName=>(
-                      <SidebarItem key={chanName} chanName={chanName} kind="channel"
-                        active={isActiveNet&&chanName===activeChanName2}
-                        unread={unread[CHAN_KEY(netId,chanName)]||0}
-                        onClick={()=>goTo(chanName)}/>
-                    ))}
+                    {chansOpen&&chans.map(chanName=>{
+                        const chanLeft = channels[CHAN_KEY(netId,chanName)]?.left;
+                        return (
+                          <SidebarItem key={chanName} chanName={chanName} kind="channel"
+                            active={isActiveNet&&chanName===activeChanName2}
+                            unread={unread[CHAN_KEY(netId,chanName)]||0}
+                            left={!!chanLeft}
+                            onClick={()=>goTo(chanName)}
+                            onContextMenu={e=>{e.preventDefault();setChanCtxMenu({x:e.clientX,y:e.clientY,netId,chan:chanName,left:!!chanLeft});}}/>
+                        );
+                      })}
                   </>
                 )}
 
@@ -3493,7 +3648,8 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
                       <SidebarItem key={chanName} chanName={chanName} kind="dm"
                         active={isActiveNet&&chanName===activeChanName2}
                         unread={unread[CHAN_KEY(netId,chanName)]||0}
-                        onClick={()=>goTo(chanName)}/>
+                        onClick={()=>goTo(chanName)}
+                        onContextMenu={e=>{e.preventDefault();setDmCtxMenu({x:e.clientX,y:e.clientY,netId,nick:chanName});}}/>
                     ))}
                   </>
                 )}
@@ -3621,7 +3777,7 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
               </div>
             )}
             {activeMsgs.map((msg,i)=>(
-              <MsgRow key={msg.id||i} msg={msg} prev={i>0?activeMsgs[i-1]:null} myNick={currentNick}/>
+              <MsgRow key={msg.id||i} msg={msg} prev={i>0?activeMsgs[i-1]:null} myNick={currentNick} onNickClick={(nick,e)=>{if(nick!==currentNick)setMsgNickMenu({x:e.clientX,y:e.clientY,netId:activeNet,nick});}}/>
             ))}
             <div/>
           </div>
