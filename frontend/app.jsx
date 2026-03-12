@@ -290,27 +290,76 @@ const API = {
 };
 
 // ─── WebSocket factory ────────────────────────────────────────────────────────
-function openWS({ networkId, onLine, onClose }) {
-  const url = `${WS_BASE}/ws?network=${networkId}`;
-  const ws  = new WebSocket(url);
-  let dead  = false;
+// openWS returns a handle that auto-reconnects on drop with exponential backoff.
+// onLine is called for each IRC line. onReconnect fires after a successful
+// reconnect so the caller can re-dispatch REPLAY_START etc.
+function openWS({ networkId, onLine, onDisconnect, onReconnect }) {
+  const url  = () => `${WS_BASE}/ws?network=${networkId}`;
+  let ws       = null;
+  let dead     = false;
+  let retries  = 0;
+  let retryTimer = null;
+  let heartbeatInterval = null;
 
-  // Send an application-level data frame every 4 minutes so nginx's
-  // proxy_read_timeout is reset by real traffic, not just WS control frames.
-  // The BNC forwards this as a PING to the IRC server, which is harmless.
-  const heartbeatInterval = setInterval(() => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(`PING :kc-heartbeat\r\n`);
+  function clearTimers() {
+    clearInterval(heartbeatInterval);
+    clearTimeout(retryTimer);
+    heartbeatInterval = null;
+    retryTimer = null;
+  }
+
+  function connect(isRetry) {
+    if (dead) return;
+    ws = new WebSocket(url());
+
+    heartbeatInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) ws.send("PING :kc-heartbeat\r\n");
+    }, 4 * 60 * 1000);
+
+    ws.onmessage = e => e.data.split("\n").forEach(l => { l = l.trimEnd(); if (l) onLine(l); });
+
+    ws.onopen = () => {
+      if (isRetry) onReconnect?.();
+      retries = 0;
+    };
+
+    ws.onclose = () => {
+      clearTimers();
+      if (dead) return;
+      onDisconnect?.();
+      // Exponential backoff: 1s, 2s, 4s, 8s, 16s, capped at 30s
+      const delay = Math.min(1000 * Math.pow(2, retries), 30000);
+      retries++;
+      retryTimer = setTimeout(() => connect(true), delay);
+    };
+
+    ws.onerror = () => {};
+  }
+
+  // Also reconnect immediately when the tab becomes visible again
+  // (the WS may have silently died while the tab was backgrounded)
+  function onVisibility() {
+    if (document.visibilityState === "visible") {
+      if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+        clearTimers();
+        retries = 0;
+        connect(true);
+      }
     }
-  }, 4 * 60 * 1000);
+  }
+  document.addEventListener("visibilitychange", onVisibility);
 
-  ws.onmessage = e => e.data.split("\n").forEach(l => { l = l.trimEnd(); if (l) onLine(l); });
-  ws.onclose   = () => { clearInterval(heartbeatInterval); if (!dead) onClose?.(); };
-  ws.onerror   = () => {};
+  connect(false);
+
   return {
-    send:        (raw) => { if (ws.readyState === WebSocket.OPEN) ws.send(raw + "\r\n"); },
-    close:       ()    => { dead = true; clearInterval(heartbeatInterval); ws.close(); },
-    get ready()        { return ws.readyState === WebSocket.OPEN; },
+    send:    (raw) => { if (ws?.readyState === WebSocket.OPEN) ws.send(raw + "\r\n"); },
+    close:   ()    => {
+      dead = true;
+      clearTimers();
+      document.removeEventListener("visibilitychange", onVisibility);
+      ws?.close();
+    },
+    get ready() { return ws?.readyState === WebSocket.OPEN; },
   };
 }
 
@@ -2961,13 +3010,15 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
     ensureChan(net.id, STATUS_CHAN);
 
     const conn = openWS({
-      networkId: net.id,
-      onLine:  line => handleLine(net.id, line),
-      onClose: () => {
-        const n = networksRef.current[net.id];
+      networkId:   net.id,
+      onLine:      line => handleLine(net.id, line),
+      onDisconnect: () => {
         dispatch({ type:"NET_STATUS", id:net.id, status:"disconnected" });
-        addSys(net.id, STATUS_CHAN, `Disconnected from ${n?.name||net.name}`);
-        delete connections.current[net.id];
+        // Don't remove from connections.current — the handle is reused on reconnect
+      },
+      onReconnect: () => {
+        // WS reconnected — re-enter replay mode so unread isn't inflated
+        dispatch({ type:"REPLAY_START", netId: net.id });
       },
     });
     connections.current[net.id] = conn;

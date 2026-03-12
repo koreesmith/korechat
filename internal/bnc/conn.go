@@ -941,7 +941,9 @@ func (c *Conn) sendRaw(line string) {
 
 func (c *Conn) notice(text string) {
 	line := fmt.Sprintf(":*bnc* NOTICE * :%s", text)
-	c.buffer(line)
+	// BNC meta-notices (connection state, errors) are sent live only — not buffered.
+	// Buffering them causes them to replay on every new browser tab as fake
+	// "reconnecting"/"connecting" messages even when already connected.
 	c.fanOut(line)
 }
 
