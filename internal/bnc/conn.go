@@ -192,7 +192,10 @@ func (c *Conn) Subscribe(id string, send SendFunc) {
 	status := string(c.store.StatusOf(c.net.ID))
 	send(fmt.Sprintf(":*bnc* NOTICE * :status:%s", status))
 
-	// Replay all buffered lines — server first, then channels
+	// Replay all buffered lines — server first, then channels.
+	// Skip self-JOIN and self-MODE lines: these are artifacts of the BNC joining
+	// the channel on behalf of the user and would appear as fake join events on
+	// every browser reconnect even though the user never left the channel.
 	for _, line := range c.buffers["__server__"].Lines() {
 		send(line)
 	}
@@ -201,6 +204,9 @@ func (c *Conn) Subscribe(id string, send SendFunc) {
 			continue
 		}
 		for _, line := range buf.Lines() {
+			if isSelfMembershipLine(line, c.currentNick) {
+				continue
+			}
 			send(line)
 		}
 	}
@@ -948,6 +954,46 @@ func (c *Conn) notice(text string) {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// isSelfMembershipLine returns true for JOIN and MODE lines where the acting
+// nick is the BNC's current nick. These are suppressed during ring buffer
+// replay because they're artifacts of the BNC's own session, not real events.
+func isSelfMembershipLine(line, selfNick string) bool {
+	if selfNick == "" {
+		return false
+	}
+	// Strip IRCv3 tags
+	if strings.HasPrefix(line, "@") {
+		sp := strings.Index(line, " ")
+		if sp < 0 {
+			return false
+		}
+		line = line[sp+1:]
+	}
+	parts := strings.SplitN(line, " ", 4)
+	if len(parts) < 2 {
+		return false
+	}
+	// Extract nick from prefix (:nick!user@host)
+	prefix := ""
+	idx := 0
+	if strings.HasPrefix(parts[0], ":") {
+		prefix = strings.TrimPrefix(parts[0], ":")
+		idx = 1
+	}
+	if idx >= len(parts) {
+		return false
+	}
+	cmd := strings.ToUpper(parts[idx])
+	if cmd != "JOIN" && cmd != "MODE" {
+		return false
+	}
+	nick := prefix
+	if i := strings.Index(prefix, "!"); i >= 0 {
+		nick = prefix[:i]
+	}
+	return strings.EqualFold(nick, selfNick)
+}
 
 func nickFrom(prefix string) string {
 	s := strings.TrimPrefix(prefix, ":")
