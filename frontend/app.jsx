@@ -294,70 +294,92 @@ const API = {
 // onLine is called for each IRC line. onReconnect fires after a successful
 // reconnect so the caller can re-dispatch REPLAY_START etc.
 function openWS({ networkId, onLine, onDisconnect, onReconnect }) {
-  const url  = () => `${WS_BASE}/ws?network=${networkId}`;
-  let ws       = null;
-  let dead     = false;
-  let retries  = 0;
-  let retryTimer = null;
-  let heartbeatInterval = null;
+  const url       = () => `${WS_BASE}/ws?network=${networkId}`;
+  let ws          = null;
+  let dead        = false;
+  let retries     = 0;
+  let retryTimer  = null;
+  let heartbeat   = null;
+  let notifiedDisconnect = false; // only fire onDisconnect once per outage
 
-  function clearTimers() {
-    clearInterval(heartbeatInterval);
+  function stopHeartbeat() {
+    clearInterval(heartbeat);
+    heartbeat = null;
+  }
+
+  function startHeartbeat(socket) {
+    stopHeartbeat();
+    heartbeat = setInterval(() => {
+      if (socket.readyState === WebSocket.OPEN) socket.send("PING :kc-heartbeat\r\n");
+    }, 4 * 60 * 1000);
+  }
+
+  function scheduleRetry() {
     clearTimeout(retryTimer);
-    heartbeatInterval = null;
-    retryTimer = null;
+    const delay = Math.min(1000 * Math.pow(2, retries), 30000);
+    retries++;
+    retryTimer = setTimeout(() => connect(true), delay);
   }
 
   function connect(isRetry) {
     if (dead) return;
-    ws = new WebSocket(url());
 
-    heartbeatInterval = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) ws.send("PING :kc-heartbeat\r\n");
-    }, 4 * 60 * 1000);
+    // Abandon any in-flight socket without letting its callbacks fire
+    if (ws) {
+      ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
+      ws.close();
+    }
+
+    ws = new WebSocket(url());
+    startHeartbeat(ws);
 
     ws.onmessage = e => e.data.split("\n").forEach(l => { l = l.trimEnd(); if (l) onLine(l); });
 
     ws.onopen = () => {
-      if (isRetry) onReconnect?.();
       retries = 0;
+      if (isRetry) {
+        notifiedDisconnect = false;
+        onReconnect?.();
+      }
     };
 
     ws.onclose = () => {
-      clearTimers();
       if (dead) return;
-      onDisconnect?.();
-      // Exponential backoff: 1s, 2s, 4s, 8s, 16s, capped at 30s
-      const delay = Math.min(1000 * Math.pow(2, retries), 30000);
-      retries++;
-      retryTimer = setTimeout(() => connect(true), delay);
+      stopHeartbeat();
+      if (!notifiedDisconnect) {
+        notifiedDisconnect = true;
+        onDisconnect?.();
+      }
+      scheduleRetry();
     };
 
-    ws.onerror = () => {};
+    ws.onerror = () => {}; // onclose always follows onerror
   }
 
-  // Also reconnect immediately when the tab becomes visible again
-  // (the WS may have silently died while the tab was backgrounded)
+  // When the tab becomes visible, kick an immediate reconnect if the socket
+  // is dead or stuck — don't wait for the backoff timer.
   function onVisibility() {
-    if (document.visibilityState === "visible") {
-      if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
-        clearTimers();
-        retries = 0;
-        connect(true);
-      }
+    if (document.visibilityState !== "visible") return;
+    const state = ws?.readyState;
+    if (state === WebSocket.CLOSED || state === WebSocket.CLOSING || state == null) {
+      clearTimeout(retryTimer);
+      retries = 0;
+      connect(true);
     }
+    // If CONNECTING, let it finish — onclose will retry if it fails
   }
   document.addEventListener("visibilitychange", onVisibility);
 
   connect(false);
 
   return {
-    send:    (raw) => { if (ws?.readyState === WebSocket.OPEN) ws.send(raw + "\r\n"); },
-    close:   ()    => {
+    send:  (raw) => { if (ws?.readyState === WebSocket.OPEN) ws.send(raw + "\r\n"); },
+    close: () => {
       dead = true;
-      clearTimers();
+      stopHeartbeat();
+      clearTimeout(retryTimer);
       document.removeEventListener("visibilitychange", onVisibility);
-      ws?.close();
+      if (ws) { ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null; ws.close(); }
     },
     get ready() { return ws?.readyState === WebSocket.OPEN; },
   };
