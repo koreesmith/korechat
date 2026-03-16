@@ -356,41 +356,28 @@ function openWS({ networkId, onLine, onDisconnect, onReconnect }) {
     ws.onerror = () => {}; // onclose always follows onerror
   }
 
-  // When the tab becomes visible, check if the socket is actually alive.
-  // readyState can lie after a browser suspension — the socket shows OPEN
-  // but is actually dead. We send a probe ping and if the server doesn't
-  // echo anything back within 4 seconds we force a reconnect.
-  let probeTimer = null;
+  // When the tab becomes visible after being hidden for more than 30 seconds,
+  // always reconnect unconditionally. We cannot trust readyState after browser
+  // suspension — it can show OPEN on a zombie socket. The BNC handles reconnects
+  // gracefully: it replays the ring buffer and sends replay-done so the client
+  // resyncs cleanly. Short tab switches (< 30s) skip the reconnect to avoid
+  // noise when flipping between windows.
+  let probeTimer = null; // kept for close() cleanup
+  let hiddenAt   = 0;
   function onVisibility() {
-    if (document.visibilityState !== "visible") return;
-    clearTimeout(probeTimer);
-    const state = ws?.readyState;
-    if (state === WebSocket.CLOSED || state === WebSocket.CLOSING || state == null) {
+    if (document.visibilityState === "hidden") {
+      hiddenAt = Date.now();
+      return;
+    }
+    // Tab became visible
+    const idleMs = Date.now() - hiddenAt;
+    const state  = ws?.readyState;
+    // Always reconnect if socket is already dead, or if we were hidden > 30s
+    if (state !== WebSocket.OPEN || idleMs > 30_000) {
       clearTimeout(retryTimer);
       retries = 0;
       connect(true);
-      return;
     }
-    if (state === WebSocket.OPEN) {
-      // Send a probe. The BNC will PONG back which counts as a line via onmessage.
-      // If nothing arrives within 4s, the connection is zombie — reconnect.
-      let gotResponse = false;
-      const origOnMessage = ws.onmessage;
-      ws.onmessage = e => {
-        gotResponse = true;
-        ws.onmessage = origOnMessage;
-        origOnMessage(e);
-      };
-      ws.send("PING :probe\r\n");
-      probeTimer = setTimeout(() => {
-        if (!gotResponse && !dead) {
-          ws.onmessage = origOnMessage; // restore before reconnect
-          retries = 0;
-          connect(true);
-        }
-      }, 4000);
-    }
-    // If CONNECTING, let it finish — onclose will retry if it fails
   }
   document.addEventListener("visibilitychange", onVisibility);
 
@@ -3046,11 +3033,8 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   // ── connect / disconnect ───────────────────────────────────────────────────
   const connectNetwork = useCallback((net) => {
     if (!net?.id) return;
-    if (connections.current[net.id]?.ready) {
-      addSys(net.id, STATUS_CHAN, `Already connected to ${net.name}.`);
-      return;
-    }
-    // Close any dead socket for this network first
+    // Always tear down and rebuild — the existing handle may have a dead
+    // internal reconnect loop even if it hasn't been garbage collected.
     connections.current[net.id]?.close();
     delete connections.current[net.id];
 
@@ -3064,20 +3048,29 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         // Don't remove from connections.current — the handle is reused on reconnect
       },
       onReconnect: () => {
-        // WS reconnected — re-enter replay mode so unread isn't inflated
+        // WS reconnected after a drop — clear disconnected status and
+        // re-enter replay mode so unread badges aren't inflated by the replay.
+        dispatch({ type:"NET_STATUS", id:net.id, status:"connected" });
         dispatch({ type:"REPLAY_START", netId: net.id });
       },
     });
     connections.current[net.id] = conn;
   }, [handleLine, addSys, ensureChan]);
 
-  // reconnectNetwork explicitly tears down the upstream BNC connection and
-  // starts a fresh one. Only call this when the user explicitly requests it
-  // (manual connect button, /connect command, /reconnect command).
+  // reconnectNetwork reconnects the WebSocket to the BNC.
+  // It only tells the BNC to reconnect to IRC if the BNC itself is disconnected.
+  // Most of the time (browser tab waking up, WS drop) the BNC is still on IRC
+  // and we just need a fresh WebSocket — calling API.connectNetwork unnecessarily
+  // drops the IRC session and causes a visible quit/rejoin.
   const reconnectNetwork = useCallback((net) => {
     if (!net?.id) return;
-    addSys(net.id, STATUS_CHAN, `Connecting to ${net.name} (${net.host}:${net.port})…`);
-    API.connectNetwork(net.id).catch(()=>{});
+    const bncStatus = networksRef.current[net.id]?.status;
+    const bncOnIRC  = bncStatus === "connected";
+    if (!bncOnIRC) {
+      // BNC itself is offline — tell it to reconnect to IRC too
+      addSys(net.id, STATUS_CHAN, `Connecting to ${net.name} (${net.host}:${net.port})…`);
+      API.connectNetwork(net.id).catch(()=>{});
+    }
     connectNetwork(net);
   }, [connectNetwork, addSys]);
 
@@ -3104,6 +3097,23 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // intentionally run once on mount only
+
+  // ── WS watchdog ────────────────────────────────────────────────────────────
+  // Belt-and-suspenders: every 10s check that every network has a live WS.
+  // If the internal reconnect loop has silently died (browser suspension,
+  // timer throttling, etc.) this will kick a fresh connection.
+  useEffect(() => {
+    const id = setInterval(() => {
+      Object.entries(connections.current).forEach(([netId, conn]) => {
+        if (!conn.ready) {
+          const net = networksRef.current[netId];
+          if (net) connectNetwork(net);
+        }
+      });
+    }, 10000);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── scroll to bottom ───────────────────────────────────────────────────────
   const activeChanName = activeNet ? activeChan[activeNet] : null;
