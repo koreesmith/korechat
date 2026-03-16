@@ -37,11 +37,11 @@ import (
 const (
 	dialTimeout       = 15 * time.Second
 	writeTimeout      = 10 * time.Second
-	keepaliveInterval = 60 * time.Second  // how often we PING the upstream
-	keepaliveTimeout  = 180 * time.Second // how long without any data before giving up
+	keepaliveInterval = 30 * time.Second  // how often we PING the upstream
+	keepaliveTimeout  = 90 * time.Second  // how long without any data before giving up
 	BufferSize        = 500               // lines retained per channel/server
-	maxBackoff        = 300 * time.Second
-	initialBackoff    = 5 * time.Second
+	maxBackoff        = 30 * time.Second   // cap at 30s so reconnect is prompt
+	initialBackoff    = 2 * time.Second
 )
 
 // SendFunc delivers a raw IRC line to one WebSocket client.
@@ -299,12 +299,18 @@ func (c *Conn) dial() {
 	var err error
 	if c.net.TLS {
 		tc, err = tls.DialWithDialer(
-			&net.Dialer{Timeout: dialTimeout},
+			&net.Dialer{
+				Timeout:   dialTimeout,
+				KeepAlive: 60 * time.Second,
+			},
 			"tcp", addr,
 			&tls.Config{ServerName: c.net.Host},
 		)
 	} else {
-		tc, err = net.DialTimeout("tcp", addr, dialTimeout)
+		tc, err = (&net.Dialer{
+			Timeout:   dialTimeout,
+			KeepAlive: 60 * time.Second,
+		}).Dial("tcp", addr)
 	}
 	if err != nil {
 		msg := fmt.Sprintf("Failed to connect to %s: %v", addr, err)

@@ -356,15 +356,39 @@ function openWS({ networkId, onLine, onDisconnect, onReconnect }) {
     ws.onerror = () => {}; // onclose always follows onerror
   }
 
-  // When the tab becomes visible, kick an immediate reconnect if the socket
-  // is dead or stuck — don't wait for the backoff timer.
+  // When the tab becomes visible, check if the socket is actually alive.
+  // readyState can lie after a browser suspension — the socket shows OPEN
+  // but is actually dead. We send a probe ping and if the server doesn't
+  // echo anything back within 4 seconds we force a reconnect.
+  let probeTimer = null;
   function onVisibility() {
     if (document.visibilityState !== "visible") return;
+    clearTimeout(probeTimer);
     const state = ws?.readyState;
     if (state === WebSocket.CLOSED || state === WebSocket.CLOSING || state == null) {
       clearTimeout(retryTimer);
       retries = 0;
       connect(true);
+      return;
+    }
+    if (state === WebSocket.OPEN) {
+      // Send a probe. The BNC will PONG back which counts as a line via onmessage.
+      // If nothing arrives within 4s, the connection is zombie — reconnect.
+      let gotResponse = false;
+      const origOnMessage = ws.onmessage;
+      ws.onmessage = e => {
+        gotResponse = true;
+        ws.onmessage = origOnMessage;
+        origOnMessage(e);
+      };
+      ws.send("PING :probe\r\n");
+      probeTimer = setTimeout(() => {
+        if (!gotResponse && !dead) {
+          ws.onmessage = origOnMessage; // restore before reconnect
+          retries = 0;
+          connect(true);
+        }
+      }, 4000);
     }
     // If CONNECTING, let it finish — onclose will retry if it fails
   }
@@ -378,6 +402,7 @@ function openWS({ networkId, onLine, onDisconnect, onReconnect }) {
       dead = true;
       stopHeartbeat();
       clearTimeout(retryTimer);
+      clearTimeout(probeTimer);
       document.removeEventListener("visibilitychange", onVisibility);
       if (ws) { ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null; ws.close(); }
     },
