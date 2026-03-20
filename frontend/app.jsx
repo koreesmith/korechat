@@ -309,9 +309,11 @@ function openWS({ networkId, onLine, onDisconnect, onReconnect }) {
 
   function startHeartbeat(socket) {
     stopHeartbeat();
+    // 45s heartbeat — keeps the WS alive through nginx and any intermediate
+    // proxies, and gives us a fast signal if the connection has gone silent.
     heartbeat = setInterval(() => {
       if (socket.readyState === WebSocket.OPEN) socket.send("PING :kc-heartbeat\r\n");
-    }, 4 * 60 * 1000);
+    }, 45 * 1000);
   }
 
   function scheduleRetry() {
@@ -356,28 +358,17 @@ function openWS({ networkId, onLine, onDisconnect, onReconnect }) {
     ws.onerror = () => {}; // onclose always follows onerror
   }
 
-  // When the tab becomes visible after being hidden for more than 30 seconds,
-  // always reconnect unconditionally. We cannot trust readyState after browser
-  // suspension — it can show OPEN on a zombie socket. The BNC handles reconnects
-  // gracefully: it replays the ring buffer and sends replay-done so the client
-  // resyncs cleanly. Short tab switches (< 30s) skip the reconnect to avoid
-  // noise when flipping between windows.
+  // Always reconnect when the tab becomes visible. We cannot trust readyState
+  // after browser suspension — browsers throttle backgrounded tabs, freeze
+  // timers, and delay WS pong responses, causing the server to silently drop
+  // the connection. The BNC handles rapid subscribe/unsubscribe cheaply and
+  // replays the ring buffer on each new connection, so reconnecting is safe.
   let probeTimer = null; // kept for close() cleanup
-  let hiddenAt   = 0;
   function onVisibility() {
-    if (document.visibilityState === "hidden") {
-      hiddenAt = Date.now();
-      return;
-    }
-    // Tab became visible
-    const idleMs = Date.now() - hiddenAt;
-    const state  = ws?.readyState;
-    // Always reconnect if socket is already dead, or if we were hidden > 30s
-    if (state !== WebSocket.OPEN || idleMs > 30_000) {
-      clearTimeout(retryTimer);
-      retries = 0;
-      connect(true);
-    }
+    if (document.visibilityState !== "visible") return;
+    clearTimeout(retryTimer);
+    retries = 0;
+    connect(true);
   }
   document.addEventListener("visibilitychange", onVisibility);
 

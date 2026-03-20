@@ -119,19 +119,29 @@
     if (typeof React === 'undefined') { showErr('React did not load — CDN unreachable?'); }
     else if (typeof Babel === 'undefined') { showErr('Babel did not load — CDN unreachable?'); }
     else {
-      fetch('/app.jsx')
-        .then(function(r) { return r.text(); })
-        .then(function(src) {
-          try {
-            var out = Babel.transform(src, { presets: ['react'], filename: 'app.jsx' });
-            (0, eval)(out.code);
-          } catch(e) {
-            showErr(String(e) + '\n' + (e.stack || ''));
-          }
-        })
-        .catch(function(e) {
-          showErr('Failed to fetch app.jsx: ' + String(e));
-        });
+      function loadApp(attemptsLeft) {
+        fetch('/app.jsx')
+          .then(function(r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.text();
+          })
+          .then(function(src) {
+            try {
+              var out = Babel.transform(src, { presets: ['react'], filename: 'app.jsx' });
+              (0, eval)(out.code);
+            } catch(e) {
+              showErr(String(e) + '\n' + (e.stack || ''));
+            }
+          })
+          .catch(function(e) {
+            if (attemptsLeft > 0) {
+              setTimeout(function() { loadApp(attemptsLeft - 1); }, 1500);
+            } else {
+              showErr('Failed to fetch app.jsx: ' + String(e));
+            }
+          });
+      }
+      loadApp(5);
     }
   </script>
 

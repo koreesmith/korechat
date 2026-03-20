@@ -28,7 +28,11 @@ import (
 
 const (
 	writeWait      = 10 * time.Second
-	pongWait       = 60 * time.Second
+	// pongWait must be long enough to survive browser tab suspension.
+	// Browsers throttle backgrounded tabs and may delay pong responses
+	// by minutes. We rely on application-level keepalives instead of
+	// WS ping/pong for liveness detection.
+	pongWait       = 24 * time.Hour
 	pingPeriod     = 50 * time.Second
 	maxMessageSize = 8192
 	sendBufSize    = 1024 // larger — replay can be big
