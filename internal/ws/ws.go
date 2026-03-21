@@ -35,7 +35,7 @@ const (
 	pongWait       = 24 * time.Hour
 	pingPeriod     = 50 * time.Second
 	maxMessageSize = 8192
-	sendBufSize    = 1024 // larger — replay can be big
+	sendBufSize    = 8192 // must absorb full ring buffer replay (500 lines × N channels)
 )
 
 var upgrader = websocket.Upgrader{
@@ -194,30 +194,41 @@ func (s *Server) runBNCSession(conn *websocket.Conn, id, networkID string, r *ht
 	sendFn := func(line string) {
 		select {
 		case sendCh <- line:
-		default:
-			log.Printf("ws/bnc: [%s] send buffer full, dropping", id)
+		case <-time.After(5 * time.Second):
+			// Client is not consuming fast enough — drop and log.
+			// With writePump running before Subscribe this should rarely fire.
+			log.Printf("ws/bnc: [%s] send timeout, dropping line", id)
 		}
 	}
 
-	if err := s.bncMgr.Subscribe(networkID, id, sendFn); err != nil {
-		log.Printf("ws/bnc: [%s] subscribe to %q failed: %v", id, networkID, err)
-		conn.WriteMessage(websocket.CloseMessage,
-			websocket.FormatCloseMessage(websocket.CloseNormalClosure, err.Error()))
-		conn.Close()
-		return
-	}
-
 	sess := &bncSession{id: id, networkID: networkID, conn: conn, sendCh: sendCh, mgr: s.bncMgr}
-	log.Printf("ws/bnc: session %s from %s → network %s", id, host, networkID)
 
+	// Start writePump BEFORE Subscribe so it is already draining sendCh
+	// when Subscribe replays the ring buffer. If writePump starts after,
+	// Subscribe floods sendCh synchronously and drops lines (including
+	// replay-done) before writePump has a chance to drain anything.
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() { defer wg.Done(); sess.writePump() }()
-	go func() { defer wg.Done(); sess.readPump() }()
-	wg.Wait()
+	go func() {
+		defer wg.Done()
+		defer func() {
+			s.bncMgr.Unsubscribe(networkID, id)
+			close(sendCh)
+		}()
 
-	s.bncMgr.Unsubscribe(networkID, id)
-	close(sendCh)
+		if err := s.bncMgr.Subscribe(networkID, id, sendFn); err != nil {
+			log.Printf("ws/bnc: [%s] subscribe to %q failed: %v", id, networkID, err)
+			conn.WriteMessage(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseNormalClosure, err.Error()))
+			conn.Close()
+			return
+		}
+		log.Printf("ws/bnc: session %s from %s → network %s", id, host, networkID)
+		sess.readPump()
+	}()
+	wg.Wait()
+	return // Unsubscribe/close handled above
 	log.Printf("ws/bnc: session %s detached from %s (upstream stays connected)", id, networkID)
 }
 
@@ -262,9 +273,11 @@ func (s *bncSession) writePump() {
 				return
 			}
 			fmt.Fprintln(w, line)
-			// Batch drain — important during replay
+			// Batch drain — critical during ring buffer replay which can
+			// send hundreds of lines at once. Drain as much as possible
+			// in a single WebSocket frame to minimize round trips.
 			n := len(s.sendCh)
-			for i := 0; i < n && i < 511; i++ {
+			for i := 0; i < n; i++ {
 				fmt.Fprintln(w, <-s.sendCh)
 			}
 			if err := w.Close(); err != nil {

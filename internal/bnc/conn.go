@@ -204,7 +204,7 @@ func (c *Conn) Subscribe(id string, send SendFunc) {
 			continue
 		}
 		for _, line := range buf.Lines() {
-			if isSelfMembershipLine(line, c.currentNick) {
+			if isMembershipReplayLine(line) {
 				continue
 			}
 			send(line)
@@ -961,15 +961,20 @@ func (c *Conn) notice(text string) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// isSelfMembershipLine returns true for JOIN and MODE lines where the acting
-// nick is the BNC's current nick. These are suppressed during ring buffer
-// replay because they're artifacts of the BNC's own session, not real events.
-func isSelfMembershipLine(line, selfNick string) bool {
-	if selfNick == "" {
-		return false
-	}
-	// Strip IRCv3 tags
+// isMembershipReplayLine returns true for JOIN/PART/QUIT/KICK/MODE lines that
+// lack a server-supplied @time tag. These are suppressed during ring buffer
+// replay because they reflect channel state at BNC startup time and will show
+// with a misleading "now" timestamp rather than when they actually occurred.
+// PRIVMSG/NOTICE lines are always kept — message history is valuable.
+// Lines WITH a server @time tag are also kept — they have accurate timestamps.
+func isMembershipReplayLine(line string) bool {
+	// If the line has a server-supplied @time tag, keep it — timestamp is accurate
 	if strings.HasPrefix(line, "@") {
+		tagBlock := strings.SplitN(line, " ", 2)[0]
+		if strings.Contains(tagBlock, "time=") {
+			return false // has real timestamp, safe to replay
+		}
+		// Has tags but no time — strip tags to parse command
 		sp := strings.Index(line, " ")
 		if sp < 0 {
 			return false
@@ -977,28 +982,19 @@ func isSelfMembershipLine(line, selfNick string) bool {
 		line = line[sp+1:]
 	}
 	parts := strings.SplitN(line, " ", 4)
-	if len(parts) < 2 {
-		return false
-	}
-	// Extract nick from prefix (:nick!user@host)
-	prefix := ""
 	idx := 0
-	if strings.HasPrefix(parts[0], ":") {
-		prefix = strings.TrimPrefix(parts[0], ":")
+	if len(parts) > 0 && strings.HasPrefix(parts[0], ":") {
 		idx = 1
 	}
 	if idx >= len(parts) {
 		return false
 	}
 	cmd := strings.ToUpper(parts[idx])
-	if cmd != "JOIN" && cmd != "MODE" {
-		return false
+	switch cmd {
+	case "JOIN", "PART", "QUIT", "KICK", "MODE":
+		return true // membership event without accurate timestamp — suppress
 	}
-	nick := prefix
-	if i := strings.Index(prefix, "!"); i >= 0 {
-		nick = prefix[:i]
-	}
-	return strings.EqualFold(nick, selfNick)
+	return false
 }
 
 func nickFrom(prefix string) string {
