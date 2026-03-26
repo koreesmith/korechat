@@ -190,14 +190,13 @@ type bncSession struct {
 func (s *Server) runBNCSession(conn *websocket.Conn, id, networkID string, r *http.Request) {
 	host := remoteHost(r)
 	sendCh := make(chan string, sendBufSize)
+	doneCh := make(chan struct{}) // closed when session ends; unblocks any waiting sendFn
 
 	sendFn := func(line string) {
 		select {
 		case sendCh <- line:
-		case <-time.After(5 * time.Second):
-			// Client is not consuming fast enough — drop and log.
-			// With writePump running before Subscribe this should rarely fire.
-			log.Printf("ws/bnc: [%s] send timeout, dropping line", id)
+		case <-doneCh:
+			// Session closing — discard silently, never panics on closed sendCh.
 		}
 	}
 
@@ -212,7 +211,10 @@ func (s *Server) runBNCSession(conn *websocket.Conn, id, networkID string, r *ht
 	go func() { defer wg.Done(); sess.writePump() }()
 	go func() {
 		defer wg.Done()
+		// Signal doneCh first so any blocked sendFn wakes and stops,
+		// then unsubscribe, then close sendCh so writePump exits cleanly.
 		defer func() {
+			close(doneCh)
 			s.bncMgr.Unsubscribe(networkID, id)
 			close(sendCh)
 		}()
@@ -226,12 +228,10 @@ func (s *Server) runBNCSession(conn *websocket.Conn, id, networkID string, r *ht
 		}
 		log.Printf("ws/bnc: session %s from %s → network %s", id, host, networkID)
 		sess.readPump()
+		log.Printf("ws/bnc: session %s detached from %s (upstream stays connected)", id, networkID)
 	}()
 	wg.Wait()
-	return // Unsubscribe/close handled above
-	log.Printf("ws/bnc: session %s detached from %s (upstream stays connected)", id, networkID)
 }
-
 func (s *bncSession) readPump() {
 	defer s.conn.Close()
 	s.conn.SetReadLimit(maxMessageSize)

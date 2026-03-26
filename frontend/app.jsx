@@ -214,7 +214,7 @@ const THEMES = {
     fontSize:    14,
   },
 };
-const _savedTheme = sessionStorage.getItem("kc_theme") || "dark";
+const _savedTheme = localStorage.getItem("kc_theme") || "dark";
 const ThemeCtx = React.createContext(THEMES[_savedTheme] || THEMES.dark);
 function useTheme() { return React.useContext(ThemeCtx); }
 
@@ -4594,7 +4594,7 @@ function App() {
   const [view,    setView]    = useState("loading");
   const [me,      setMe]      = useState(null);
   // Theme lives here at the root so Login/Setup/Admin all share it
-  const [theme, setTheme] = useState(() => sessionStorage.getItem("kc_theme") || "dark");
+  const [theme, setTheme] = useState(() => localStorage.getItem("kc_theme") || "dark");
   const T = THEMES[theme] || THEMES.dark;
 
   // Cycle through all available themes
@@ -4602,7 +4602,7 @@ function App() {
     const keys = Object.keys(THEMES);
     const next = keys[(keys.indexOf(theme) + 1) % keys.length];
     setTheme(next);
-    sessionStorage.setItem("kc_theme", next);
+    localStorage.setItem("kc_theme", next);
   };
 
   // Keep body background in sync with theme (affects the area behind the app)
@@ -4656,7 +4656,7 @@ function App() {
     <ThemeCtx.Provider value={T}>
       <div style={{position:"relative",width:"100%",height:"100%",overflow:"hidden"}}>
         <KoreChat currentUser={me} onLogout={handleLogout} onAdmin={()=>setView("admin")}
-          appTheme={theme} appToggleTheme={toggleTheme} appSetTheme={t=>{setTheme(t);sessionStorage.setItem("kc_theme",t);}}/>
+          appTheme={theme} appToggleTheme={toggleTheme} appSetTheme={t=>{setTheme(t);localStorage.setItem("kc_theme",t);}}/>
         {view==="admin" && (
           <div style={{position:"fixed",inset:0,zIndex:500,background:T.bg}}>
             <AdminPanel currentUser={me} onBack={()=>setView("chat")} theme={theme} toggleTheme={toggleTheme}/>

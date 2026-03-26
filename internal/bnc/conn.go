@@ -73,7 +73,7 @@ func (r *RingBuffer) Push(line string) {
 
 // Lines returns all buffered lines in chronological order.
 func (r *RingBuffer) Lines() []string {
-	if r.n == 0 {
+	if r == nil || r.n == 0 {
 		return nil
 	}
 	out := make([]string, r.n)
@@ -193,14 +193,16 @@ func (c *Conn) Subscribe(id string, send SendFunc) {
 	send(fmt.Sprintf(":*bnc* NOTICE * :status:%s", status))
 
 	// Replay all buffered lines — server first, then channels.
-	// Skip self-JOIN and self-MODE lines: these are artifacts of the BNC joining
-	// the channel on behalf of the user and would appear as fake join events on
-	// every browser reconnect even though the user never left the channel.
-	for _, line := range c.buffers["__server__"].Lines() {
-		send(line)
+	// Skip membership events without accurate timestamps (no @time tag) since
+	// they replay with misleading "now" timestamps.
+	// Guard against nil buffers — a network that has never connected has no buffers.
+	if buf := c.buffers["__server__"]; buf != nil {
+		for _, line := range buf.Lines() {
+			send(line)
+		}
 	}
 	for chanName, buf := range c.buffers {
-		if chanName == "__server__" {
+		if chanName == "__server__" || buf == nil {
 			continue
 		}
 		for _, line := range buf.Lines() {
