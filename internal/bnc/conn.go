@@ -717,6 +717,12 @@ func (c *Conn) intercept(line string) {
 
 		c.store.SetStatus(c.net.ID, networks.StatusConnected, "")
 		log.Printf("bnc[%s]: registered on %s as %s", c.net.ID, c.net.Name, nick)
+		// Notify all currently-connected browser sessions that the upstream
+		// is now connected. Without this, sessions that were open during a
+		// BNC reconnect never learn the connection came back up — their UI
+		// stays stuck showing "disconnected" even though the WS is alive.
+		c.fanOut(fmt.Sprintf(":*bnc* NOTICE * :status:connected"))
+		c.fanOut(fmt.Sprintf(":*bnc* NOTICE * :replay-done nick:%s", nick))
 
 		// Execute OnConnect perform commands, then rejoin all channels.
 		// Small initial delay lets the server finish its welcome burst.

@@ -202,22 +202,26 @@ func (s *Server) runBNCSession(conn *websocket.Conn, id, networkID string, r *ht
 
 	sess := &bncSession{id: id, networkID: networkID, conn: conn, sendCh: sendCh, mgr: s.bncMgr}
 
-	// Start writePump BEFORE Subscribe so it is already draining sendCh
-	// when Subscribe replays the ring buffer. If writePump starts after,
-	// Subscribe floods sendCh synchronously and drops lines (including
-	// replay-done) before writePump has a chance to drain anything.
+	// writerReady is closed by writePump once it enters its select loop,
+	// guaranteeing it is draining sendCh before Subscribe fires the replay.
+	writerReady := make(chan struct{})
+
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go func() { defer wg.Done(); sess.writePump() }()
 	go func() {
 		defer wg.Done()
-		// Signal doneCh first so any blocked sendFn wakes and stops,
-		// then unsubscribe, then close sendCh so writePump exits cleanly.
+		sess.writePump(writerReady)
+	}()
+	go func() {
+		defer wg.Done()
 		defer func() {
 			close(doneCh)
 			s.bncMgr.Unsubscribe(networkID, id)
 			close(sendCh)
 		}()
+
+		// Wait until writePump is actually running before Subscribe floods sendCh.
+		<-writerReady
 
 		if err := s.bncMgr.Subscribe(networkID, id, sendFn); err != nil {
 			log.Printf("ws/bnc: [%s] subscribe to %q failed: %v", id, networkID, err)
@@ -257,9 +261,11 @@ func (s *bncSession) readPump() {
 	}
 }
 
-func (s *bncSession) writePump() {
+func (s *bncSession) writePump(ready chan struct{}) {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() { ticker.Stop(); s.conn.Close() }()
+	// Signal that we are ready to drain sendCh before entering the select loop.
+	close(ready)
 	for {
 		select {
 		case line, ok := <-s.sendCh:
