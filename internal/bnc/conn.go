@@ -892,10 +892,19 @@ func (c *Conn) intercept(line string) {
 
 // buffer stores a line in the appropriate ring buffer.
 // Channel messages go to the channel buffer; everything else to __server__.
+// Membership events (JOIN/PART/QUIT/KICK/MODE) are not buffered — they are
+// ephemeral state changes that have no value when replayed. Replaying them
+// causes phantom join/mode events on every browser reconnect with misleading
+// timestamps. Message content (PRIVMSG/NOTICE) is what the BNC replay is for.
 func (c *Conn) buffer(line string) {
 	// Determine target channel (if any) from the line
 	// PRIVMSG/NOTICE/JOIN/PART/KICK/TOPIC lines have a channel target
 	chan_ := channelFromLine(line)
+
+	// Skip membership events — do not buffer JOIN/PART/QUIT/KICK/MODE
+	if isMembershipLine(line) {
+		return
+	}
 
 	// Stamp @time tag if not already present so replayed lines have correct timestamps.
 	hasTime := strings.HasPrefix(line, "@") && strings.Contains(strings.SplitN(line+" ", " ", 2)[0], "time=")
@@ -968,6 +977,32 @@ func (c *Conn) notice(text string) {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// isMembershipLine returns true for JOIN/PART/QUIT/KICK/MODE lines regardless
+// of whether they have a @time tag. Used by buffer() to skip these entirely.
+func isMembershipLine(line string) bool {
+	// Strip IRCv3 tags
+	if strings.HasPrefix(line, "@") {
+		sp := strings.Index(line, " ")
+		if sp < 0 {
+			return false
+		}
+		line = line[sp+1:]
+	}
+	parts := strings.SplitN(line, " ", 4)
+	idx := 0
+	if len(parts) > 0 && strings.HasPrefix(parts[0], ":") {
+		idx = 1
+	}
+	if idx >= len(parts) {
+		return false
+	}
+	switch strings.ToUpper(parts[idx]) {
+	case "JOIN", "PART", "QUIT", "KICK", "MODE":
+		return true
+	}
+	return false
+}
 
 // isMembershipReplayLine returns true for JOIN/PART/QUIT/KICK/MODE lines that
 // lack a server-supplied @time tag. These are suppressed during ring buffer

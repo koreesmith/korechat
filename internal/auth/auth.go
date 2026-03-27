@@ -10,8 +10,11 @@ import (
 )
 
 const (
-	cookieName = "kc_session"
-	cookieTTL  = 7 * 24 * time.Hour // 7 days
+	cookieName    = "kc_session"
+	cookieTTL     = 30 * 24 * time.Hour // 30 days
+	// Refresh the token when less than this much time remains.
+	// Ensures active sessions never expire without a login.
+	refreshWindow = 7 * 24 * time.Hour
 )
 
 type contextKey string
@@ -88,8 +91,9 @@ func parseToken(r *http.Request, secret string) (*Claims, error) {
 	return claims, nil
 }
 
-// Middleware validates the session cookie on every request.
-// Returns 401 if the cookie is missing or invalid.
+// Middleware validates the session cookie on every request and silently
+// refreshes it when it is within refreshWindow of expiry. This keeps
+// active sessions alive indefinitely without requiring re-login.
 func Middleware(secret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -97,6 +101,10 @@ func Middleware(secret string) func(http.Handler) http.Handler {
 			if err != nil {
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 				return
+			}
+			// Refresh token if it expires within the refresh window.
+			if claims.ExpiresAt != nil && time.Until(claims.ExpiresAt.Time) < refreshWindow {
+				_ = IssueToken(w, secret, claims.UserID, claims.Username, claims.DisplayName, claims.Role)
 			}
 			ctx := context.WithValue(r.Context(), claimsKey, claims)
 			next.ServeHTTP(w, r.WithContext(ctx))

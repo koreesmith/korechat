@@ -293,7 +293,7 @@ const API = {
 // openWS returns a handle that auto-reconnects on drop with exponential backoff.
 // onLine is called for each IRC line. onReconnect fires after a successful
 // reconnect so the caller can re-dispatch REPLAY_START etc.
-function openWS({ networkId, onLine, onDisconnect, onReconnect }) {
+function openWS({ networkId, onLine, onDisconnect, onReconnect, onAuthExpired }) {
   const url       = () => `${WS_BASE}/ws?network=${networkId}`;
   let ws          = null;
   let dead        = false;
@@ -330,14 +330,17 @@ function openWS({ networkId, onLine, onDisconnect, onReconnect }) {
     if (ws) {
       ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
       ws.close();
+      ws = null;
     }
 
+    console.log(`[ws] connecting to ${url()} (retry=${isRetry}, retries=${retries})`);
     ws = new WebSocket(url());
     startHeartbeat(ws);
 
     ws.onmessage = e => e.data.split("\n").forEach(l => { l = l.trimEnd(); if (l) onLine(l); });
 
     ws.onopen = () => {
+      console.log(`[ws] connected to ${url()}`);
       retries = 0;
       if (isRetry) {
         notifiedDisconnect = false;
@@ -345,9 +348,20 @@ function openWS({ networkId, onLine, onDisconnect, onReconnect }) {
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (e) => {
       if (dead) return;
+      console.log(`[ws] closed: code=${e.code} reason=${e.reason} wasClean=${e.wasClean}`);
       stopHeartbeat();
+      // Code 1008 = policy violation (auth failure from our backend).
+      // Code 1006 with immediate close (< 500ms after connect attempt) 
+      // also indicates a failed HTTP upgrade — likely a 401.
+      // In either case retrying is pointless — redirect to login.
+      if (e.code === 1008 || (e.code === 1006 && !notifiedDisconnect)) {
+        // Verify by pinging /api/v1/auth/me — if 401, session is dead
+        fetch("/api/v1/auth/me", { credentials: "include" })
+          .then(r => { if (r.status === 401) { dead = true; onAuthExpired?.(); } })
+          .catch(() => {});
+      }
       if (!notifiedDisconnect) {
         notifiedDisconnect = true;
         onDisconnect?.();
@@ -355,7 +369,9 @@ function openWS({ networkId, onLine, onDisconnect, onReconnect }) {
       scheduleRetry();
     };
 
-    ws.onerror = () => {}; // onclose always follows onerror
+    ws.onerror = (e) => {
+      console.log(`[ws] error:`, e);
+    };
   }
 
   // Always reconnect when the tab becomes visible. We cannot trust readyState
@@ -3043,6 +3059,11 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         // re-enter replay mode so unread badges aren't inflated by the replay.
         dispatch({ type:"NET_STATUS", id:net.id, status:"connected" });
         dispatch({ type:"REPLAY_START", netId: net.id });
+      },
+      onAuthExpired: () => {
+        // JWT expired — all retries will fail. Force logout so the user
+        // gets back to the login screen and gets a fresh token.
+        onLogout?.();
       },
     });
     connections.current[net.id] = conn;
