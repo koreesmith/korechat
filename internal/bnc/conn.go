@@ -183,39 +183,47 @@ func (c *Conn) Stop() {
 // Subscribe attaches a new browser session to this connection.
 // It immediately replays the ring buffer to the subscriber.
 func (c *Conn) Subscribe(id string, send SendFunc) {
+	// ── Phase 1: register subscriber and snapshot state (lock held briefly) ───
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	c.subs[id] = &subscriber{id: id, send: send}
 
-	// Send current connection status as a synthetic notice
+	// Snapshot everything needed for the replay while holding the lock so that
+	// the upstream readLoop is not blocked during the (potentially large) send
+	// phase below. After Unlock() the subscriber is already in c.subs, so it
+	// will receive live fanOut messages concurrently with the replay; the client
+	// sorts messages by timestamp after replay-done, so interleaving is fine.
 	status := string(c.store.StatusOf(c.net.ID))
-	send(fmt.Sprintf(":*bnc* NOTICE * :status:%s", status))
 
-	// Replay all buffered lines — server first, then channels.
-	// Skip membership events without accurate timestamps (no @time tag) since
-	// they replay with misleading "now" timestamps.
-	// Guard against nil buffers — a network that has never connected has no buffers.
+	// Collect replay lines: server messages first, then per-channel.
+	var replay []string
 	if buf := c.buffers["__server__"]; buf != nil {
-		for _, line := range buf.Lines() {
-			send(line)
-		}
+		replay = append(replay, buf.Lines()...)
 	}
 	for chanName, buf := range c.buffers {
 		if chanName == "__server__" || buf == nil {
 			continue
 		}
 		for _, line := range buf.Lines() {
-			if isMembershipReplayLine(line) {
-				continue
+			if !isMembershipReplayLine(line) {
+				replay = append(replay, line)
 			}
-			send(line)
 		}
 	}
 
-	// If we're connected, resync the client's channel state
-	if c.connected {
-		send(fmt.Sprintf(":*bnc* NOTICE * :replay-done nick:%s", c.currentNick))
+	connected := c.connected
+	nick := c.currentNick
+	c.mu.Unlock()
+
+	// ── Phase 2: send replay WITHOUT holding the lock ─────────────────────────
+	// The upstream readLoop can now continue processing IRC lines (keepalive
+	// PINGs, PRIVMSGs, etc.) while we push potentially hundreds of buffered
+	// lines to this subscriber.
+	send(fmt.Sprintf(":*bnc* NOTICE * :status:%s", status))
+	for _, line := range replay {
+		send(line)
+	}
+	if connected {
+		send(fmt.Sprintf(":*bnc* NOTICE * :replay-done nick:%s", nick))
 	}
 }
 
