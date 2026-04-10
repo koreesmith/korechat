@@ -301,6 +301,7 @@ function openWS({ networkId, onLine, onDisconnect, onReconnect, onAuthExpired })
   let retryTimer  = null;
   let heartbeat   = null;
   let notifiedDisconnect = false; // only fire onDisconnect once per outage
+  let everConnected = false;       // true once the first onopen fires
 
   function stopHeartbeat() {
     clearInterval(heartbeat);
@@ -342,10 +343,15 @@ function openWS({ networkId, onLine, onDisconnect, onReconnect, onAuthExpired })
     ws.onopen = () => {
       console.log(`[ws] connected to ${url()}`);
       retries = 0;
-      if (isRetry) {
-        notifiedDisconnect = false;
+      notifiedDisconnect = false;
+      // Fire onReconnect whenever this is not the very first connection for this
+      // handle — covers both internal retries (isRetry=true) and watchdog-forced
+      // reconnects where connectNetwork() creates a fresh handle (isRetry=false)
+      // but a previous connection for this network had already been established.
+      if (isRetry || everConnected) {
         onReconnect?.();
       }
+      everConnected = true;
     };
 
     ws.onclose = (e) => {
@@ -353,11 +359,11 @@ function openWS({ networkId, onLine, onDisconnect, onReconnect, onAuthExpired })
       console.log(`[ws] closed: code=${e.code} reason=${e.reason} wasClean=${e.wasClean}`);
       stopHeartbeat();
       // Code 1008 = policy violation (auth failure from our backend).
-      // Code 1006 with immediate close (< 500ms after connect attempt) 
-      // also indicates a failed HTTP upgrade — likely a 401.
-      // In either case retrying is pointless — redirect to login.
-      if (e.code === 1008 || (e.code === 1006 && !notifiedDisconnect)) {
-        // Verify by pinging /api/v1/auth/me — if 401, session is dead
+      // Code 1006 = abnormal closure — on first disconnect this often means the
+      // HTTP upgrade was rejected (likely a 401); on retries it usually means a
+      // network drop.  Check auth on every 1006/1008 so we catch expiry reliably,
+      // but only set dead=true (stop retrying) if auth is genuinely gone.
+      if (e.code === 1008 || e.code === 1006) {
         fetch("/api/v1/auth/me", { credentials: "include" })
           .then(r => { if (r.status === 401) { dead = true; onAuthExpired?.(); } })
           .catch(() => {});
@@ -379,7 +385,6 @@ function openWS({ networkId, onLine, onDisconnect, onReconnect, onAuthExpired })
   // timers, and delay WS pong responses, causing the server to silently drop
   // the connection. The BNC handles rapid subscribe/unsubscribe cheaply and
   // replays the ring buffer on each new connection, so reconnecting is safe.
-  let probeTimer = null; // kept for close() cleanup
   function onVisibility() {
     if (document.visibilityState !== "visible") return;
     clearTimeout(retryTimer);
@@ -396,11 +401,19 @@ function openWS({ networkId, onLine, onDisconnect, onReconnect, onAuthExpired })
       dead = true;
       stopHeartbeat();
       clearTimeout(retryTimer);
-      clearTimeout(probeTimer);
       document.removeEventListener("visibilitychange", onVisibility);
       if (ws) { ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null; ws.close(); }
     },
+    // ready: true when the socket is open and usable.
     get ready() { return ws?.readyState === WebSocket.OPEN; },
+    // connecting: true while an attempt is in progress (CONNECTING state or a
+    // retry is scheduled). The watchdog uses this to avoid tearing down a socket
+    // that is actively trying to establish — only intervene when the loop is idle.
+    get connecting() {
+      if (dead) return false;
+      if (retryTimer !== null) return true;
+      return ws !== null && ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING;
+    },
   };
 }
 
@@ -3114,10 +3127,12 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   // Belt-and-suspenders: every 10s check that every network has a live WS.
   // If the internal reconnect loop has silently died (browser suspension,
   // timer throttling, etc.) this will kick a fresh connection.
+  // We skip handles that are already connecting (CONNECTING readyState or a
+  // pending retry timer) to avoid tearing down an in-progress attempt.
   useEffect(() => {
     const id = setInterval(() => {
       Object.entries(connections.current).forEach(([netId, conn]) => {
-        if (!conn.ready) {
+        if (!conn.ready && !conn.connecting) {
           const net = networksRef.current[netId];
           if (net) connectNetwork(net);
         }

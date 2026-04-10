@@ -197,6 +197,12 @@ func (s *Server) runBNCSession(conn *websocket.Conn, id, networkID string, r *ht
 		case sendCh <- line:
 		case <-doneCh:
 			// Session closing — discard silently, never panics on closed sendCh.
+		default:
+			// Buffer full. The client has fallen behind (likely a stale/dead connection
+			// that hasn't been cleaned up yet). Drop the line rather than blocking
+			// fanOut for all other subscribers. With an 8192-item buffer this should
+			// only happen when the underlying TCP connection is effectively dead.
+			log.Printf("ws/bnc: [%s] send buffer full, dropping message", id)
 		}
 	}
 
