@@ -543,12 +543,10 @@ func (c *Conn) intercept(line string) {
 			c.mu.Unlock()
 			log.Printf("bnc[%s]: CAP LS final, server advertises: %v", c.net.ID, allCaps)
 
-			// Build request list: always try to get history-related caps,
-			// only request sasl if configured.
-			// We request them unconditionally — server will NAK unknown ones.
-			// Sending all in one REQ is correct per IRCv3 spec; if NAK'd we'll
-			// re-request without the offending cap in the NAK handler.
-			wantCaps := []string{
+			// Build request list filtered to caps the server actually advertised.
+			// This avoids bulk NAK → individual retry round trips for unsupported caps.
+			// For chathistory, prefer the draft name if that's what the server uses.
+			desired := []string{
 				"batch",
 				"server-time",
 				"message-tags",
@@ -556,7 +554,22 @@ func (c *Conn) intercept(line string) {
 				"multi-prefix",
 			}
 			if useSASL {
-				wantCaps = append(wantCaps, "sasl")
+				desired = append(desired, "sasl")
+			}
+			c.mu.Lock()
+			serverCapsSnap := make(map[string]bool, len(c.serverCaps))
+			for k, v := range c.serverCaps {
+				serverCapsSnap[k] = v
+			}
+			c.mu.Unlock()
+			var wantCaps []string
+			for _, cap := range desired {
+				if serverCapsSnap[cap] {
+					wantCaps = append(wantCaps, cap)
+				} else if cap == "chathistory" && serverCapsSnap["draft/chathistory"] {
+					// Server uses the draft name — request that instead
+					wantCaps = append(wantCaps, "draft/chathistory")
+				}
 			}
 			log.Printf("bnc[%s]: CAP REQ: %v", c.net.ID, wantCaps)
 			c.sendRaw("CAP REQ :" + strings.Join(wantCaps, " "))
