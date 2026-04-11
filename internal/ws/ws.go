@@ -285,10 +285,16 @@ func (s *bncSession) writePump(ready chan struct{}) {
 				return
 			}
 			fmt.Fprintln(w, line)
-			// Batch drain — critical during ring buffer replay which can
-			// send hundreds of lines at once. Drain as much as possible
-			// in a single WebSocket frame to minimize round trips.
+			// Batch drain — group messages to reduce round trips, but cap each
+			// frame at 64 lines (~8–16 KB) so that CDN proxies and reverse
+			// proxies never see a single frame that exceeds their buffer limits.
+			// Large single-frame replays (ring buffer at capacity) were being
+			// silently dropped by the Fastly edge node, killing the session.
+			const maxBatch = 63
 			n := len(s.sendCh)
+			if n > maxBatch {
+				n = maxBatch
+			}
 			for i := 0; i < n; i++ {
 				fmt.Fprintln(w, <-s.sendCh)
 			}

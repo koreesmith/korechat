@@ -380,13 +380,17 @@ function openWS({ networkId, onLine, onDisconnect, onReconnect, onAuthExpired })
     };
   }
 
-  // Always reconnect when the tab becomes visible. We cannot trust readyState
-  // after browser suspension — browsers throttle backgrounded tabs, freeze
-  // timers, and delay WS pong responses, causing the server to silently drop
-  // the connection. The BNC handles rapid subscribe/unsubscribe cheaply and
-  // replays the ring buffer on each new connection, so reconnecting is safe.
+  // On tab focus: reconnect only if the socket isn't already healthy.
+  // Browsers throttle backgrounded tabs, freeze timers, and silently drop WS
+  // connections — but only force a new connection if the current one is actually
+  // broken.  Unconditional reconnects on every focus create needless churn and
+  // can trigger the large-replay path repeatedly (each reconnect replays the
+  // full ring buffer through the CDN proxy).
   function onVisibility() {
     if (document.visibilityState !== "visible") return;
+    // If the socket is open and we've confirmed it recently (heartbeat OK),
+    // leave it alone.  Only intervene when the connection is already gone.
+    if (ws && ws.readyState === WebSocket.OPEN) return;
     clearTimeout(retryTimer);
     retries = 0;
     connect(true);
