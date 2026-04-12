@@ -992,8 +992,12 @@ func (c *Conn) sendRaw(line string) {
 	// corrupt the IRC stream, causing the server to ping-timeout us.
 	c.wmu.Lock()
 	tc.SetWriteDeadline(time.Now().Add(writeTimeout))
-	fmt.Fprintf(tc, "%s\r\n", line)
+	_, err := fmt.Fprintf(tc, "%s\r\n", line)
 	c.wmu.Unlock()
+	if err != nil {
+		log.Printf("bnc[%s]: write error, closing upstream: %v", c.net.ID, err)
+		tc.Close() // read loop will detect EOF and trigger reconnect
+	}
 }
 
 func (c *Conn) notice(text string) {
