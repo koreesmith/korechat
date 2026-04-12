@@ -97,6 +97,7 @@ type Conn struct {
 	logFn   LogFunc // may be nil
 
 	mu          sync.Mutex
+	wmu         sync.Mutex // serialises all writes to tcpConn
 	tcpConn     net.Conn
 	currentNick string
 	nickRetries int
@@ -985,8 +986,14 @@ func (c *Conn) sendRaw(line string) {
 		}
 		log.Printf("bnc[%s] → %s", c.net.ID, logLine)
 	}
+	// Serialise all writes: the keepalive goroutine and the read-loop's
+	// intercept() can both call sendRaw concurrently (e.g. PING vs PONG).
+	// Concurrent writes to the same net.Conn can interleave bytes and
+	// corrupt the IRC stream, causing the server to ping-timeout us.
+	c.wmu.Lock()
 	tc.SetWriteDeadline(time.Now().Add(writeTimeout))
 	fmt.Fprintf(tc, "%s\r\n", line)
+	c.wmu.Unlock()
 }
 
 func (c *Conn) notice(text string) {
