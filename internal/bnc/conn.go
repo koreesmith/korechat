@@ -175,7 +175,7 @@ func (c *Conn) Stop() {
 	}
 
 	if tc != nil {
-		fmt.Fprintf(tc, "QUIT :KoreChat shutting down\r\n")
+		c.sendRaw("QUIT :KoreChat shutting down")
 		tc.Close()
 	}
 	c.store.SetStatus(c.net.ID, networks.StatusDisconnected, "")
@@ -245,10 +245,7 @@ func (c *Conn) Send(line string) {
 		c.notice("Not connected — your message was not sent.")
 		return
 	}
-	tc.SetWriteDeadline(time.Now().Add(writeTimeout))
-	if _, err := fmt.Fprintf(tc, "%s\r\n", line); err != nil {
-		log.Printf("bnc[%s]: upstream write error: %v", c.net.ID, err)
-	}
+	c.sendRaw(line)
 }
 
 // ─── Internal ─────────────────────────────────────────────────────────────────
