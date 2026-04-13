@@ -61,7 +61,7 @@ services:
     container_name: korechat-frontend
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "${FRONTEND_PORT:-80}:80"
     networks:
       - korechat
     depends_on:
