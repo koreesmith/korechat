@@ -732,6 +732,10 @@ func (c *Conn) intercept(line string) {
 			prevChans = append(prevChans, ch)
 		}
 		c.joinedChans = make(map[string]bool) // reset; will repopulate on JOIN
+		// Clear the server message buffer so replayed welcome/MOTD sequences
+		// from a previous connection session don't accumulate alongside the
+		// fresh session's messages. Per-channel buffers are preserved.
+		c.buffers["__server__"] = newRingBuffer(BufferSize)
 		c.mu.Unlock()
 
 		c.store.SetStatus(c.net.ID, networks.StatusConnected, "")
