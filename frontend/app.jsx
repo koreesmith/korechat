@@ -2649,9 +2649,9 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   const MONO = { fontFamily:"'JetBrains Mono',monospace" };
 
   // ── helpers ────────────────────────────────────────────────────────────────
-  const addSys = useCallback((netId, chan, text, subtype) => {
+  const addSys = useCallback((netId, chan, text, subtype, t) => {
     dispatch({ type:"ADD_MSG", netId, chan,
-      msg:{ type:"system", subtype, text, time:new Date().toISOString() } });
+      msg:{ type:"system", subtype, text, time: t ?? new Date().toISOString() } });
   }, []);
 
   const ensureChan = useCallback((netId, chan) => {
@@ -2732,6 +2732,9 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   const handleLine = useCallback((netId, raw) => {
     const { tags, prefix, command, params } = parseIRC(raw);
     const time = tags.time || new Date().toISOString();
+    // Thin wrapper so every system message in this handler carries the
+    // IRC message's own timestamp (important during BNC ring buffer replay).
+    const sys = (chan, text, sub) => addSys(netId, chan, text, sub, time);
     const from = nickOf(prefix);
     const me   = myNickRef.current[netId] || "";
     const nets = networksRef.current;
@@ -2749,12 +2752,12 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
 
       case "372": case "375": case "376":
         ensureChan(netId, STATUS_CHAN);
-        addSys(netId, STATUS_CHAN, params[params.length-1]||"");
+        sys(STATUS_CHAN, params[params.length-1]||"");
         break;
 
       case "432": case "433":
         ensureChan(netId, STATUS_CHAN);
-        addSys(netId, STATUS_CHAN, `⚠ ${params[params.length-1]}: ${params[1]||""}`);
+        sys(STATUS_CHAN, `⚠ ${params[params.length-1]}: ${params[1]||""}`);
         break;
 
       case "NICK": {
@@ -2766,7 +2769,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             const pfx=ch.members[from];
             dispatch({ type:"DEL_MEMBER", netId, chan, nick:from });
             dispatch({ type:"SET_MEMBERS", netId, chan, members:{[newNick]:pfx} });
-            addSys(netId, chan, `${from} is now known as ${newNick}`);
+            sys(chan, `${from} is now known as ${newNick}`);
           }
         });
         break;
@@ -2782,7 +2785,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           // Loading here would race with the replay sequence.
         } else {
           dispatch({ type:"SET_MEMBERS", netId, chan, members:{[from]:""} });
-          addSys(netId, chan, `→ ${from} joined`, "membership");
+          sys(chan, `→ ${from} joined`, "membership");
         }
         break;
       }
@@ -2790,14 +2793,14 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       case "PART": {
         const chan=params[0]; if (!chan) break;
         if (from===me) dispatch({ type:"CHAN_PART", netId, chan });
-        else { dispatch({ type:"DEL_MEMBER", netId, chan, nick:from }); addSys(netId, chan, `← ${from} left${params[1]?": "+params[1]:""}`, "membership"); }
+        else { dispatch({ type:"DEL_MEMBER", netId, chan, nick:from }); sys(chan, `← ${from} left${params[1]?": "+params[1]:""}`, "membership"); }
         break;
       }
 
       case "KICK": {
         const [chan,target,,reason=""] = params;
         dispatch({ type:"DEL_MEMBER", netId, chan, nick:target });
-        addSys(netId, chan, `✕ ${target} was kicked by ${from}${reason?": "+reason:""}`, "membership");
+        sys(chan, `✕ ${target} was kicked by ${from}${reason?": "+reason:""}`, "membership");
         if (target===me) dispatch({ type:"CHAN_PART", netId, chan });
         break;
       }
@@ -2808,7 +2811,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           const chan=k.split("::")[1];
           if (chans[k]?.members && from in chans[k].members) {
             dispatch({ type:"DEL_MEMBER", netId, chan, nick:from });
-            addSys(netId, chan, `✕ ${from} quit${reason?": "+reason:""}`, "membership");
+            sys(chan, `✕ ${from} quit${reason?": "+reason:""}`, "membership");
           }
         });
         break;
@@ -2845,7 +2848,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       case "331": { const chan=params[1]; if (chan) dispatch({ type:"SET_TOPIC", netId, chan, topic:"" }); break; }
       case "TOPIC":
         dispatch({ type:"SET_TOPIC", netId, chan:params[0], topic:params[1]||"" });
-        addSys(netId, params[0], `${from} set topic: ${params[1]||""}`);
+        sys(params[0], `${from} set topic: ${params[1]||""}`);
         break;
 
       case "PRIVMSG":
@@ -2890,12 +2893,12 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             const attempt = attemptMatch ? parseInt(attemptMatch[1]) : 1;
             if (attempt > 1) {
               ensureChan(netId, STATUS_CHAN);
-              addSys(netId, STATUS_CHAN, `⚠ ${text}`);
+              sys(STATUS_CHAN, `⚠ ${text}`);
             }
             break;
           }
           // All other BNC/korechat notices → show in status channel
-          ensureChan(netId, STATUS_CHAN); addSys(netId, STATUS_CHAN, text); break;
+          ensureChan(netId, STATUS_CHAN); sys(STATUS_CHAN, text); break;
         }
         const isAction=text.startsWith("\x01ACTION ")&&text.endsWith("\x01");
         const displayText=isAction?`* ${from} ${text.slice(8,-1)}`:text;
@@ -2995,19 +2998,19 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
 
       // Numeric replies — WHOIS results route to the target nick's DM window
       // so they're always easy to find and don't pollute channel chat
-      case "311": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); addSys(netId,dest,`⦿ ${params[1]}  (${params[2]}@${params[3]})  — ${params[5]||""}`); break; }
-      case "312": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); addSys(netId,dest,`  Server: ${params[2]}  (${params[3]||""})`); break; }
-      case "317": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); const idle=parseInt(params[2]||0); const h=Math.floor(idle/3600),m=Math.floor((idle%3600)/60),s=idle%60; addSys(netId,dest,`  Idle: ${h?h+"h ":""}${m?m+"m ":""}${s}s`); break; }
-      case "318": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); addSys(netId,dest,`  ─── end of whois ───`); break; }
-      case "319": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); addSys(netId,dest,`  Channels: ${params[2]||""}`); break; }
-      case "330": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); addSys(netId,dest,`  Account: ${params[2]}`); break; }
+      case "311": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); sys(dest,`⦿ ${params[1]}  (${params[2]}@${params[3]})  — ${params[5]||""}`); break; }
+      case "312": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); sys(dest,`  Server: ${params[2]}  (${params[3]||""})`); break; }
+      case "317": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); const idle=parseInt(params[2]||0); const h=Math.floor(idle/3600),m=Math.floor((idle%3600)/60),s=idle%60; sys(dest,`  Idle: ${h?h+"h ":""}${m?m+"m ":""}${s}s`); break; }
+      case "318": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); sys(dest,`  ─── end of whois ───`); break; }
+      case "319": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); sys(dest,`  Channels: ${params[2]||""}`); break; }
+      case "330": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); sys(dest,`  Account: ${params[2]}`); break; }
       case "321": break;
-      case "322": ensureChan(netId,STATUS_CHAN); addSys(netId,STATUS_CHAN,`  ${params[1]}  (${params[2]} users)  ${params[3]||""}`); break;
-      case "323": addSys(netId,STATUS_CHAN,"End of /LIST"); break;
+      case "322": ensureChan(netId,STATUS_CHAN); sys(STATUS_CHAN,`  ${params[1]}  (${params[2]} users)  ${params[3]||""}`); break;
+      case "323": sys(STATUS_CHAN,"End of /LIST"); break;
       case "MODE": {
         const target=params[0], modeStr=params.slice(1).join(" ");
         if (target?.startsWith("#")) {
-          addSys(netId,target,`${from} sets mode ${modeStr}`,"membership");
+          sys(target,`${from} sets mode ${modeStr}`,"membership");
           // Update member prefixes for mode changes that affect them
           const modeChars=params[1]||"";
           const modeToPrefix={"o":"@","h":"%","v":"+","a":"&","q":"~"};
@@ -3033,21 +3036,21 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         }
         break;
       }
-      case "324": addSys(netId,params[1]||STATUS_CHAN,`Mode for ${params[1]}: ${params[2]||""}`); break;
-      case "INVITE": ensureChan(netId,STATUS_CHAN); addSys(netId,STATUS_CHAN,`${from} invited you to ${params[1]}`); break;
-      case "305": case "306": ensureChan(netId,STATUS_CHAN); addSys(netId,STATUS_CHAN,params[params.length-1]); break;
-      case "381": ensureChan(netId,STATUS_CHAN); addSys(netId,STATUS_CHAN,`★ ${params[params.length-1]}`); break;
-      case "491": case "464": ensureChan(netId,STATUS_CHAN); addSys(netId,STATUS_CHAN,`⚠ OPER failed: ${params[params.length-1]}`); break;
+      case "324": sys(params[1]||STATUS_CHAN,`Mode for ${params[1]}: ${params[2]||""}`); break;
+      case "INVITE": ensureChan(netId,STATUS_CHAN); sys(STATUS_CHAN,`${from} invited you to ${params[1]}`); break;
+      case "305": case "306": ensureChan(netId,STATUS_CHAN); sys(STATUS_CHAN,params[params.length-1]); break;
+      case "381": ensureChan(netId,STATUS_CHAN); sys(STATUS_CHAN,`★ ${params[params.length-1]}`); break;
+      case "491": case "464": ensureChan(netId,STATUS_CHAN); sys(STATUS_CHAN,`⚠ OPER failed: ${params[params.length-1]}`); break;
       case "ERROR":
         dispatch({ type:"NET_STATUS", id:netId, status:"error", msg:params[0]||"" });
-        ensureChan(netId,STATUS_CHAN); addSys(netId,STATUS_CHAN,`ERROR: ${params[0]||""}`);
+        ensureChan(netId,STATUS_CHAN); sys(STATUS_CHAN,`ERROR: ${params[0]||""}`);
         break;
 
       default:
         if (/^\d+$/.test(command)) {
           const text=params[params.length-1]||"";
           if (!["333","005","004","002","003","001"].includes(command)&&text&&text!==me) {
-            ensureChan(netId,STATUS_CHAN); addSys(netId,STATUS_CHAN,`[${command}] ${text}`);
+            ensureChan(netId,STATUS_CHAN); sys(STATUS_CHAN,`[${command}] ${text}`);
           }
         }
         break;
