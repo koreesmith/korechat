@@ -293,6 +293,12 @@ const API = {
       method:"POST", body:fd, credentials:"include"
     }).then(r => r.json());
   },
+  uploadSnippet: (code, lang) => {
+    const fd = new FormData(); fd.append("code", code); if (lang) fd.append("lang", lang);
+    return fetch(`${API_BASE.replace("/networks","")}/upload/snippet`, {
+      method:"POST", body:fd, credentials:"include"
+    }).then(r => r.json());
+  },
 };
 
 // ─── WebSocket factory ────────────────────────────────────────────────────────
@@ -448,14 +454,20 @@ function renderText(text, myNick, T, onLinkClick) {
   text = text
     .replace(/\x03(\d{1,2}(,\d{1,2})?)?/g, "")
     .replace(/[\x02\x1D\x1F\x16\x11\x0F]/g, "");
-  const URL_RE   = /(https?:\/\/[^\s<>"]+)/g;
-  const IMAGE_RE = /\.(jpe?g|png|gif|webp)(\?[^\s]*)?$/i;
+  const URL_RE     = /(https?:\/\/[^\s<>"]+)/g;
+  const IMAGE_RE   = /\.(jpe?g|png|gif|webp)(\?[^\s]*)?$/i;
+  const SNIPPET_RE = /\/snippets\/[a-zA-Z0-9_-]+/;
   const parts = []; let key = 0, last = 0, m;
   URL_RE.lastIndex = 0;
   while ((m = URL_RE.exec(text)) !== null) {
     if (m.index > last) parts.push(<span key={key++}>{text.slice(last, m.index)}</span>);
     const url = m[1];
-    if (IMAGE_RE.test(url)) {
+    if (SNIPPET_RE.test(url)) {
+      // Snippet URL: render inline code block, suppress raw URL text
+      let snippetBase = url, snippetLang = "";
+      try { const u = new URL(url); snippetLang = u.searchParams.get("lang")||""; snippetBase = u.origin + u.pathname; } catch {}
+      parts.push(<SnippetBlock key={key++} url={snippetBase} lang={snippetLang} />);
+    } else if (IMAGE_RE.test(url)) {
       // Image URL: show only the inline photo (clickable), suppress the raw URL text
       parts.push(
         <div key={key++} style={{marginTop:6}}>
@@ -850,6 +862,48 @@ function MembershipGroup({ msgs }) {
           ▶ {label}
         </span>
       )}
+    </div>
+  );
+}
+
+// ─── SnippetBlock ─────────────────────────────────────────────────────────────
+// Renders a code snippet fetched from /snippets/{id} with a copy button.
+function SnippetBlock({ url, lang }) {
+  const T = useTheme();
+  const [code, setCode] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    fetch(url, { credentials:"include" })
+      .then(r => r.ok ? r.text() : null)
+      .then(text => setCode(text ?? ""))
+      .catch(() => setCode(""));
+  }, [url]);
+
+  const copy = () => {
+    if (code == null) return;
+    navigator.clipboard?.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const label = lang || "code";
+  return (
+    <div style={{marginTop:6,borderRadius:6,overflow:"hidden",border:`1px solid ${T.border}`,maxWidth:560}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+        padding:"3px 10px",background:T.bgPanel,borderBottom:`1px solid ${T.border}`}}>
+        <span style={{fontSize:11,color:T.textFaint,fontFamily:"'JetBrains Mono',monospace"}}>{label}</span>
+        <button onClick={copy} style={{background:"none",border:"none",cursor:"pointer",
+          fontSize:11,color:copied?T.green:T.textDim,fontFamily:"'JetBrains Mono',monospace",padding:"1px 4px"}}>
+          {copied ? "copied!" : "copy"}
+        </button>
+      </div>
+      {code === null
+        ? <div style={{padding:"10px 14px",fontSize:12,color:T.textFaint,fontFamily:"'JetBrains Mono',monospace"}}>Loading…</div>
+        : <pre style={{margin:0,padding:"10px 14px",overflowX:"auto",background:T.bg,
+            fontSize:13,fontFamily:"'JetBrains Mono',monospace",color:T.text,lineHeight:1.5,
+            maxHeight:320,overflowY:"auto"}}><code>{code}</code></pre>
+      }
     </div>
   );
 }
@@ -1773,13 +1827,23 @@ function ProfileModal({ currentUser, onClose, onUpdated }) {
 }
 
 // ─── Input bar ────────────────────────────────────────────────────────────────
-function InputBar({ onSend, onPhotoUpload, label, nick, disabled }) {
+const SNIPPET_LANGS = [
+  ["","Plain text"],["javascript","JavaScript"],["typescript","TypeScript"],
+  ["python","Python"],["go","Go"],["rust","Rust"],["java","Java"],
+  ["c","C"],["cpp","C++"],["html","HTML"],["css","CSS"],
+  ["json","JSON"],["bash","Bash/Shell"],["sql","SQL"],["yaml","YAML"],
+];
+
+function InputBar({ onSend, onPhotoUpload, onCodeUpload, label, nick, disabled }) {
   const [val,        setVal]      = useState("");
   const [hist,       setHist]     = useState([]);
   const [histIdx,    setHistIdx]  = useState(-1);
   const [suggest,    setSuggest]  = useState([]);
   const [sugIdx,     setSugIdx]   = useState(0);
   const [uploading,  setUploading]= useState(false);
+  const [codeModal,  setCodeModal]= useState(false);
+  const [codeText,   setCodeText] = useState("");
+  const [codeLang,   setCodeLang] = useState("");
   const inputRef  = useRef(null);
   const photoRef  = useRef(null);
 
@@ -1812,9 +1876,50 @@ function InputBar({ onSend, onPhotoUpload, label, nick, disabled }) {
     finally { setUploading(false); }
   };
 
+  const submitCode = async () => {
+    const code = codeText.trim();
+    if (!code || !onCodeUpload) return;
+    setCodeModal(false); setCodeText(""); setCodeLang("");
+    setUploading(true);
+    try { await onCodeUpload(code, codeLang); }
+    finally { setUploading(false); }
+  };
+
   const T=useTheme();
   return (
     <div style={{padding:"10px 14px 12px",borderTop:`1px solid ${T.borderMid}`,background:T.bgInputWrap,flexShrink:0}}>
+      {codeModal&&(
+        <div style={{position:"fixed",inset:0,background:"#00000088",zIndex:300,display:"flex",
+          alignItems:"center",justifyContent:"center"}}
+          onClick={e=>e.target===e.currentTarget&&setCodeModal(false)}>
+          <div style={{background:T.bgPanel,border:`1px solid ${T.border}`,borderRadius:10,
+            width:560,maxWidth:"calc(100vw - 32px)",padding:20,boxShadow:"0 8px 40px #0008"}}>
+            <div style={{fontWeight:700,fontSize:14,color:T.textBright,marginBottom:12}}>Paste code block</div>
+            <select value={codeLang} onChange={e=>setCodeLang(e.target.value)}
+              style={{marginBottom:8,background:T.bgInput,border:`1px solid ${T.border}`,
+                color:T.text,borderRadius:5,padding:"5px 8px",fontSize:13,width:"100%",
+                fontFamily:"'JetBrains Mono',monospace"}}>
+              {SNIPPET_LANGS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+            </select>
+            <textarea value={codeText} onChange={e=>setCodeText(e.target.value)}
+              onKeyDown={e=>{ if(e.key==="Escape") setCodeModal(false); }}
+              placeholder="Paste your code here…"
+              autoFocus
+              style={{width:"100%",height:220,background:T.bg,border:`1px solid ${T.border}`,
+                color:T.text,borderRadius:5,padding:"10px 12px",fontSize:13,resize:"vertical",
+                fontFamily:"'JetBrains Mono',monospace",lineHeight:1.5,boxSizing:"border-box"}}/>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
+              <button onClick={()=>setCodeModal(false)}
+                style={{background:"none",border:`1px solid ${T.border}`,color:T.textDim,
+                  borderRadius:5,padding:"6px 16px",cursor:"pointer",fontSize:13}}>Cancel</button>
+              <button onClick={submitCode} disabled={!codeText.trim()}
+                style={{background:T.accent,border:"none",color:"#0a1628",fontWeight:700,
+                  borderRadius:5,padding:"6px 16px",cursor:codeText.trim()?"pointer":"default",
+                  fontSize:13,opacity:codeText.trim()?1:0.5}}>Send</button>
+            </div>
+          </div>
+        </div>
+      )}
       {suggest.length>0&&(
         <div style={{background:T.bgPanel,border:`1px solid ${T.accentDim}`,borderRadius:6,
           padding:"4px 0",marginBottom:8,maxHeight:200,overflowY:"auto"}}>
@@ -1875,6 +1980,20 @@ function InputBar({ onSend, onPhotoUpload, label, nick, disabled }) {
               </svg>
             </button>
           </>
+        )}
+        {onCodeUpload&&(
+          <button title="Paste code block" disabled={disabled||uploading}
+            onClick={()=>setCodeModal(true)}
+            style={{background:"none",border:"none",cursor:(disabled||uploading)?"default":"pointer",
+              padding:"2px 4px",display:"flex",alignItems:"center",opacity:(disabled||uploading)?0.4:0.7,
+              flexShrink:0,color:T.textDim,transition:"opacity 0.15s"}}
+            onMouseEnter={e=>{if(!disabled&&!uploading)e.currentTarget.style.opacity="1";}}
+            onMouseLeave={e=>{if(!disabled&&!uploading)e.currentTarget.style.opacity="0.7";}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="16 18 22 12 16 6"/>
+              <polyline points="8 6 2 12 8 18"/>
+            </svg>
+          </button>
         )}
       </div>
     </div>
@@ -3894,6 +4013,17 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
     }
   }, [activeNet, activeChanName, addSys, handleSend]);
 
+  const handleCodeUpload = useCallback(async (code, lang) => {
+    try {
+      const data = await API.uploadSnippet(code, lang);
+      if (data.error) { addSys(activeNet, activeChanName||STATUS_CHAN, `Code upload failed: ${data.error}`); return; }
+      const url = window.location.origin + data.url;
+      handleSend(url);
+    } catch (e) {
+      addSys(activeNet, activeChanName||STATUS_CHAN, `Code upload failed: ${e.message||e}`);
+    }
+  }, [activeNet, activeChanName, addSys, handleSend]);
+
   // ── derived ────────────────────────────────────────────────────────────────
   const activeNetObj  = activeNet ? networks[activeNet] : null;
   const activeChanObj = activeMsgKey ? (channels[activeMsgKey]||{}) : {};
@@ -4545,6 +4675,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           <InputBar
             onSend={handleSend}
             onPhotoUpload={!isStatusChan ? handlePhotoUpload : undefined}
+            onCodeUpload={!isStatusChan ? handleCodeUpload : undefined}
             label={isStatusChan?activeNetObj?.name||"server":activeChanName}
             nick={currentNick||"…"}
             disabled={!isConnected&&!isStatusChan}
