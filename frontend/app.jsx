@@ -859,8 +859,8 @@ function MsgRow({ msg, prev, myNick, onNickClick }) {
   const [pendingLink, setPendingLink] = useState(null);
   if (msg.type==="system") return (
     <div style={{padding:"2px 16px 2px 58px",userSelect:"text"}}>
-      <span style={{fontSize:13,color:T.textDim,fontStyle:"italic",fontFamily:"'JetBrains Mono',monospace"}}>{msg.text}</span>
-      {msg.time&&<span style={{fontSize:11,color:T.textDim,marginLeft:6,fontFamily:"'JetBrains Mono',monospace"}}>{fmtTime(msg.time)}</span>}
+      <span style={{fontSize:13,color:T.textDim,fontStyle:"italic",fontFamily:"'JetBrains Mono',monospace",whiteSpace:"pre-line"}}>{msg.text}</span>
+      {msg.time&&<span style={{fontSize:11,color:T.textDim,marginLeft:6,fontFamily:"'JetBrains Mono',monospace",verticalAlign:"top"}}>{fmtTime(msg.time)}</span>}
     </div>
   );
   const cont=prev?.type==="message"&&prev.nick===msg.nick&&(new Date(msg.time)-new Date(prev.time))<300000;
@@ -2741,6 +2741,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   const messagesRef  = useRef({});  // always-current mirror of state.messages
   const batchBufRef  = useRef({});  // netId+batchId → {type, chan, msgs[]}
   const namesBufRef  = useRef({});  // netId+chan → {nick: prefix} accumulator for 353/366
+  const motdBufRef   = useRef({});  // netId → string[] accumulator for 375/372 → 376 grouping
   const bottomRef    = useRef(null);
   const msgsRef      = useRef(null);
 
@@ -2926,10 +2927,22 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         break;
       }
 
-      case "372": case "375": case "376":
-        ensureChan(netId, STATUS_CHAN);
-        sys(STATUS_CHAN, params[params.length-1]||"");
+      case "375": // MOTD start — begin buffering
+        motdBufRef.current[netId] = [params[params.length-1]||""];
         break;
+      case "372": // MOTD line — append to buffer
+        (motdBufRef.current[netId] = motdBufRef.current[netId] || [])
+          .push(params[params.length-1]||"");
+        break;
+      case "376": { // End of MOTD — flush buffer as one grouped message
+        const lines = motdBufRef.current[netId];
+        delete motdBufRef.current[netId];
+        if (lines?.length) {
+          ensureChan(netId, STATUS_CHAN);
+          sys(STATUS_CHAN, lines.join("\n"));
+        }
+        break;
+      }
 
       case "432": case "433":
         ensureChan(netId, STATUS_CHAN);
@@ -3255,8 +3268,10 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       default:
         if (/^\d+$/.test(command)) {
           const text=params[params.length-1]||"";
+          // Suppress uninteresting numerics; show everything else as plain text
+          // (no [NNN] prefix — the number is IRC protocol noise, not useful to users).
           if (!["333","005","004","002","003","001"].includes(command)&&text&&text!==me) {
-            ensureChan(netId,STATUS_CHAN); sys(STATUS_CHAN,`[${command}] ${text}`);
+            ensureChan(netId,STATUS_CHAN); sys(STATUS_CHAN, text);
           }
         }
         break;
