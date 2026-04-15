@@ -211,8 +211,6 @@ func (c *Conn) Subscribe(id string, send SendFunc) {
 		}
 	}
 
-	connected := c.connected
-	nick := c.currentNick
 	c.mu.Unlock()
 
 	// ── Phase 2: send replay WITHOUT holding the lock ─────────────────────────
@@ -235,10 +233,10 @@ func (c *Conn) Subscribe(id string, send SendFunc) {
 	// handshake *during* Phase 2: the fanOut("status:connected") lands in
 	// sendCh *before* our snapshot-based "status:connecting" send above, so
 	// without this re-check the client would end up stuck in "connecting".
-	c.mu.RLock()
+	c.mu.Lock()
 	finalConnected := c.connected
 	finalNick := c.currentNick
-	c.mu.RUnlock()
+	c.mu.Unlock()
 	finalStatus := string(c.store.StatusOf(c.net.ID))
 
 	send(fmt.Sprintf(":*bnc* NOTICE * :status:%s", finalStatus))
