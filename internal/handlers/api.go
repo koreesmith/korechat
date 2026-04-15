@@ -299,6 +299,7 @@ func (a *API) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		CurrentPassword string `json:"current_password"`
 		NewPassword     string `json:"new_password"`
 		DisplayName     string `json:"display_name"`
+		Theme           string `json:"theme"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid JSON")
@@ -315,6 +316,10 @@ func (a *API) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 	if body.DisplayName != "" {
 		patch.DisplayName = body.DisplayName
+	}
+
+	if body.Theme != "" {
+		patch.Theme = body.Theme
 	}
 
 	if body.NewPassword != "" {

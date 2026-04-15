@@ -23,6 +23,7 @@ type User struct {
 	PasswordHash string    `json:"-"` // never serialised to JSON
 	DisplayName  string    `json:"display_name"`
 	AvatarURL    string    `json:"avatar_url"`
+	Theme        string    `json:"theme"`
 	Role         Role      `json:"role"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`

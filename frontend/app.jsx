@@ -4669,12 +4669,23 @@ function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem("kc_theme") || "dark");
   const T = THEMES[theme] || THEMES.dark;
 
+  // Save theme to server (fire-and-forget) and localStorage
+  const persistTheme = (t) => {
+    localStorage.setItem("kc_theme", t);
+    fetch("/api/v1/profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ theme: t }),
+      credentials: "include",
+    }).catch(() => {}); // best-effort; localStorage is the fallback
+  };
+
   // Cycle through all available themes
   const toggleTheme = () => {
     const keys = Object.keys(THEMES);
     const next = keys[(keys.indexOf(theme) + 1) % keys.length];
     setTheme(next);
-    localStorage.setItem("kc_theme", next);
+    persistTheme(next);
   };
 
   // Keep body background in sync with theme (affects the area behind the app)
@@ -4689,6 +4700,11 @@ function App() {
         if (needed) { setView("setup"); return; }
         const user = await AuthAPI.me();
         setMe(user);
+        // Use server-stored theme if available, fall back to localStorage
+        if (user.theme && THEMES[user.theme]) {
+          setTheme(user.theme);
+          localStorage.setItem("kc_theme", user.theme);
+        }
         setView("chat");
       } catch {
         setView("login");
@@ -4728,7 +4744,7 @@ function App() {
     <ThemeCtx.Provider value={T}>
       <div style={{position:"relative",width:"100%",height:"100%",overflow:"hidden"}}>
         <KoreChat currentUser={me} onLogout={handleLogout} onAdmin={()=>setView("admin")}
-          appTheme={theme} appToggleTheme={toggleTheme} appSetTheme={t=>{setTheme(t);localStorage.setItem("kc_theme",t);}}/>
+          appTheme={theme} appToggleTheme={toggleTheme} appSetTheme={t=>{setTheme(t);persistTheme(t);}}/>
         {view==="admin" && (
           <div style={{position:"fixed",inset:0,zIndex:500,background:T.bg}}>
             <AdminPanel currentUser={me} onBack={()=>setView("chat")} theme={theme} toggleTheme={toggleTheme}/>
