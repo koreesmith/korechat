@@ -455,18 +455,21 @@ function renderText(text, myNick, T, onLinkClick) {
   while ((m = URL_RE.exec(text)) !== null) {
     if (m.index > last) parts.push(<span key={key++}>{text.slice(last, m.index)}</span>);
     const url = m[1];
-    parts.push(<a key={key++} href={url} target="_blank" rel="noopener noreferrer"
-      onClick={onLinkClick ? e => { e.preventDefault(); onLinkClick(url); } : undefined}
-      style={{color:accent,textDecoration:"underline dotted",cursor:"pointer"}}>{url}</a>);
     if (IMAGE_RE.test(url)) {
+      // Image URL: show only the inline photo (clickable), suppress the raw URL text
       parts.push(
         <div key={key++} style={{marginTop:6}}>
-          <img src={url} alt="" loading="lazy"
-            onClick={e=>{ e.preventDefault(); window.open(url,"_blank","noopener,noreferrer"); }}
-            style={{maxWidth:400,maxHeight:300,borderRadius:6,display:"block",cursor:"pointer",
-              border:`1px solid ${T?.border||"#ffffff18"}`}}/>
+          <a href={url} target="_blank" rel="noopener noreferrer">
+            <img src={url} alt="" loading="lazy"
+              style={{maxWidth:400,maxHeight:300,borderRadius:6,display:"block",cursor:"pointer",
+                border:`1px solid ${T?.border||"#ffffff18"}`}}/>
+          </a>
         </div>
       );
+    } else {
+      parts.push(<a key={key++} href={url} target="_blank" rel="noopener noreferrer"
+        onClick={onLinkClick ? e => { e.preventDefault(); onLinkClick(url); } : undefined}
+        style={{color:accent,textDecoration:"underline dotted",cursor:"pointer"}}>{url}</a>);
     }
     last = m.index + url.length;
   }
