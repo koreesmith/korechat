@@ -61,9 +61,10 @@ func main() {
 
 	// ── HTTP ──────────────────────────────────────────────────────────────────
 	wsServer := ws.NewServer(h, bm, cfg.ServerName)
-	avatarDir := "/data/avatars"
-	uploadDir := "/data/uploads"
-	api := handlers.NewAPI(h, db, bm, msgLogger, cfg.JWTSecret, cfg.ServerName, avatarDir, uploadDir)
+	avatarDir  := "/data/avatars"
+	uploadDir  := "/data/uploads"
+	snippetDir := "/data/snippets"
+	api := handlers.NewAPI(h, db, bm, msgLogger, cfg.JWTSecret, cfg.ServerName, avatarDir, uploadDir, snippetDir)
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -84,6 +85,8 @@ func main() {
 	r.Handle("/avatars/*", http.StripPrefix("/avatars/", http.FileServer(http.Dir(avatarDir))))
 	// Serve uploaded photo files
 	r.Handle("/uploads/*", http.StripPrefix("/uploads/", http.FileServer(http.Dir(uploadDir))))
+	// Serve code snippets (public — linked to from IRC messages)
+	r.Handle("/snippets/*", http.StripPrefix("/snippets/", http.FileServer(http.Dir(snippetDir))))
 
 	// ── Authenticated routes ──────────────────────────────────────────────────
 	r.Group(func(r chi.Router) {
@@ -96,8 +99,9 @@ func main() {
 		r.Patch("/api/v1/profile", api.UpdateProfile)
 		r.Post("/api/v1/profile/avatar", api.UploadAvatar)
 
-		// Photo uploads for channel messages
+		// Photo and snippet uploads for channel messages
 		r.Post("/api/v1/upload/photo", api.UploadPhoto)
+		r.Post("/api/v1/upload/snippet", api.UploadSnippet)
 
 		r.Route("/api/v1/networks", func(r chi.Router) {
 			r.Get("/", api.ListNetworks)
