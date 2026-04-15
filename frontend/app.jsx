@@ -3845,7 +3845,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       {(!isMobile||sidebarOpen)&&<div style={{
           width:224,flexShrink:0,background:T.bgSide,borderRight:`1px solid ${T.border}`,
           display:"flex",flexDirection:"column",overflow:"hidden",
-          ...(isMobile?{position:"fixed",top:0,left:0,height:"100vh",zIndex:210,
+          ...(isMobile?{position:"fixed",top:0,left:0,height:"100dvh",zIndex:210,
             boxShadow:"4px 0 24px #00000060"}:{}),
         }}>
 
@@ -4309,7 +4309,7 @@ function SetupPage({ onDone }) {
   };
 
   return (
-    <div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div style={{minHeight:"100dvh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{width:"100%",maxWidth:440}}>
         <div style={{textAlign:"center",marginBottom:32}}>
           <div style={{width:56,height:56,borderRadius:16,background:"linear-gradient(135deg,#7eb8f7,#7ef7d0)",
@@ -4383,7 +4383,7 @@ function LoginPage({ onLogin }) {
   };
 
   return (
-    <div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div style={{minHeight:"100dvh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{width:"100%",maxWidth:380}}>
         <div style={{textAlign:"center",marginBottom:32}}>
           <div style={{width:56,height:56,borderRadius:16,background:"linear-gradient(135deg,#7eb8f7,#7ef7d0)",
@@ -4447,7 +4447,7 @@ function AdminPanel({ currentUser, onBack, theme, toggleTheme }) {
   };
 
   return (
-    <div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"'Inter var','Inter',sans-serif"}}>
+    <div style={{minHeight:"100dvh",background:T.bg,color:T.text,fontFamily:"'Inter var','Inter',sans-serif"}}>
       {/* Header */}
       <div style={{background:T.bgSide,borderBottom:`1px solid ${T.borderFaint}`,padding:"12px 24px",
         display:"flex",alignItems:"center",gap:16}}>
@@ -4678,7 +4678,7 @@ function App() {
   // Auth pages get a simple themed wrapper with a toggle button in the corner
   const AuthWrapper = ({children}) => (
     <ThemeCtx.Provider value={T}>
-      <div style={{position:"relative",minHeight:"100vh",background:T.bg}}>
+      <div style={{position:"relative",minHeight:"100dvh",background:T.bg}}>
         <button onClick={toggleTheme} title={`Switch to ${theme==="dark"?"light":"dark"} theme`}
           style={{position:"fixed",top:14,right:14,background:T.accentBg,border:`1px solid ${T.accentDim}`,
             borderRadius:6,color:T.accent,fontSize:15,cursor:"pointer",padding:"5px 9px",
