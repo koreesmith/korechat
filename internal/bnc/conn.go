@@ -219,12 +219,31 @@ func (c *Conn) Subscribe(id string, send SendFunc) {
 	// The upstream readLoop can now continue processing IRC lines (keepalive
 	// PINGs, PRIVMSGs, etc.) while we push potentially hundreds of buffered
 	// lines to this subscriber.
+	//
+	// Send an early status hint so the UI can update immediately while the
+	// replay is loading. This may be stale if the upstream IRC connection
+	// transitions (e.g. "connecting" → "connected") during the replay below,
+	// so we follow up with a fresh authoritative status after the replay.
 	send(fmt.Sprintf(":*bnc* NOTICE * :status:%s", status))
 	for _, line := range replay {
 		send(line)
 	}
-	if connected {
-		send(fmt.Sprintf(":*bnc* NOTICE * :replay-done nick:%s", nick))
+
+	// ── Final authoritative status ────────────────────────────────────────────
+	// Re-read live state after the replay so we always close with the truth.
+	// This eliminates a race where the upstream IRC session completes its 001
+	// handshake *during* Phase 2: the fanOut("status:connected") lands in
+	// sendCh *before* our snapshot-based "status:connecting" send above, so
+	// without this re-check the client would end up stuck in "connecting".
+	c.mu.RLock()
+	finalConnected := c.connected
+	finalNick := c.currentNick
+	c.mu.RUnlock()
+	finalStatus := string(c.store.StatusOf(c.net.ID))
+
+	send(fmt.Sprintf(":*bnc* NOTICE * :status:%s", finalStatus))
+	if finalConnected {
+		send(fmt.Sprintf(":*bnc* NOTICE * :replay-done nick:%s", finalNick))
 	}
 }
 
