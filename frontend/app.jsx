@@ -287,6 +287,12 @@ const API = {
   getAvatarByUsername: (username) => fetch(`${API_BASE.replace("/networks","")}/users/avatar/${encodeURIComponent(username)}`, {
     credentials:"include"
   }).then(r => r.ok ? r.json() : null),
+  uploadPhoto: (file) => {
+    const fd = new FormData(); fd.append("photo", file);
+    return fetch(`${API_BASE.replace("/networks","")}/upload/photo`, {
+      method:"POST", body:fd, credentials:"include"
+    }).then(r => r.json());
+  },
 };
 
 // ─── WebSocket factory ────────────────────────────────────────────────────────
@@ -442,7 +448,8 @@ function renderText(text, myNick, T, onLinkClick) {
   text = text
     .replace(/\x03(\d{1,2}(,\d{1,2})?)?/g, "")
     .replace(/[\x02\x1D\x1F\x16\x11\x0F]/g, "");
-  const URL_RE = /(https?:\/\/[^\s<>"]+)/g;
+  const URL_RE   = /(https?:\/\/[^\s<>"]+)/g;
+  const IMAGE_RE = /\.(jpe?g|png|gif|webp)(\?[^\s]*)?$/i;
   const parts = []; let key = 0, last = 0, m;
   URL_RE.lastIndex = 0;
   while ((m = URL_RE.exec(text)) !== null) {
@@ -451,6 +458,16 @@ function renderText(text, myNick, T, onLinkClick) {
     parts.push(<a key={key++} href={url} target="_blank" rel="noopener noreferrer"
       onClick={onLinkClick ? e => { e.preventDefault(); onLinkClick(url); } : undefined}
       style={{color:accent,textDecoration:"underline dotted",cursor:"pointer"}}>{url}</a>);
+    if (IMAGE_RE.test(url)) {
+      parts.push(
+        <div key={key++} style={{marginTop:6}}>
+          <img src={url} alt="" loading="lazy"
+            onClick={e=>{ e.preventDefault(); window.open(url,"_blank","noopener,noreferrer"); }}
+            style={{maxWidth:400,maxHeight:300,borderRadius:6,display:"block",cursor:"pointer",
+              border:`1px solid ${T?.border||"#ffffff18"}`}}/>
+        </div>
+      );
+    }
     last = m.index + url.length;
   }
   const rest = text.slice(last);
@@ -1753,13 +1770,15 @@ function ProfileModal({ currentUser, onClose, onUpdated }) {
 }
 
 // ─── Input bar ────────────────────────────────────────────────────────────────
-function InputBar({ onSend, label, nick, disabled }) {
-  const [val,      setVal]      = useState("");
-  const [hist,     setHist]     = useState([]);
-  const [histIdx,  setHistIdx]  = useState(-1);
-  const [suggest,  setSuggest]  = useState([]);
-  const [sugIdx,   setSugIdx]   = useState(0);
-  const inputRef = useRef(null);
+function InputBar({ onSend, onPhotoUpload, label, nick, disabled }) {
+  const [val,        setVal]      = useState("");
+  const [hist,       setHist]     = useState([]);
+  const [histIdx,    setHistIdx]  = useState(-1);
+  const [suggest,    setSuggest]  = useState([]);
+  const [sugIdx,     setSugIdx]   = useState(0);
+  const [uploading,  setUploading]= useState(false);
+  const inputRef  = useRef(null);
+  const photoRef  = useRef(null);
 
   useEffect(() => { inputRef.current?.focus(); }, [label]);
 
@@ -1779,6 +1798,15 @@ function InputBar({ onSend, label, nick, disabled }) {
     onSend(v);
     setHist(h => [v,...h.slice(0,99)]);
     setHistIdx(-1); setVal(""); setSuggest([]);
+  };
+
+  const handlePhoto = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !onPhotoUpload) return;
+    setUploading(true);
+    try { await onPhotoUpload(file); }
+    finally { setUploading(false); }
   };
 
   const T=useTheme();
@@ -1827,6 +1855,24 @@ function InputBar({ onSend, label, nick, disabled }) {
           style={{flex:1,background:"transparent",border:"none",outline:"none",
             color:T.text,fontSize:16,caretColor:T.accent,fontFamily:"inherit"}}
         />
+        {onPhotoUpload&&(
+          <>
+            <input ref={photoRef} type="file" accept="image/*" style={{display:"none"}} onChange={handlePhoto}/>
+            <button title="Upload photo" disabled={disabled||uploading}
+              onClick={()=>photoRef.current?.click()}
+              style={{background:"none",border:"none",cursor:(disabled||uploading)?"default":"pointer",
+                padding:"2px 4px",display:"flex",alignItems:"center",opacity:(disabled||uploading)?0.4:0.7,
+                flexShrink:0,color:T.textDim,transition:"opacity 0.15s"}}
+              onMouseEnter={e=>{if(!disabled&&!uploading)e.currentTarget.style.opacity="1";}}
+              onMouseLeave={e=>{if(!disabled&&!uploading)e.currentTarget.style.opacity="0.7";}}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -3674,6 +3720,17 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   }, [activeNet, activeChanName, addSys, ensureChan, connectNetwork, reconnectNetwork, disconnectNetwork]);
   // Note: reads networks/myNick/channels via refs — not in dep array on purpose
 
+  const handlePhotoUpload = useCallback(async (file) => {
+    try {
+      const data = await API.uploadPhoto(file);
+      if (data.error) { addSys(activeNet, activeChanName||STATUS_CHAN, `Photo upload failed: ${data.error}`); return; }
+      const url = window.location.origin + data.url;
+      handleSend(url);
+    } catch (e) {
+      addSys(activeNet, activeChanName||STATUS_CHAN, `Photo upload failed: ${e}`);
+    }
+  }, [activeNet, activeChanName, addSys, handleSend]);
+
   // ── derived ────────────────────────────────────────────────────────────────
   const activeNetObj  = activeNet ? networks[activeNet] : null;
   const activeChanObj = activeMsgKey ? (channels[activeMsgKey]||{}) : {};
@@ -4322,6 +4379,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         {activeChanName&&(
           <InputBar
             onSend={handleSend}
+            onPhotoUpload={!isStatusChan ? handlePhotoUpload : undefined}
             label={isStatusChan?activeNetObj?.name||"server":activeChanName}
             nick={currentNick||"…"}
             disabled={!isConnected&&!isStatusChan}

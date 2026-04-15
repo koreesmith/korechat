@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"crypto/rand"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -34,9 +35,10 @@ type API struct {
 	srvName   string
 	startedAt time.Time
 	avatarDir string
+	uploadDir string
 }
 
-func NewAPI(h *hub.Hub, s *store.DB, bm *bnc.Manager, logger *logging.Logger, jwtSecret, serverName, avatarDir string) *API {
+func NewAPI(h *hub.Hub, s *store.DB, bm *bnc.Manager, logger *logging.Logger, jwtSecret, serverName, avatarDir, uploadDir string) *API {
 	return &API{
 		hub:       h,
 		store:     s,
@@ -46,6 +48,7 @@ func NewAPI(h *hub.Hub, s *store.DB, bm *bnc.Manager, logger *logging.Logger, jw
 		srvName:   serverName,
 		startedAt: time.Now(),
 		avatarDir: avatarDir,
+		uploadDir: uploadDir,
 	}
 }
 
@@ -411,6 +414,70 @@ func (a *API) UploadAvatar(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("avatar: user %s uploaded %s", claims.UserID, filename)
 	writeJSON(w, http.StatusOK, updated.Safe())
+}
+
+// UploadPhoto POST /api/v1/upload/photo
+// Accepts a multipart/form-data upload with field "photo".
+// Stores the file under uploadDir and returns the public URL.
+func (a *API) UploadPhoto(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.ClaimsFromCtx(r.Context())
+
+	if err := r.ParseMultipartForm(10 << 20); err != nil { // 10 MB limit
+		writeErr(w, http.StatusBadRequest, "file too large or invalid form")
+		return
+	}
+
+	file, header, err := r.FormFile("photo")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "missing photo field")
+		return
+	}
+	defer file.Close()
+
+	ct := header.Header.Get("Content-Type")
+	var ext string
+	switch {
+	case strings.HasPrefix(ct, "image/jpeg"):
+		ext = "jpg"
+	case strings.HasPrefix(ct, "image/png"):
+		ext = "png"
+	case strings.HasPrefix(ct, "image/gif"):
+		ext = "gif"
+	case strings.HasPrefix(ct, "image/webp"):
+		ext = "webp"
+	default:
+		writeErr(w, http.StatusUnsupportedMediaType, "photo must be jpeg, png, gif, or webp")
+		return
+	}
+
+	if err := os.MkdirAll(a.uploadDir, 0755); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not create upload directory")
+		return
+	}
+
+	var randBytes [8]byte
+	if _, err := rand.Read(randBytes[:]); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not generate filename")
+		return
+	}
+	filename := fmt.Sprintf("%s-%x.%s", claims.UserID, randBytes, ext)
+	destPath := filepath.Join(a.uploadDir, filename)
+
+	dest, err := os.Create(destPath)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not save photo")
+		return
+	}
+	defer dest.Close()
+
+	if _, err := io.Copy(dest, file); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not write photo")
+		return
+	}
+
+	photoURL := "/uploads/" + filename
+	log.Printf("upload: user %s uploaded photo %s", claims.UserID, filename)
+	writeJSON(w, http.StatusOK, map[string]string{"url": photoURL})
 }
 
 // GetAvatarByUsername GET /api/v1/users/avatar/{username}  (public, no auth)
