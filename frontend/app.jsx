@@ -1779,7 +1779,7 @@ function InputBar({ onSend, label, nick, disabled }) {
           }}
           placeholder={disabled?"Not connected — type /connect to reconnect":`Message ${label} as ${nick}…`}
           style={{flex:1,background:"transparent",border:"none",outline:"none",
-            color:T.text,fontSize:15,caretColor:T.accent,fontFamily:"inherit"}}
+            color:T.text,fontSize:16,caretColor:T.accent,fontFamily:"inherit"}}
         />
       </div>
     </div>
