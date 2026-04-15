@@ -817,24 +817,59 @@ function DaySeparator({ label }) {
   );
 }
 
-// MembershipGroup: collapsible block for consecutive join/part/quit/kick events.
-// Always collapsed by default — click the summary line to expand.
+// MembershipGroup: collapsible block for consecutive join/part/quit/kick/mode events.
+// Always collapsed by default — click anywhere on the summary row to expand.
 function MembershipGroup({ msgs }) {
   const T=useTheme();
   const [open, setOpen] = useState(false);
   if (msgs.length === 0) return null;
 
-  // Build a compact summary: "→ alice, ← bob, ✕ carol"
-  const summary = msgs.map(m => m.text).join("  ·  ");
-  const label = msgs.length === 1
-    ? msgs[0].text
-    : `${msgs.length} membership events`;
+  // Single event: show inline, no toggle needed.
+  if (msgs.length === 1) {
+    return (
+      <div style={{padding:"1px 16px 1px 58px",userSelect:"text"}}>
+        <span style={{fontSize:12,color:T.textFaint,fontStyle:"italic",
+          fontFamily:"'JetBrains Mono',monospace"}}>{msgs[0].text}</span>
+        {msgs[0].time&&<span style={{fontSize:10,color:T.textFaint,marginLeft:6,
+          fontFamily:"'JetBrains Mono',monospace"}}>{fmtTime(msgs[0].time)}</span>}
+      </div>
+    );
+  }
+
+  // Build human-readable summary counts.
+  let joined=0, left=0, kicked=0, modes=0;
+  for (const m of msgs) {
+    const t = m.text||"";
+    if (t.includes("kicked"))                                      kicked++;
+    else if (t.startsWith("→") || t.includes("joined"))           joined++;
+    else if (t.startsWith("←") || t.startsWith("✕") ||
+             t.includes("left") || t.includes("quit"))            left++;
+    else if (t.includes("mode"))                                   modes++;
+  }
+  const parts=[];
+  if (joined) parts.push(`${joined} joined`);
+  if (left)   parts.push(`${left} left`);
+  if (kicked) parts.push(`${kicked} kicked`);
+  if (modes)  parts.push(`${modes} mode${modes>1?"s":""} set`);
+  if (!parts.length) parts.push(`${msgs.length} events`);
+  const label = parts.join(", ");
 
   return (
     <div style={{padding:"0 16px 0 58px",userSelect:"none"}}>
-      {open ? (
+      {/* Summary row — arrow stays at right whether open or closed */}
+      <div onClick={()=>setOpen(o=>!o)}
+        style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",padding:"1px 0"}}
+        onMouseEnter={e=>e.currentTarget.style.opacity="1"}
+        onMouseLeave={e=>e.currentTarget.style.opacity="0.85"}>
+        <span style={{fontSize:11,color:T.textFaint,fontStyle:"italic",
+          fontFamily:"'JetBrains Mono',monospace",flex:1}}>{label}</span>
+        <span style={{fontSize:10,color:T.textFaint,fontFamily:"'JetBrains Mono',monospace",
+          flexShrink:0,opacity:0.7}}>{open?"▼":"▶"}</span>
+      </div>
+      {/* Expanded detail */}
+      {open&&(
         <div style={{borderLeft:`2px solid ${T.borderFaint}`,paddingLeft:8,margin:"2px 0"}}>
-          {msgs.map((m,i) => (
+          {msgs.map((m,i)=>(
             <div key={i} style={{display:"flex",alignItems:"baseline",gap:8,padding:"1px 0"}}>
               <span style={{fontSize:12,color:T.textFaint,fontStyle:"italic",
                 fontFamily:"'JetBrains Mono',monospace",flex:1,userSelect:"text"}}>{m.text}</span>
@@ -842,25 +877,7 @@ function MembershipGroup({ msgs }) {
                 fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>{fmtTime(m.time)}</span>}
             </div>
           ))}
-          <span onClick={()=>setOpen(false)}
-            style={{fontSize:10,color:T.textFaint,cursor:"pointer",
-              fontFamily:"'JetBrains Mono',monospace",fontStyle:"italic",userSelect:"none",
-              display:"inline-block",marginTop:1}}
-            onMouseEnter={e=>e.currentTarget.style.color=T.textDim}
-            onMouseLeave={e=>e.currentTarget.style.color=T.textFaint}>
-            ▲ hide
-          </span>
         </div>
-      ) : (
-        <span onClick={()=>setOpen(true)}
-          title={summary}
-          style={{fontSize:11,color:T.textFaint,cursor:"pointer",
-            fontFamily:"'JetBrains Mono',monospace",fontStyle:"italic",userSelect:"none",
-            display:"inline-block",padding:"1px 0"}}
-          onMouseEnter={e=>e.currentTarget.style.color=T.textDim}
-          onMouseLeave={e=>e.currentTarget.style.color=T.textFaint}>
-          ▶ {label}
-        </span>
       )}
     </div>
   );
