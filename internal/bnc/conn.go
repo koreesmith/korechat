@@ -39,7 +39,7 @@ const (
 	writeTimeout      = 10 * time.Second
 	keepaliveInterval = 30 * time.Second  // how often we PING the upstream
 	keepaliveTimeout  = 90 * time.Second  // how long without any data before giving up
-	BufferSize        = 500               // lines retained per channel/server
+	BufferSize        = 1000              // lines retained per channel/server
 	maxBackoff        = 30 * time.Second   // cap at 30s so reconnect is prompt
 	initialBackoff    = 2 * time.Second
 )

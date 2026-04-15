@@ -689,6 +689,9 @@ func (a *API) QueryLogs(w http.ResponseWriter, r *http.Request) {
 	if q.Get("order") == "asc" {
 		p.Ascending = true
 	}
+	if q.Get("server_only") == "true" {
+		p.ServerOnly = true
+	}
 	result, err := a.logger.Query(claims.UserID, p)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())

@@ -2791,7 +2791,10 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
     loadedHistoryRef.current.add(key);
 
     const isChannel = chan.startsWith("#") || chan.startsWith("&");
-    const isDM = !isChannel && chan !== "__status__";
+    const isDM = !isChannel && chan !== STATUS_CHAN;
+
+    // STATUS_CHAN history is loaded separately by loadServerHistory.
+    if (!isChannel && !isDM) return;
 
     // Find the oldest timestamp already in state for this channel so we only
     // ask the log for entries that pre-date what the ring buffer gave us.
@@ -2840,6 +2843,48 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         setTimeout(() => {
           conn.send(`CHATHISTORY LATEST ${chan} timestamp=${newestLogTs} 100`);
         }, 200);
+      })
+      .catch(() => {});
+  }, [ensureChan]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // loadServerHistory loads server-level log entries (channel="") for the
+  // STATUS_CHAN — things like NickServ notices, server NOTICEs addressed
+  // to the user nick, etc. Uses the server_only=true API filter.
+  const loadServerHistory = useCallback((netId, { limit=150, force=false }={}) => {
+    const key = `${netId}::${STATUS_CHAN}::server`;
+    if (!force && loadedHistoryRef.current.has(key)) return;
+    if (force) loadedHistoryRef.current.delete(key);
+    loadedHistoryRef.current.add(key);
+
+    const existingMsgs = messagesRef.current[`${netId}::${STATUS_CHAN}`] || [];
+    const validTimes = existingMsgs
+      .map(m => (m.time ? new Date(m.time).getTime() : 0))
+      .filter(t => t > 0);
+    const oldestExisting = validTimes.length ? Math.min(...validTimes) : null;
+
+    const params = new URLSearchParams({
+      network_id: netId,
+      server_only: "true",
+      limit: String(limit),
+      order: "asc",
+    });
+    if (oldestExisting !== null) {
+      params.set("date_to_iso", new Date(oldestExisting).toISOString());
+    }
+
+    fetch(`/api/v1/logs?${params}`, { credentials:"include" })
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => {
+        if (!data?.entries?.length) return;
+        const msgs = data.entries.map(e => ({
+          type: "message",
+          nick:  e.nick,
+          text:  e.text,
+          time:  e.timestamp,
+          id:    `log-${e.id}`,
+        }));
+        ensureChan(netId, STATUS_CHAN);
+        dispatch({ type:"PREPEND_MSGS", netId, chan:STATUS_CHAN, msgs });
       })
       .catch(() => {});
   }, [ensureChan]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -2977,6 +3022,11 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           if (text.startsWith("status:")) {
             const status=text.slice(7);
             dispatch({ type:"NET_STATUS", id:netId, status });
+            // In BNC mode the client never receives a 001 (IRC is already registered),
+            // so REPLAY_START is never dispatched from the 001 handler. Dispatch it
+            // here instead so unread counts are suppressed during the ring buffer
+            // replay that immediately follows status:connected on every subscribe.
+            if (status === "connected") dispatch({ type:"REPLAY_START", netId });
             break;
           }
           // replay-done nick:<nick> — BNC ring buffer replay complete, update our nick.
@@ -3003,14 +3053,24 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             // reflects the JOIN dispatches from this replay batch — those
             // dispatches are async (React state), so the ref hasn't updated yet
             // at the moment replay-done fires.
+            // Load DB history for the server window first (no timing dependency).
+            loadServerHistory(netId);
+
+            // Load DB history for all open channels.
+            // openKeys is captured inside the setTimeout so that channelsRef
+            // reflects the JOIN/ensureChan dispatches from the replay batch —
+            // those are async (React state), so the ref may not be updated yet
+            // at the moment replay-done fires. 500ms is generous but safe.
             const chanPrefix = netId + "::";
             setTimeout(() => {
-              const openKeys = Object.keys(channelsRef.current).filter(k => k.startsWith(chanPrefix));
+              const openKeys = Object.keys(channelsRef.current).filter(k =>
+                k.startsWith(chanPrefix) && !k.endsWith("::" + STATUS_CHAN)
+              );
               openKeys.forEach(k => {
                 const chan = k.slice(chanPrefix.length);
                 loadChannelHistory(netId, chan);
               });
-            }, 100);
+            }, 500);
             break;
           }
           // Reconnect notices: suppress "Reconnecting in 5s… (attempt 1)" to avoid
