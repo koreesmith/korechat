@@ -3787,13 +3787,39 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   // Note: reads networks/myNick/channels via refs — not in dep array on purpose
 
   const handlePhotoUpload = useCallback(async (file) => {
+    const isHeic = file.type === "image/heic" || file.type === "image/heif" ||
+                   /\.(heic|heif)$/i.test(file.name);
     try {
-      const data = await API.uploadPhoto(file);
+      let uploadFile = file;
+      if (isHeic) {
+        addSys(activeNet, activeChanName||STATUS_CHAN, "Converting HEIC photo…");
+        uploadFile = await new Promise((resolve, reject) => {
+          const img = new Image();
+          const objUrl = URL.createObjectURL(file);
+          img.onload = () => {
+            URL.revokeObjectURL(objUrl);
+            const canvas = document.createElement("canvas");
+            canvas.width  = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            canvas.getContext("2d").drawImage(img, 0, 0);
+            canvas.toBlob(blob => {
+              if (blob) resolve(new File([blob], file.name.replace(/\.(heic|heif)$/i, ".jpg"), { type: "image/jpeg" }));
+              else reject(new Error("Canvas JPEG conversion failed"));
+            }, "image/jpeg", 0.92);
+          };
+          img.onerror = () => {
+            URL.revokeObjectURL(objUrl);
+            reject(new Error("Browser cannot decode HEIC on this platform. Please convert to JPEG or PNG first."));
+          };
+          img.src = objUrl;
+        });
+      }
+      const data = await API.uploadPhoto(uploadFile);
       if (data.error) { addSys(activeNet, activeChanName||STATUS_CHAN, `Photo upload failed: ${data.error}`); return; }
       const url = window.location.origin + data.url;
       handleSend(url);
     } catch (e) {
-      addSys(activeNet, activeChanName||STATUS_CHAN, `Photo upload failed: ${e}`);
+      addSys(activeNet, activeChanName||STATUS_CHAN, `Photo upload failed: ${e.message||e}`);
     }
   }, [activeNet, activeChanName, addSys, handleSend]);
 
