@@ -3787,31 +3787,42 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   // Note: reads networks/myNick/channels via refs — not in dep array on purpose
 
   const handlePhotoUpload = useCallback(async (file) => {
-    const isHeic = file.type === "image/heic" || file.type === "image/heif" ||
-                   /\.(heic|heif)$/i.test(file.name);
+    // Detect HEIC/HEIF by type, extension, or ISOBMFF magic bytes (bytes 4-7 = "ftyp")
+    const detectHeic = async () => {
+      if (file.type === "image/heic" || file.type === "image/heif") return true;
+      if (/\.(heic|heif)$/i.test(file.name)) return true;
+      try {
+        const buf = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+        const ftyp = String.fromCharCode(buf[4], buf[5], buf[6], buf[7]);
+        if (ftyp !== "ftyp") return false;
+        const brand = String.fromCharCode(buf[8], buf[9], buf[10], buf[11]);
+        return ["heic","heis","heix","hevc","hevx","mif1","msf1"].includes(brand);
+      } catch { return false; }
+    };
+    const isHeic = await detectHeic();
     try {
       let uploadFile = file;
       if (isHeic) {
         addSys(activeNet, activeChanName||STATUS_CHAN, "Converting HEIC photo…");
         uploadFile = await new Promise((resolve, reject) => {
-          const img = new Image();
-          const objUrl = URL.createObjectURL(file);
-          img.onload = () => {
-            URL.revokeObjectURL(objUrl);
-            const canvas = document.createElement("canvas");
-            canvas.width  = img.naturalWidth;
-            canvas.height = img.naturalHeight;
-            canvas.getContext("2d").drawImage(img, 0, 0);
-            canvas.toBlob(blob => {
-              if (blob) resolve(new File([blob], file.name.replace(/\.(heic|heif)$/i, ".jpg"), { type: "image/jpeg" }));
-              else reject(new Error("Canvas JPEG conversion failed"));
-            }, "image/jpeg", 0.92);
+          const reader = new FileReader();
+          reader.onerror = () => reject(reader.error);
+          reader.onload = () => {
+            const img = new Image();
+            img.onerror = () => reject(new Error("Browser cannot decode HEIC on this platform. Please convert to JPEG or PNG first."));
+            img.onload = () => {
+              const canvas = document.createElement("canvas");
+              canvas.width  = img.naturalWidth;
+              canvas.height = img.naturalHeight;
+              canvas.getContext("2d").drawImage(img, 0, 0);
+              canvas.toBlob(blob => {
+                if (blob) resolve(new File([blob], file.name.replace(/\.(heic|heif)$/i, ".jpg"), { type: "image/jpeg" }));
+                else reject(new Error("Canvas JPEG conversion failed"));
+              }, "image/jpeg", 0.92);
+            };
+            img.src = reader.result;
           };
-          img.onerror = () => {
-            URL.revokeObjectURL(objUrl);
-            reject(new Error("Browser cannot decode HEIC on this platform. Please convert to JPEG or PNG first."));
-          };
-          img.src = objUrl;
+          reader.readAsDataURL(file);
         });
       }
       const data = await API.uploadPhoto(uploadFile);
