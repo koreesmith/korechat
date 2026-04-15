@@ -2766,6 +2766,12 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   }, []);
 
   // ── History loading ─────────────────────────────────────────────────────────
+  // replayDoneRef: tracks which networks have finished BNC replay so we know
+  // it's safe to trigger history fetches on new JOINs without racing the batch.
+  const replayDoneRef = useRef({});
+  // loadingChans: keys of channels currently fetching history (for UI feedback).
+  const [loadingChans, setLoadingChans] = useState({});
+
   // loadChannelHistory — populate a channel/DM window with past messages.
   //
   // Sequence:
@@ -2799,6 +2805,8 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
     // STATUS_CHAN history is loaded separately by loadServerHistory.
     if (!isChannel && !isDM) return;
 
+    setLoadingChans(prev => ({...prev, [key]: true}));
+
     // Find the oldest timestamp already in state for this channel so we only
     // ask the log for entries that pre-date what the ring buffer gave us.
     const existingMsgs = messagesRef.current[key] || [];
@@ -2819,9 +2827,12 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       params.set("date_to_iso", new Date(oldestExisting).toISOString());
     }
 
+    const clearLoading = () => setLoadingChans(prev => { const n={...prev}; delete n[key]; return n; });
+
     fetch(`/api/v1/logs?${params}`, { credentials:"include" })
       .then(r => (r.ok ? r.json() : null))
       .then(data => {
+        clearLoading();
         if (!data?.entries?.length) return;
         const MEMBERSHIP_TYPES = new Set(["JOIN","PART","QUIT","KICK","MODE"]);
         const msgs = data.entries.map(e => ({
@@ -2847,8 +2858,8 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           conn.send(`CHATHISTORY LATEST ${chan} timestamp=${newestLogTs} 100`);
         }, 200);
       })
-      .catch(() => {});
-  }, [ensureChan]); // eslint-disable-line react-hooks/exhaustive-deps
+      .catch(() => { clearLoading(); });
+  }, [ensureChan, setLoadingChans]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // loadServerHistory loads server-level log entries (channel="") for the
   // STATUS_CHAN — things like NickServ notices, server NOTICEs addressed
@@ -2946,8 +2957,12 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         dispatch({ type:"CHAN_JOIN", netId, chan });
         if (from===me) {
           dispatch({ type:"SET_ACTIVE_CHAN", netId, chan });
-          // History is loaded by replay-done after the full BNC replay completes.
-          // Loading here would race with the replay sequence.
+          // After the initial BNC replay, load history automatically on each
+          // new JOIN so the user doesn't need to refresh.  We skip this during
+          // replay because the batch loader in replay-done handles it.
+          if (replayDoneRef.current[netId]) {
+            setTimeout(() => loadChannelHistory(netId, chan), 350);
+          }
         } else {
           dispatch({ type:"SET_MEMBERS", netId, chan, members:{[from]:""} });
           sys(chan, `→ ${from} joined`, "membership");
@@ -3066,6 +3081,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             // at the moment replay-done fires. 500ms is generous but safe.
             const chanPrefix = netId + "::";
             setTimeout(() => {
+              replayDoneRef.current[netId] = true;
               const openKeys = Object.keys(channelsRef.current).filter(k =>
                 k.startsWith(chanPrefix) && !k.endsWith("::" + STATUS_CHAN)
               );
@@ -4367,7 +4383,9 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           <div ref={msgsRef} style={{flex:1,overflowY:"auto",padding:"8px 0"}}>
             {activeMsgs.length===0&&activeChanName&&(
               <div style={{...MONO,padding:"32px 58px",color:T.textFaint,fontSize:13}}>
-                {isStatusChan?"Waiting for server messages…":`No messages yet in ${activeChanName}`}
+                {isStatusChan?"Waiting for server messages…":
+                 loadingChans[activeMsgKey]?"Loading history…":
+                 `No messages yet in ${activeChanName}`}
               </div>
             )}
             {(()=>{

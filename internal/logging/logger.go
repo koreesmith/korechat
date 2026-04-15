@@ -497,7 +497,7 @@ func (l *Logger) buildWhere(userID string, p QueryParams) (string, []interface{}
 	if p.ServerOnly {
 		conds = append(conds, "channel = ''")
 	} else if p.Channel != "" {
-		add("channel ILIKE $%d", p.Channel)
+		add("lower(channel) = lower($%d)", p.Channel)
 	}
 	if p.Nick != "" {
 		add("nick ILIKE $%d", p.Nick+"%")
