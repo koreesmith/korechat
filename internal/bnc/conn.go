@@ -548,6 +548,7 @@ func (c *Conn) intercept(line string) {
 				"batch",
 				"server-time",
 				"message-tags",
+				"echo-message",
 				"chathistory",
 				"multi-prefix",
 			}

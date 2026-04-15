@@ -587,7 +587,19 @@ function reducer(s, a) {
       // Deduplicate by msgid — prevents server history replay from re-adding
       // messages already in our ring buffer or already shown this session
       if (a.msg.id && s.seenMsgIds[a.msg.id]) return s;
-      const msgs=[...(s.messages[k]||[]),a.msg].slice(-1000);
+      // Content fingerprint dedup — catches echo-message reflections where the
+      // server assigns a new msgid to a PRIVMSG we already added optimistically.
+      // Only checks the 30 most-recent messages (echo arrives within ms).
+      const existing=s.messages[k]||[];
+      if (existing.length) {
+        const fp=`${a.msg.nick}|${a.msg.time?new Date(a.msg.time).toISOString().slice(0,16):""}|${(a.msg.text||"").slice(0,40)}`;
+        const recent=existing.length>30?existing.slice(-30):existing;
+        if (recent.some(m=>{
+          const t=m.time?new Date(m.time).toISOString().slice(0,16):"";
+          return `${m.nick}|${t}|${(m.text||"").slice(0,40)}`===fp;
+        })) return s;
+      }
+      const msgs=[...existing,a.msg].slice(-1000);
       const isActive=s.activeNet===a.netId&&s.activeChan[a.netId]===a.chan;
       const isReplaying=s.replaying.has(a.netId);
       return { ...s,
@@ -2659,14 +2671,28 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   }, []);
 
   // ── History loading ─────────────────────────────────────────────────────────
-  // loadHistory: silently load logs for a channel/DM/server window.
-  // 1. Fetches up to `limit` recent messages from our own Postgres logs (fast, always available).
-  // 2. If the BNC is connected and the server supports CHATHISTORY, sends a CHATHISTORY LATEST
-  //    request for any gap between the last log entry and now (catches messages we missed
-  //    while logged out). Silent — no announcements either way.
-  const loadedHistoryRef = useRef(new Set()); // keys we've already loaded this session
+  // loadChannelHistory — populate a channel/DM window with past messages.
+  //
+  // Sequence:
+  //  1. Fetch up to `limit` entries from our own Postgres message log.
+  //     If the channel already has messages (e.g. from the BNC ring-buffer
+  //     replay), only fetch entries strictly older than the oldest one we
+  //     have, so the two sets don't overlap.  PREPEND_MSGS deduplicates by
+  //     id and content fingerprint as a safety net.
+  //
+  //  2. If the IRC server supports IRCv3 CHATHISTORY, send a CHATHISTORY
+  //     LATEST request anchored to the newest log entry timestamp.  This
+  //     fills any gap between the log and the live ring buffer — i.e. messages
+  //     that arrived while we were disconnected and haven't made it to the DB
+  //     yet, or that the server holds but we never received.
+  //
+  // The function is idempotent: a second call for the same key in the same
+  // session is a no-op unless `force` is passed.  Call it:
+  //   • after replay-done, for every open channel
+  //   • when the user navigates to a channel (goTo / /msg)
+  const loadedHistoryRef = useRef(new Set()); // keys loaded this session
 
-  const loadHistory = useCallback((netId, chan, { limit=150, force=false }={}) => {
+  const loadChannelHistory = useCallback((netId, chan, { limit=150, force=false }={}) => {
     const key = `${netId}::${chan}`;
     if (!force && loadedHistoryRef.current.has(key)) return;
     if (force) loadedHistoryRef.current.delete(key);
@@ -2675,14 +2701,13 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
     const isChannel = chan.startsWith("#") || chan.startsWith("&");
     const isDM = !isChannel && chan !== "__status__";
 
-    // Find the oldest message already in state for this channel.
-    // We only want log entries OLDER than what we already have — this prevents
-    // re-fetching messages that the BNC ring buffer already replayed.
-    const existingMsgs = messagesRef.current[`${netId}::${chan}`] || [];
-    const existingTimes = existingMsgs
-      .map(m => m.time ? new Date(m.time).getTime() : 0)
+    // Find the oldest timestamp already in state for this channel so we only
+    // ask the log for entries that pre-date what the ring buffer gave us.
+    const existingMsgs = messagesRef.current[key] || [];
+    const validTimes = existingMsgs
+      .map(m => (m.time ? new Date(m.time).getTime() : 0))
       .filter(t => t > 0);
-    const oldestExisting = existingTimes.length ? Math.min(...existingTimes) : null;
+    const oldestExisting = validTimes.length ? Math.min(...validTimes) : null;
 
     const params = new URLSearchParams({
       network_id: netId,
@@ -2691,15 +2716,13 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
     });
     if (isChannel) params.set("channel", chan);
     else if (isDM)  params.set("nick", chan);
-    // If we already have messages, only fetch history before the oldest one.
-    // Add a 5-second buffer to catch any borderline messages.
-    if (oldestExisting) {
-      const beforeTs = new Date(oldestExisting + 5000).toISOString();
-      params.set("date_to_iso", beforeTs);
+    // Fetch only entries that are strictly older than what we already have.
+    if (oldestExisting !== null) {
+      params.set("date_to_iso", new Date(oldestExisting).toISOString());
     }
 
     fetch(`/api/v1/logs?${params}`, { credentials:"include" })
-      .then(r => r.ok ? r.json() : null)
+      .then(r => (r.ok ? r.json() : null))
       .then(data => {
         if (!data?.entries?.length) return;
         const MEMBERSHIP_TYPES = new Set(["JOIN","PART","QUIT","KICK","MODE"]);
@@ -2714,14 +2737,16 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         ensureChan(netId, chan);
         dispatch({ type:"PREPEND_MSGS", netId, chan, msgs });
 
-        // Ask the IRC server for anything newer than our last log entry (gap-fill).
+        // IRCv3 CHATHISTORY gap-fill: ask the server for any messages newer
+        // than our most-recent log entry.  This covers the window between the
+        // last persisted message and the start of the live ring buffer.
         if (!isChannel) return;
-        const lastTs = data.entries[data.entries.length - 1]?.timestamp;
-        if (!lastTs) return;
+        const newestLogTs = data.entries[data.entries.length - 1]?.timestamp;
+        if (!newestLogTs) return;
         const conn = connections.current?.[netId];
-        if (!conn) return;
+        if (!conn?.ready) return;
         setTimeout(() => {
-          conn.send(`CHATHISTORY LATEST ${chan} timestamp=${lastTs} 100`);
+          conn.send(`CHATHISTORY LATEST ${chan} timestamp=${newestLogTs} 100`);
         }, 200);
       })
       .catch(() => {});
@@ -2875,13 +2900,17 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             // messages from multiple sessions are interleaved in the buffer.
             dispatch({ type:"SORT_MSGS", netId });
 
-            // Then load DB history for anything older than the ring buffer.
-            const prefix = netId + "::";
-            const openKeys = Object.keys(channelsRef.current).filter(k => k.startsWith(prefix));
+            // Load DB history for all open channels.
+            // openKeys is captured inside the setTimeout so that channelsRef
+            // reflects the JOIN dispatches from this replay batch — those
+            // dispatches are async (React state), so the ref hasn't updated yet
+            // at the moment replay-done fires.
+            const chanPrefix = netId + "::";
             setTimeout(() => {
+              const openKeys = Object.keys(channelsRef.current).filter(k => k.startsWith(chanPrefix));
               openKeys.forEach(k => {
-                const chan = k.slice(prefix.length);
-                loadHistory(netId, chan);
+                const chan = k.slice(chanPrefix.length);
+                loadChannelHistory(netId, chan);
               });
             }, 100);
             break;
@@ -3287,7 +3316,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         const [tgt,...mp]=args;
         ensureChan(netId,tgt);
         dispatch({ type:"SET_ACTIVE_CHAN", netId, chan:tgt });
-        loadHistory(netId, tgt); // load DM history
+        loadChannelHistory(netId, tgt); // load DM history
         if (mp.length>0) {
           const msgText=mp.join(" ");
           conn.send(`PRIVMSG ${tgt} :${msgText}`);
@@ -3923,7 +3952,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
               dispatch({type:"SET_ACTIVE_CHAN",netId,chan});
               dispatch({type:"CLEAR_UNREAD",netId,chan});
               setSidebarOpen(false); // close mobile drawer on channel select
-              setTimeout(() => loadHistory(netId, chan), 100); // let messagesRef sync first
+              setTimeout(() => loadChannelHistory(netId, chan), 100); // let messagesRef sync first
             };
 
             return (
