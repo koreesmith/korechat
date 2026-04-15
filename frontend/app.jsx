@@ -2742,6 +2742,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   const batchBufRef  = useRef({});  // netId+batchId → {type, chan, msgs[]}
   const namesBufRef  = useRef({});  // netId+chan → {nick: prefix} accumulator for 353/366
   const motdBufRef   = useRef({});  // netId → string[] accumulator for 375/372 → 376 grouping
+  const whoisBufRef  = useRef({});  // netId → {nick, lines[]} accumulator for WHOIS response grouping
   const bottomRef    = useRef(null);
   const msgsRef      = useRef(null);
 
@@ -3215,14 +3216,39 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         break;
       }
 
-      // Numeric replies — WHOIS results route to the target nick's DM window
-      // so they're always easy to find and don't pollute channel chat
-      case "311": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); sys(dest,`⦿ ${params[1]}  (${params[2]}@${params[3]})  — ${params[5]||""}`); break; }
-      case "312": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); sys(dest,`  Server: ${params[2]}  (${params[3]||""})`); break; }
-      case "317": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); const idle=parseInt(params[2]||0); const h=Math.floor(idle/3600),m=Math.floor((idle%3600)/60),s=idle%60; sys(dest,`  Idle: ${h?h+"h ":""}${m?m+"m ":""}${s}s`); break; }
-      case "318": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); sys(dest,`  ─── end of whois ───`); break; }
-      case "319": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); sys(dest,`  Channels: ${params[2]||""}`); break; }
-      case "330": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); sys(dest,`  Account: ${params[2]}`); break; }
+      // WHOIS — buffer all response lines and flush as a single grouped message
+      // on 318 (End of WHOIS) so the result appears under one timestamp.
+      // 307/313/320/671 are also WHOIS fields; handle them here so they don't
+      // leak to STATUS_CHAN via the numeric fallback.
+      case "311": { // RPL_WHOISUSER — start buffer
+        whoisBufRef.current[netId] = {
+          nick: params[1],
+          lines: [`⦿ ${params[1]}  (${params[2]}@${params[3]})  —  ${params[5]||""}`]
+        };
+        break;
+      }
+      case "319": { const w=whoisBufRef.current[netId]; if(w) w.lines.push(`  Channels: ${params[2]||""}`); break; }
+      case "312": { const w=whoisBufRef.current[netId]; if(w) w.lines.push(`  Server: ${params[2]}  (${params[3]||""})`); break; }
+      case "330": { const w=whoisBufRef.current[netId]; if(w) w.lines.push(`  Account: ${params[2]}`); break; }
+      case "313": { const w=whoisBufRef.current[netId]; if(w) w.lines.push(`  IRC Operator`); break; }
+      case "320": { const w=whoisBufRef.current[netId]; if(w) w.lines.push(`  ${params[params.length-1]||"Network Administrator"}`); break; }
+      case "671": { const w=whoisBufRef.current[netId]; if(w) w.lines.push(`  Secure connection`); break; }
+      case "307": break; // Registered nick — redundant with Account field, suppress
+      case "317": { // RPL_WHOISIDLE
+        const w=whoisBufRef.current[netId];
+        if(w) { const idle=parseInt(params[2]||0); const h=Math.floor(idle/3600),m=Math.floor((idle%3600)/60),s=idle%60; w.lines.push(`  Idle: ${h?h+"h ":""}${m?m+"m ":""}${s}s`); }
+        break;
+      }
+      case "318": { // RPL_ENDOFWHOIS — flush buffer
+        const w=whoisBufRef.current[netId];
+        delete whoisBufRef.current[netId];
+        if(w?.lines?.length) {
+          w.lines.push(`  ─── end of whois ───`);
+          ensureChan(netId, w.nick);
+          sys(w.nick, w.lines.join("\n"));
+        }
+        break;
+      }
       case "321": break;
       case "322": ensureChan(netId,STATUS_CHAN); sys(STATUS_CHAN,`  ${params[1]}  (${params[2]} users)  ${params[3]||""}`); break;
       case "323": sys(STATUS_CHAN,"End of /LIST"); break;
