@@ -2938,6 +2938,12 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           if (text.startsWith("replay-done")) {
             const nickMatch=text.match(/nick:(\S+)/);
             if (nickMatch) dispatch({ type:"SET_NICK", netId, nick:nickMatch[1] });
+            // BNC only sends replay-done when it is genuinely connected to IRC,
+            // so treat it as an authoritative "connected" signal. This is the
+            // belt-and-suspenders companion to the server-side Subscribe fix:
+            // even if a stale "status:connecting" arrived after the fanOut
+            // "status:connected" due to a race, replay-done always wins.
+            dispatch({ type:"NET_STATUS", id:netId, status:"connected" });
             dispatch({ type:"REPLAY_DONE", netId }); // re-enable unread counting
             ensureChan(netId, STATUS_CHAN);
 
