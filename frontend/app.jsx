@@ -432,7 +432,7 @@ function nickColor(nick) {
   for (let i = 0; i < nick.length; i++) h = (h * 31 + nick.charCodeAt(i)) & 0x7fffffff;
   return p[h % p.length];
 }
-function renderText(text, myNick, T) {
+function renderText(text, myNick, T, onLinkClick) {
   if (!text) return "";
   const accent  = T?.accent || "#7eb8f7";
   const red     = T?.red    || "#f7a07e";
@@ -447,9 +447,11 @@ function renderText(text, myNick, T) {
   URL_RE.lastIndex = 0;
   while ((m = URL_RE.exec(text)) !== null) {
     if (m.index > last) parts.push(<span key={key++}>{text.slice(last, m.index)}</span>);
-    parts.push(<a key={key++} href={m[1]} target="_blank" rel="noreferrer"
-      style={{color:accent,textDecoration:"underline dotted"}}>{m[1]}</a>);
-    last = m.index + m[1].length;
+    const url = m[1];
+    parts.push(<a key={key++} href={url} target="_blank" rel="noopener noreferrer"
+      onClick={onLinkClick ? e => { e.preventDefault(); onLinkClick(url); } : undefined}
+      style={{color:accent,textDecoration:"underline dotted",cursor:"pointer"}}>{url}</a>);
+    last = m.index + url.length;
   }
   const rest = text.slice(last);
   if (rest) {
@@ -465,6 +467,44 @@ function renderText(text, myNick, T) {
     parts.push(...mp);
   }
   return parts.length ? parts : text;
+}
+
+// ─── Link Safety Modal ────────────────────────────────────────────────────────
+function LinkSafetyModal({ url, onConfirm, onCancel, T }) {
+  const overlay = { position:"fixed",inset:0,background:"#00000099",zIndex:300,
+    display:"flex",alignItems:"center",justifyContent:"center" };
+  const box = { background:T.bgPanel,border:`1px solid ${T.border}`,borderRadius:10,
+    width:480,padding:24,boxShadow:"0 8px 40px #0008",maxWidth:"calc(100vw - 32px)" };
+  const truncated = url.length > 80 ? url.slice(0, 77) + "…" : url;
+  return (
+    <div style={overlay} onClick={e=>e.target===e.currentTarget&&onCancel()}>
+      <div style={box}>
+        <div style={{fontWeight:700,fontSize:15,color:T.textBright,marginBottom:12,
+          fontFamily:"'JetBrains Mono',monospace"}}>
+          Open external link?
+        </div>
+        <div style={{fontSize:12,color:T.textDim,marginBottom:8,
+          fontFamily:"'JetBrains Mono',monospace"}}>You are about to open:</div>
+        <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:6,
+          padding:"8px 12px",marginBottom:20,wordBreak:"break-all",
+          fontSize:13,color:T.accent||T.textBright,fontFamily:"'JetBrains Mono',monospace"}}>
+          {truncated}
+        </div>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+          <button onClick={onCancel} style={{background:"none",border:`1px solid ${T.border}`,
+            borderRadius:6,padding:"6px 16px",color:T.textDim,fontSize:13,cursor:"pointer",
+            fontFamily:"'JetBrains Mono',monospace"}}>
+            Cancel
+          </button>
+          <button onClick={onConfirm} style={{background:T.accent||"#7eb8f7",border:"none",
+            borderRadius:6,padding:"6px 16px",color:T.bg||"#080f1e",fontSize:13,
+            fontWeight:700,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace"}}>
+            Open
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 const CHAN_KEY    = (netId, chan) => `${netId}::${chan}`;
@@ -796,6 +836,7 @@ function MembershipGroup({ msgs }) {
 
 function MsgRow({ msg, prev, myNick, onNickClick }) {
   const T=useTheme();
+  const [pendingLink, setPendingLink] = useState(null);
   if (msg.type==="system") return (
     <div style={{padding:"2px 16px 2px 58px",userSelect:"text"}}>
       <span style={{fontSize:13,color:T.textDim,fontStyle:"italic",fontFamily:"'JetBrains Mono',monospace"}}>{msg.text}</span>
@@ -805,31 +846,36 @@ function MsgRow({ msg, prev, myNick, onNickClick }) {
   const cont=prev?.type==="message"&&prev.nick===msg.nick&&(new Date(msg.time)-new Date(prev.time))<300000;
   const mentioned=msg.nick!==myNick&&msg.text?.includes("@"+myNick);
   return (
-    <div style={{display:"flex",gap:12,padding:cont?"2px 16px":"8px 16px 3px",
-      background:mentioned?T.mentionBg:"transparent",
-      borderLeft:mentioned?`2px solid ${T.mentionBdr}`:"2px solid transparent"}}
-      onMouseEnter={e=>e.currentTarget.style.background=mentioned?T.mentionBg2:T.msgHover}
-      onMouseLeave={e=>e.currentTarget.style.background=mentioned?T.mentionBg:"transparent"}>
-      <div style={{width:32,flexShrink:0,paddingTop:cont?0:2,cursor:msg.nick?"pointer":"default"}}
-        onClick={e=>{if(msg.nick&&onNickClick){e.stopPropagation();onNickClick(msg.nick,e);}}}>
-        {!cont&&<Avatar nick={msg.nick} size={32}/>}
-      </div>
-      <div style={{flex:1,minWidth:0,userSelect:"text"}}>
-        {!cont&&(
-          <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:2}}>
-            <span style={{fontWeight:700,fontSize:14,color:nickColor(msg.nick),fontFamily:"'JetBrains Mono',monospace",
-              cursor:"pointer"}}
-              onClick={e=>{if(onNickClick){e.stopPropagation();onNickClick(msg.nick,e);}}}
-              onContextMenu={e=>{if(onNickClick){e.preventDefault();onNickClick(msg.nick,e);}}}
-            >{msg.nick}</span>
-            <span style={{fontSize:11,color:T.textDim,fontFamily:"'JetBrains Mono',monospace"}}>{fmtTime(msg.time)}</span>
+    <React.Fragment>
+      <div style={{display:"flex",gap:12,padding:cont?"2px 16px":"8px 16px 3px",
+        background:mentioned?T.mentionBg:"transparent",
+        borderLeft:mentioned?`2px solid ${T.mentionBdr}`:"2px solid transparent"}}
+        onMouseEnter={e=>e.currentTarget.style.background=mentioned?T.mentionBg2:T.msgHover}
+        onMouseLeave={e=>e.currentTarget.style.background=mentioned?T.mentionBg:"transparent"}>
+        <div style={{width:32,flexShrink:0,paddingTop:cont?0:2,cursor:msg.nick?"pointer":"default"}}
+          onClick={e=>{if(msg.nick&&onNickClick){e.stopPropagation();onNickClick(msg.nick,e);}}}>
+          {!cont&&<Avatar nick={msg.nick} size={32}/>}
+        </div>
+        <div style={{flex:1,minWidth:0,userSelect:"text"}}>
+          {!cont&&(
+            <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:2}}>
+              <span style={{fontWeight:700,fontSize:14,color:nickColor(msg.nick),fontFamily:"'JetBrains Mono',monospace",
+                cursor:"pointer"}}
+                onClick={e=>{if(onNickClick){e.stopPropagation();onNickClick(msg.nick,e);}}}
+                onContextMenu={e=>{if(onNickClick){e.preventDefault();onNickClick(msg.nick,e);}}}
+              >{msg.nick}</span>
+              <span style={{fontSize:11,color:T.textDim,fontFamily:"'JetBrains Mono',monospace"}}>{fmtTime(msg.time)}</span>
+            </div>
+          )}
+          <div style={{fontSize:15,color:T.text,lineHeight:1.6,wordBreak:"break-word"}}>
+            {renderText(msg.text,myNick,T,setPendingLink)}
           </div>
-        )}
-        <div style={{fontSize:15,color:T.text,lineHeight:1.6,wordBreak:"break-word"}}>
-          {renderText(msg.text,myNick,T)}
         </div>
       </div>
-    </div>
+      {pendingLink&&<LinkSafetyModal url={pendingLink} T={T}
+        onConfirm={()=>{window.open(pendingLink,"_blank","noopener,noreferrer");setPendingLink(null);}}
+        onCancel={()=>setPendingLink(null)}/>}
+    </React.Fragment>
   );
 }
 
