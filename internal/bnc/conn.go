@@ -123,6 +123,10 @@ type Conn struct {
 	// keepalive tracking
 	lastPong time.Time
 
+	// persistChansFn is called (in a goroutine) after joinedChans changes so the
+	// channel list survives restarts. Set by Manager.startConn; may be nil.
+	persistChansFn func([]string)
+
 	// Developer options
 	ircDebug bool // log raw ← recv and → send lines
 
@@ -137,13 +141,20 @@ type Conn struct {
 }
 
 func newConn(n *networks.Network, store *networks.Store, mgr *Manager, logFn LogFunc) *Conn {
+	// Seed joinedChans from DB-persisted list so channels survive restarts.
+	joined := make(map[string]bool, len(n.JoinedChans))
+	for _, ch := range n.JoinedChans {
+		if ch != "" {
+			joined[ch] = true
+		}
+	}
 	return &Conn{
 		net:         n,
 		store:       store,
 		manager:     mgr,
 		logFn:       logFn,
 		ircDebug:    mgr.ircDebug,
-		joinedChans: make(map[string]bool),
+		joinedChans: joined,
 		buffers:     make(map[string]*RingBuffer),
 		subs:        make(map[string]*subscriber),
 		stopCh:      make(chan struct{}),
@@ -860,6 +871,7 @@ func (c *Conn) intercept(line string) {
 			c.mu.Lock()
 			c.joinedChans[ch] = true
 			c.mu.Unlock()
+			c.saveJoinedChans()
 			// Request server-side scrollback if chathistory is negotiated
 			go func() {
 				// Small delay to let the server finish sending its JOIN burst (353, 366, etc.)
@@ -886,12 +898,14 @@ func (c *Conn) intercept(line string) {
 					c.mu.Lock()
 					delete(c.joinedChans, ch)
 					c.mu.Unlock()
+					c.saveJoinedChans()
 				}
 			}
 		} else if from == me {
 			c.mu.Lock()
 			delete(c.joinedChans, ch)
 			c.mu.Unlock()
+			c.saveJoinedChans()
 		}
 
 	case "471", "473", "474", "475", "477", "485":
@@ -995,6 +1009,21 @@ func (c *Conn) sendRaw(line string) {
 		log.Printf("bnc[%s]: write error, closing upstream: %v", c.net.ID, err)
 		tc.Close() // read loop will detect EOF and trigger reconnect
 	}
+}
+
+// saveJoinedChans snapshots the current joinedChans map and calls persistChansFn
+// asynchronously so the channel list survives restarts. No-op if no persist fn set.
+func (c *Conn) saveJoinedChans() {
+	if c.persistChansFn == nil {
+		return
+	}
+	c.mu.Lock()
+	chans := make([]string, 0, len(c.joinedChans))
+	for ch := range c.joinedChans {
+		chans = append(chans, ch)
+	}
+	c.mu.Unlock()
+	go c.persistChansFn(chans)
 }
 
 func (c *Conn) notice(text string) {

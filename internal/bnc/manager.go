@@ -16,6 +16,10 @@ type Manager struct {
 	logFn    LogFunc // may be nil
 	ircDebug bool
 
+	// persistChansFn is called after every JOIN/PART to save the channel list.
+	// Set via SetPersistChannelsFn before Start(). May be nil (no persistence).
+	persistChansFn func(networkID string, chans []string)
+
 	mu    sync.RWMutex
 	conns map[string]*Conn // networkID → Conn
 }
@@ -30,6 +34,13 @@ func NewManager(store *networks.Store) *Manager {
 
 // SetIRCDebug enables or disables raw IRC line logging.
 func (m *Manager) SetIRCDebug(v bool) { m.ircDebug = v }
+
+// SetPersistChannelsFn registers a callback that is invoked after every JOIN or
+// PART/KICK to persist the current channel list for a network. Call this before
+// Start() so all connections pick it up.
+func (m *Manager) SetPersistChannelsFn(fn func(networkID string, chans []string)) {
+	m.persistChansFn = fn
+}
 
 // SetLogFunc attaches a logging callback. Call before Start().
 func (m *Manager) SetLogFunc(fn LogFunc) {
@@ -187,6 +198,13 @@ func (m *Manager) Shutdown() {
 
 func (m *Manager) startConn(n *networks.Network) {
 	c := newConn(n, m.store, m, m.logFn)
+
+	if m.persistChansFn != nil {
+		networkID := n.ID
+		c.persistChansFn = func(chans []string) {
+			m.persistChansFn(networkID, chans)
+		}
+	}
 
 	m.mu.Lock()
 	old, hadOld := m.conns[n.ID]

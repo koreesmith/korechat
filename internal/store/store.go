@@ -131,6 +131,13 @@ func (s *DB) migrate() error {
 		return fmt.Errorf("migrate v6 (theme): %w", err)
 	}
 
+	// v7: BNC-tracked joined channels (idempotent)
+	if _, err := s.db.Exec(
+		`ALTER TABLE networks ADD COLUMN IF NOT EXISTS joined_chans TEXT[] NOT NULL DEFAULT '{}'`,
+	); err != nil {
+		return fmt.Errorf("migrate v7 (joined_chans): %w", err)
+	}
+
 	// v5: message logging (idempotent)
 	if _, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS log_settings (
@@ -352,7 +359,7 @@ func (s *DB) CreateNetwork(userID string, n *networks.Network) (*networks.Networ
 // GetNetwork fetches a network by ID, verifying it belongs to userID.
 func (s *DB) GetNetwork(userID, networkID string) (*networks.Network, error) {
 	return s.scanNetwork(s.db.QueryRow(
-		`SELECT id, name, host, port, tls, password, nick, alt_nick, username, realname, auto_join, sasl_mechanism, sasl_username, sasl_password, on_connect, created_at, updated_at
+		`SELECT id, name, host, port, tls, password, nick, alt_nick, username, realname, auto_join, sasl_mechanism, sasl_username, sasl_password, on_connect, joined_chans, created_at, updated_at
 		 FROM networks WHERE id=$1 AND user_id=$2`,
 		networkID, userID,
 	))
@@ -361,7 +368,7 @@ func (s *DB) GetNetwork(userID, networkID string) (*networks.Network, error) {
 // ListNetworks returns all networks for a user.
 func (s *DB) ListNetworks(userID string) ([]*networks.Network, error) {
 	rows, err := s.db.Query(
-		`SELECT id, name, host, port, tls, password, nick, alt_nick, username, realname, auto_join, sasl_mechanism, sasl_username, sasl_password, on_connect, created_at, updated_at
+		`SELECT id, name, host, port, tls, password, nick, alt_nick, username, realname, auto_join, sasl_mechanism, sasl_username, sasl_password, on_connect, joined_chans, created_at, updated_at
 		 FROM networks WHERE user_id=$1 ORDER BY created_at ASC`,
 		userID,
 	)
@@ -384,7 +391,7 @@ func (s *DB) ListNetworks(userID string) ([]*networks.Network, error) {
 // ListAllNetworks returns every network in the DB (for BNC startup).
 func (s *DB) ListAllNetworks() ([]*networks.Network, error) {
 	rows, err := s.db.Query(
-		`SELECT id, user_id, name, host, port, tls, password, nick, alt_nick, username, realname, auto_join, sasl_mechanism, sasl_username, sasl_password, on_connect, created_at, updated_at
+		`SELECT id, user_id, name, host, port, tls, password, nick, alt_nick, username, realname, auto_join, sasl_mechanism, sasl_username, sasl_password, on_connect, joined_chans, created_at, updated_at
 		 FROM networks ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -502,13 +509,14 @@ func (s *DB) scanUserRow(rows *sql.Rows) (*users.User, error) {
 
 func (s *DB) scanNetwork(row scannable) (*networks.Network, error) {
 	n := &networks.Network{}
-	var autoJoin, onConnect []string
+	var autoJoin, onConnect, joinedChans []string
 	err := row.Scan(
 		&n.ID, &n.Name, &n.Host, &n.Port, &n.TLS, &n.Password,
 		&n.Nick, &n.AltNick, &n.Username, &n.Realname,
 		pqArray(&autoJoin),
 		&n.SASLMechanism, &n.SASLUsername, &n.SASLPassword,
 		pqArray(&onConnect),
+		pqArray(&joinedChans),
 		&n.CreatedAt, &n.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -519,19 +527,21 @@ func (s *DB) scanNetwork(row scannable) (*networks.Network, error) {
 	}
 	n.AutoJoin = autoJoin
 	n.OnConnect = onConnect
+	n.JoinedChans = joinedChans
 	n.Status = networks.StatusDisconnected
 	return n, nil
 }
 
 func (s *DB) scanNetworkRow(rows *sql.Rows) (*networks.Network, error) {
 	n := &networks.Network{}
-	var autoJoin, onConnect []string
+	var autoJoin, onConnect, joinedChans []string
 	err := rows.Scan(
 		&n.ID, &n.Name, &n.Host, &n.Port, &n.TLS, &n.Password,
 		&n.Nick, &n.AltNick, &n.Username, &n.Realname,
 		pqArray(&autoJoin),
 		&n.SASLMechanism, &n.SASLUsername, &n.SASLPassword,
 		pqArray(&onConnect),
+		pqArray(&joinedChans),
 		&n.CreatedAt, &n.UpdatedAt,
 	)
 	if err != nil {
@@ -539,19 +549,21 @@ func (s *DB) scanNetworkRow(rows *sql.Rows) (*networks.Network, error) {
 	}
 	n.AutoJoin = autoJoin
 	n.OnConnect = onConnect
+	n.JoinedChans = joinedChans
 	n.Status = networks.StatusDisconnected
 	return n, nil
 }
 
 func (s *DB) scanNetworkRowWithUserID(rows *sql.Rows) (*networks.Network, error) {
 	n := &networks.Network{}
-	var autoJoin, onConnect []string
+	var autoJoin, onConnect, joinedChans []string
 	err := rows.Scan(
 		&n.ID, &n.UserID, &n.Name, &n.Host, &n.Port, &n.TLS, &n.Password,
 		&n.Nick, &n.AltNick, &n.Username, &n.Realname,
 		pqArray(&autoJoin),
 		&n.SASLMechanism, &n.SASLUsername, &n.SASLPassword,
 		pqArray(&onConnect),
+		pqArray(&joinedChans),
 		&n.CreatedAt, &n.UpdatedAt,
 	)
 	if err != nil {
@@ -559,8 +571,19 @@ func (s *DB) scanNetworkRowWithUserID(rows *sql.Rows) (*networks.Network, error)
 	}
 	n.AutoJoin = autoJoin
 	n.OnConnect = onConnect
+	n.JoinedChans = joinedChans
 	n.Status = networks.StatusDisconnected
 	return n, nil
+}
+
+// SetJoinedChannels persists the BNC-tracked channel list for a network.
+// Called by the BNC after every JOIN or PART/KICK so channels survive restarts.
+func (s *DB) SetJoinedChannels(networkID string, chans []string) error {
+	_, err := s.db.Exec(
+		`UPDATE networks SET joined_chans=$1 WHERE id=$2`,
+		autoJoinToDB(chans), networkID,
+	)
+	return err
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
