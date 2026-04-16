@@ -883,6 +883,17 @@ function MembershipGroup({ msgs }) {
   );
 }
 
+function copyFallback(text) {
+  const el = document.createElement("textarea");
+  el.value = text;
+  el.style.position = "fixed";
+  el.style.opacity = "0";
+  document.body.appendChild(el);
+  el.select();
+  document.execCommand("copy");
+  document.body.removeChild(el);
+}
+
 // ─── SnippetBlock ─────────────────────────────────────────────────────────────
 // Renders a code snippet fetched from /snippets/{id} with a copy button.
 function SnippetBlock({ url, lang }) {
@@ -899,7 +910,11 @@ function SnippetBlock({ url, lang }) {
 
   const copy = () => {
     if (code == null) return;
-    navigator.clipboard?.writeText(code);
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(code).catch(() => copyFallback(code));
+    } else {
+      copyFallback(code);
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
