@@ -3573,12 +3573,28 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   }, []);
 
   // Scroll to bottom whenever the active channel changes, reset badge
+  const shouldPinBottomRef = useRef(false);
   useEffect(() => {
     setNewMsgCount(0);
     prevMsgLenRef.current = 0;
-    // Defer until after the browser has laid out the new channel's messages
+    // Pin-to-bottom mode: any content height change will re-scroll until the
+    // user manually scrolls up or 3 s passes (covers async snippet fetches).
+    shouldPinBottomRef.current = true;
+    const timer = setTimeout(() => { shouldPinBottomRef.current = false; }, 3000);
     requestAnimationFrame(() => scrollToBottom());
+    return () => clearTimeout(timer);
   }, [activeNet, activeChanName]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-scroll when content height changes while pinned (e.g. snippets loading)
+  useEffect(() => {
+    const el = msgsRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (shouldPinBottomRef.current || isAtBottomRef.current) scrollToBottom();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [activeNet, activeChanName, scrollToBottom]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // When new messages arrive: scroll if at bottom, else increment badge
   const prevMsgLenRef = useRef(0);
@@ -3603,6 +3619,8 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
       isAtBottomRef.current = atBottom;
       if (atBottom) setNewMsgCount(0);
+      // If user scrolls up, cancel pin-to-bottom mode
+      if (!atBottom) shouldPinBottomRef.current = false;
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
