@@ -39,7 +39,7 @@ const (
 	writeTimeout      = 10 * time.Second
 	keepaliveInterval = 30 * time.Second  // how often we PING the upstream
 	keepaliveTimeout  = 90 * time.Second  // how long without any data before giving up
-	BufferSize        = 500               // lines retained per channel/server
+	BufferSize        = 1000              // lines retained per channel/server
 	maxBackoff        = 30 * time.Second   // cap at 30s so reconnect is prompt
 	initialBackoff    = 2 * time.Second
 )
@@ -123,6 +123,10 @@ type Conn struct {
 	// keepalive tracking
 	lastPong time.Time
 
+	// persistChansFn is called (in a goroutine) after joinedChans changes so the
+	// channel list survives restarts. Set by Manager.startConn; may be nil.
+	persistChansFn func([]string)
+
 	// Developer options
 	ircDebug bool // log raw ← recv and → send lines
 
@@ -137,13 +141,20 @@ type Conn struct {
 }
 
 func newConn(n *networks.Network, store *networks.Store, mgr *Manager, logFn LogFunc) *Conn {
+	// Seed joinedChans from DB-persisted list so channels survive restarts.
+	joined := make(map[string]bool, len(n.JoinedChans))
+	for _, ch := range n.JoinedChans {
+		if ch != "" {
+			joined[ch] = true
+		}
+	}
 	return &Conn{
 		net:         n,
 		store:       store,
 		manager:     mgr,
 		logFn:       logFn,
 		ircDebug:    mgr.ircDebug,
-		joinedChans: make(map[string]bool),
+		joinedChans: joined,
 		buffers:     make(map[string]*RingBuffer),
 		subs:        make(map[string]*subscriber),
 		stopCh:      make(chan struct{}),
@@ -211,20 +222,37 @@ func (c *Conn) Subscribe(id string, send SendFunc) {
 		}
 	}
 
-	connected := c.connected
-	nick := c.currentNick
 	c.mu.Unlock()
 
 	// ── Phase 2: send replay WITHOUT holding the lock ─────────────────────────
 	// The upstream readLoop can now continue processing IRC lines (keepalive
 	// PINGs, PRIVMSGs, etc.) while we push potentially hundreds of buffered
 	// lines to this subscriber.
+	//
+	// Send an early status hint so the UI can update immediately while the
+	// replay is loading. This may be stale if the upstream IRC connection
+	// transitions (e.g. "connecting" → "connected") during the replay below,
+	// so we follow up with a fresh authoritative status after the replay.
 	send(fmt.Sprintf(":*bnc* NOTICE * :status:%s", status))
 	for _, line := range replay {
 		send(line)
 	}
-	if connected {
-		send(fmt.Sprintf(":*bnc* NOTICE * :replay-done nick:%s", nick))
+
+	// ── Final authoritative status ────────────────────────────────────────────
+	// Re-read live state after the replay so we always close with the truth.
+	// This eliminates a race where the upstream IRC session completes its 001
+	// handshake *during* Phase 2: the fanOut("status:connected") lands in
+	// sendCh *before* our snapshot-based "status:connecting" send above, so
+	// without this re-check the client would end up stuck in "connecting".
+	c.mu.Lock()
+	finalConnected := c.connected
+	finalNick := c.currentNick
+	c.mu.Unlock()
+	finalStatus := string(c.store.StatusOf(c.net.ID))
+
+	send(fmt.Sprintf(":*bnc* NOTICE * :status:%s", finalStatus))
+	if finalConnected {
+		send(fmt.Sprintf(":*bnc* NOTICE * :replay-done nick:%s", finalNick))
 	}
 }
 
@@ -860,6 +888,7 @@ func (c *Conn) intercept(line string) {
 			c.mu.Lock()
 			c.joinedChans[ch] = true
 			c.mu.Unlock()
+			c.saveJoinedChans()
 			// Request server-side scrollback if chathistory is negotiated
 			go func() {
 				// Small delay to let the server finish sending its JOIN burst (353, 366, etc.)
@@ -886,12 +915,14 @@ func (c *Conn) intercept(line string) {
 					c.mu.Lock()
 					delete(c.joinedChans, ch)
 					c.mu.Unlock()
+					c.saveJoinedChans()
 				}
 			}
 		} else if from == me {
 			c.mu.Lock()
 			delete(c.joinedChans, ch)
 			c.mu.Unlock()
+			c.saveJoinedChans()
 		}
 
 	case "471", "473", "474", "475", "477", "485":
@@ -995,6 +1026,21 @@ func (c *Conn) sendRaw(line string) {
 		log.Printf("bnc[%s]: write error, closing upstream: %v", c.net.ID, err)
 		tc.Close() // read loop will detect EOF and trigger reconnect
 	}
+}
+
+// saveJoinedChans snapshots the current joinedChans map and calls persistChansFn
+// asynchronously so the channel list survives restarts. No-op if no persist fn set.
+func (c *Conn) saveJoinedChans() {
+	if c.persistChansFn == nil {
+		return
+	}
+	c.mu.Lock()
+	chans := make([]string, 0, len(c.joinedChans))
+	for ch := range c.joinedChans {
+		chans = append(chans, ch)
+	}
+	c.mu.Unlock()
+	go c.persistChansFn(chans)
 }
 
 func (c *Conn) notice(text string) {

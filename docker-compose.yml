@@ -41,6 +41,8 @@ services:
       - DATABASE_URL=postgres://korechat:korechat@postgres:5432/korechat?sslmode=disable
     volumes:
       - ./data/avatars:/data/avatars
+      - ./data/uploads:/data/uploads
+      - ./data/snippets:/data/snippets
     networks:
       - korechat
     depends_on:

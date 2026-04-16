@@ -42,6 +42,10 @@ type Network struct {
 	// Auto-join channels on connect (comma-separated or slice)
 	AutoJoin []string `json:"auto_join"`
 
+	// JoinedChans tracks channels the BNC has dynamically joined (e.g. via /join).
+	// Persisted to DB so they survive restarts. Managed by the BNC, not the user.
+	JoinedChans []string `json:"joined_chans"`
+
 	// OnConnect commands executed after welcome (001), before auto-join.
 	// Each entry is a raw IRC command or a /slash command.
 	// Examples: "PRIVMSG NickServ :IDENTIFY mypass", "/oper admin pass"

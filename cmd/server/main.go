@@ -43,6 +43,11 @@ func main() {
 	ns := networks.NewStore()
 	bm := bnc.NewManager(ns)
 	bm.SetIRCDebug(cfg.IRCDebug)
+	bm.SetPersistChannelsFn(func(networkID string, chans []string) {
+		if err := db.SetJoinedChannels(networkID, chans); err != nil {
+			log.Printf("bnc: persist joined channels for %s: %v", networkID, err)
+		}
+	})
 	if cfg.IRCDebug {
 		log.Println("IRC_DEBUG enabled — raw IRC lines will be logged")
 	}
@@ -61,8 +66,10 @@ func main() {
 
 	// ── HTTP ──────────────────────────────────────────────────────────────────
 	wsServer := ws.NewServer(h, bm, cfg.ServerName)
-	avatarDir := "/data/avatars"
-	api := handlers.NewAPI(h, db, bm, msgLogger, cfg.JWTSecret, cfg.ServerName, avatarDir)
+	avatarDir  := "/data/avatars"
+	uploadDir  := "/data/uploads"
+	snippetDir := "/data/snippets"
+	api := handlers.NewAPI(h, db, bm, msgLogger, cfg.JWTSecret, cfg.ServerName, avatarDir, uploadDir, snippetDir)
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -81,6 +88,10 @@ func main() {
 	r.Get("/api/v1/users/avatar/{username}", api.GetAvatarByUsername)
 	// Serve uploaded avatar files
 	r.Handle("/avatars/*", http.StripPrefix("/avatars/", http.FileServer(http.Dir(avatarDir))))
+	// Serve uploaded photo files
+	r.Handle("/uploads/*", http.StripPrefix("/uploads/", http.FileServer(http.Dir(uploadDir))))
+	// Serve code snippets (public — linked to from IRC messages)
+	r.Handle("/snippets/*", http.StripPrefix("/snippets/", http.FileServer(http.Dir(snippetDir))))
 
 	// ── Authenticated routes ──────────────────────────────────────────────────
 	r.Group(func(r chi.Router) {
@@ -92,6 +103,10 @@ func main() {
 		// Self-service profile
 		r.Patch("/api/v1/profile", api.UpdateProfile)
 		r.Post("/api/v1/profile/avatar", api.UploadAvatar)
+
+		// Photo and snippet uploads for channel messages
+		r.Post("/api/v1/upload/photo", api.UploadPhoto)
+		r.Post("/api/v1/upload/snippet", api.UploadSnippet)
 
 		r.Route("/api/v1/networks", func(r chi.Router) {
 			r.Get("/", api.ListNetworks)

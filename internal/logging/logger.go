@@ -127,16 +127,17 @@ func (l *Logger) Log(userID, networkID, networkName, rawLine string) {
 // ─── Querying ─────────────────────────────────────────────────────────────────
 
 type QueryParams struct {
-	NetworkID string
-	Channel   string
-	Nick      string
-	Search    string
-	MsgType   string
-	DateFrom  time.Time
-	DateTo    time.Time
-	Limit     int
-	Offset    int
-	Ascending bool // if true, return oldest-first (for history display)
+	NetworkID  string
+	Channel    string
+	Nick       string
+	Search     string
+	MsgType    string
+	DateFrom   time.Time
+	DateTo     time.Time
+	Limit      int
+	Offset     int
+	Ascending  bool // if true, return oldest-first (for history display)
+	ServerOnly bool // if true, return only entries with channel="" (server/DM NOTICEs)
 }
 
 type QueryResult struct {
@@ -493,8 +494,10 @@ func (l *Logger) buildWhere(userID string, p QueryParams) (string, []interface{}
 	if p.NetworkID != "" {
 		add("network_id = $%d", p.NetworkID)
 	}
-	if p.Channel != "" {
-		add("channel ILIKE $%d", p.Channel)
+	if p.ServerOnly {
+		conds = append(conds, "channel = ''")
+	} else if p.Channel != "" {
+		add("lower(channel) = lower($%d)", p.Channel)
 	}
 	if p.Nick != "" {
 		add("nick ILIKE $%d", p.Nick+"%")
