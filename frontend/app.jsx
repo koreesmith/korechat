@@ -3532,8 +3532,8 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         if (!conn?.ready) { sys("Not connected."); break; }
         if (!args[0]) { sys("Usage: /whois <nick>"); break; }
         conn.send(`WHOIS ${args[0]}`);
-        ensureChan(netId,STATUS_CHAN);
-        dispatch({ type:"SET_ACTIVE_CHAN", netId, chan:STATUS_CHAN });
+        ensureChan(netId, args[0]);
+        dispatch({ type:"SET_ACTIVE_CHAN", netId, chan:args[0] });
         break;
 
       case "/who": {
@@ -3860,7 +3860,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             }}/>
             <CtxItem icon="ℹ" label="WHOIS" onClick={()=>{
               const c=connections.current[dmCtxMenu.netId];
-              if (c) c.send(`WHOIS ${dmCtxMenu.nick}`);
+              if (c) { c.send(`WHOIS ${dmCtxMenu.nick}`); ensureChan(dmCtxMenu.netId,dmCtxMenu.nick); dispatch({type:"SET_ACTIVE_NET",id:dmCtxMenu.netId}); dispatch({type:"SET_ACTIVE_CHAN",netId:dmCtxMenu.netId,chan:dmCtxMenu.nick}); }
               setDmCtxMenu(null);
             }}/>
             <CtxItem icon="🔇" label="Ignore" color={T.textDim} onClick={()=>{
@@ -3899,7 +3899,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             }}/>
             <CtxItem icon="ℹ" label="WHOIS" onClick={()=>{
               const c=connections.current[msgNickMenu.netId];
-              if (c) c.send(`WHOIS ${msgNickMenu.nick}`);
+              if (c) { c.send(`WHOIS ${msgNickMenu.nick}`); ensureChan(msgNickMenu.netId,msgNickMenu.nick); dispatch({type:"SET_ACTIVE_NET",id:msgNickMenu.netId}); dispatch({type:"SET_ACTIVE_CHAN",netId:msgNickMenu.netId,chan:msgNickMenu.nick}); }
               setMsgNickMenu(null);
             }}/>
             <CtxItem icon="🔇" label="Ignore" color={T.textDim} onClick={()=>{
