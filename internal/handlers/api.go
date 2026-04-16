@@ -27,28 +27,30 @@ import (
 )
 
 type API struct {
-	hub       *hub.Hub
-	store     *store.DB
-	bncMgr    *bnc.Manager
-	logger    *logging.Logger
-	jwtSecret string
-	srvName   string
-	startedAt time.Time
-	avatarDir string
-	uploadDir string
+	hub        *hub.Hub
+	store      *store.DB
+	bncMgr     *bnc.Manager
+	logger     *logging.Logger
+	jwtSecret  string
+	srvName    string
+	startedAt  time.Time
+	avatarDir  string
+	uploadDir  string
+	snippetDir string
 }
 
-func NewAPI(h *hub.Hub, s *store.DB, bm *bnc.Manager, logger *logging.Logger, jwtSecret, serverName, avatarDir, uploadDir string) *API {
+func NewAPI(h *hub.Hub, s *store.DB, bm *bnc.Manager, logger *logging.Logger, jwtSecret, serverName, avatarDir, uploadDir, snippetDir string) *API {
 	return &API{
-		hub:       h,
-		store:     s,
-		bncMgr:    bm,
-		logger:    logger,
-		jwtSecret: jwtSecret,
-		srvName:   serverName,
-		startedAt: time.Now(),
-		avatarDir: avatarDir,
-		uploadDir: uploadDir,
+		hub:        h,
+		store:      s,
+		bncMgr:     bm,
+		logger:     logger,
+		jwtSecret:  jwtSecret,
+		srvName:    serverName,
+		startedAt:  time.Now(),
+		avatarDir:  avatarDir,
+		uploadDir:  uploadDir,
+		snippetDir: snippetDir,
 	}
 }
 
@@ -480,6 +482,50 @@ func (a *API) UploadPhoto(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"url": photoURL})
 }
 
+// UploadSnippet POST /api/v1/upload/snippet
+// Accepts a form field "code" (plain text) and optional "lang" (language hint).
+// Stores the snippet under snippetDir and returns the public URL with ?lang=.
+func (a *API) UploadSnippet(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.ClaimsFromCtx(r.Context())
+
+	if err := r.ParseMultipartForm(1 << 20); err != nil { // 1 MB limit
+		writeErr(w, http.StatusBadRequest, "snippet too large or invalid form")
+		return
+	}
+
+	code := r.FormValue("code")
+	if code == "" {
+		writeErr(w, http.StatusBadRequest, "missing code field")
+		return
+	}
+	lang := strings.TrimSpace(r.FormValue("lang"))
+
+	if err := os.MkdirAll(a.snippetDir, 0755); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not create snippet directory")
+		return
+	}
+
+	var randBytes [8]byte
+	if _, err := rand.Read(randBytes[:]); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not generate filename")
+		return
+	}
+	filename := fmt.Sprintf("%s-%x", claims.UserID, randBytes)
+	destPath := filepath.Join(a.snippetDir, filename)
+
+	if err := os.WriteFile(destPath, []byte(code), 0644); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not save snippet")
+		return
+	}
+
+	snippetURL := "/snippets/" + filename
+	if lang != "" {
+		snippetURL += "?lang=" + lang
+	}
+	log.Printf("upload: user %s uploaded snippet %s (lang=%s)", claims.UserID, filename, lang)
+	writeJSON(w, http.StatusOK, map[string]string{"url": snippetURL})
+}
+
 // GetAvatarByUsername GET /api/v1/users/avatar/{username}  (public, no auth)
 // Resolves an IRC nick or KoreChat username to an avatar URL.
 // Lookup order: (1) exact username match, (2) configured IRC nick match.
@@ -688,6 +734,9 @@ func (a *API) QueryLogs(w http.ResponseWriter, r *http.Request) {
 
 	if q.Get("order") == "asc" {
 		p.Ascending = true
+	}
+	if q.Get("server_only") == "true" {
+		p.ServerOnly = true
 	}
 	result, err := a.logger.Query(claims.UserID, p)
 	if err != nil {

@@ -160,6 +160,7 @@ func (s *DB) migrate() error {
 		CREATE INDEX IF NOT EXISTS message_logs_user_ts   ON message_logs(user_id, timestamp DESC);
 		CREATE INDEX IF NOT EXISTS message_logs_user_net  ON message_logs(user_id, network_id);
 		CREATE INDEX IF NOT EXISTS message_logs_user_chan ON message_logs(user_id, channel);
+		CREATE INDEX IF NOT EXISTS message_logs_chan_ts   ON message_logs(user_id, network_id, lower(channel), timestamp DESC);
 	`); err != nil {
 		return fmt.Errorf("migrate v5 (logging): %w", err)
 	}

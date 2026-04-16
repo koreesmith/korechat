@@ -293,6 +293,12 @@ const API = {
       method:"POST", body:fd, credentials:"include"
     }).then(r => r.json());
   },
+  uploadSnippet: (code, lang) => {
+    const fd = new FormData(); fd.append("code", code); if (lang) fd.append("lang", lang);
+    return fetch(`${API_BASE.replace("/networks","")}/upload/snippet`, {
+      method:"POST", body:fd, credentials:"include"
+    }).then(r => r.json());
+  },
 };
 
 // ─── WebSocket factory ────────────────────────────────────────────────────────
@@ -448,25 +454,34 @@ function renderText(text, myNick, T, onLinkClick) {
   text = text
     .replace(/\x03(\d{1,2}(,\d{1,2})?)?/g, "")
     .replace(/[\x02\x1D\x1F\x16\x11\x0F]/g, "");
-  const URL_RE   = /(https?:\/\/[^\s<>"]+)/g;
-  const IMAGE_RE = /\.(jpe?g|png|gif|webp)(\?[^\s]*)?$/i;
+  const URL_RE     = /(https?:\/\/[^\s<>"]+)/g;
+  const IMAGE_RE   = /\.(jpe?g|png|gif|webp)(\?[^\s]*)?$/i;
+  const SNIPPET_RE = /\/snippets\/[a-zA-Z0-9_-]+/;
   const parts = []; let key = 0, last = 0, m;
   URL_RE.lastIndex = 0;
   while ((m = URL_RE.exec(text)) !== null) {
     if (m.index > last) parts.push(<span key={key++}>{text.slice(last, m.index)}</span>);
     const url = m[1];
-    parts.push(<a key={key++} href={url} target="_blank" rel="noopener noreferrer"
-      onClick={onLinkClick ? e => { e.preventDefault(); onLinkClick(url); } : undefined}
-      style={{color:accent,textDecoration:"underline dotted",cursor:"pointer"}}>{url}</a>);
-    if (IMAGE_RE.test(url)) {
+    if (SNIPPET_RE.test(url)) {
+      // Snippet URL: render inline code block, suppress raw URL text
+      let snippetBase = url, snippetLang = "";
+      try { const u = new URL(url); snippetLang = u.searchParams.get("lang")||""; snippetBase = u.origin + u.pathname; } catch {}
+      parts.push(<SnippetBlock key={key++} url={snippetBase} lang={snippetLang} />);
+    } else if (IMAGE_RE.test(url)) {
+      // Image URL: show only the inline photo (clickable), suppress the raw URL text
       parts.push(
         <div key={key++} style={{marginTop:6}}>
-          <img src={url} alt="" loading="lazy"
-            onClick={e=>{ e.preventDefault(); window.open(url,"_blank","noopener,noreferrer"); }}
-            style={{maxWidth:400,maxHeight:300,borderRadius:6,display:"block",cursor:"pointer",
-              border:`1px solid ${T?.border||"#ffffff18"}`}}/>
+          <a href={url} target="_blank" rel="noopener noreferrer">
+            <img src={url} alt="" loading="lazy"
+              style={{maxWidth:400,maxHeight:300,borderRadius:6,display:"block",cursor:"pointer",
+                border:`1px solid ${T?.border||"#ffffff18"}`}}/>
+          </a>
         </div>
       );
+    } else {
+      parts.push(<a key={key++} href={url} target="_blank" rel="noopener noreferrer"
+        onClick={onLinkClick ? e => { e.preventDefault(); onLinkClick(url); } : undefined}
+        style={{color:accent,textDecoration:"underline dotted",cursor:"pointer"}}>{url}</a>);
     }
     last = m.index + url.length;
   }
@@ -802,24 +817,59 @@ function DaySeparator({ label }) {
   );
 }
 
-// MembershipGroup: collapsible block for consecutive join/part/quit/kick events.
-// Always collapsed by default — click the summary line to expand.
+// MembershipGroup: collapsible block for consecutive join/part/quit/kick/mode events.
+// Always collapsed by default — click anywhere on the summary row to expand.
 function MembershipGroup({ msgs }) {
   const T=useTheme();
   const [open, setOpen] = useState(false);
   if (msgs.length === 0) return null;
 
-  // Build a compact summary: "→ alice, ← bob, ✕ carol"
-  const summary = msgs.map(m => m.text).join("  ·  ");
-  const label = msgs.length === 1
-    ? msgs[0].text
-    : `${msgs.length} membership events`;
+  // Single event: show inline, no toggle needed.
+  if (msgs.length === 1) {
+    return (
+      <div style={{padding:"1px 16px 1px 58px",userSelect:"text"}}>
+        <span style={{fontSize:12,color:T.textFaint,fontStyle:"italic",
+          fontFamily:"'JetBrains Mono',monospace"}}>{msgs[0].text}</span>
+        {msgs[0].time&&<span style={{fontSize:10,color:T.textFaint,marginLeft:6,
+          fontFamily:"'JetBrains Mono',monospace"}}>{fmtTime(msgs[0].time)}</span>}
+      </div>
+    );
+  }
+
+  // Build human-readable summary counts.
+  let joined=0, left=0, kicked=0, modes=0;
+  for (const m of msgs) {
+    const t = m.text||"";
+    if (t.includes("kicked"))                                      kicked++;
+    else if (t.startsWith("→") || t.includes("joined"))           joined++;
+    else if (t.startsWith("←") || t.startsWith("✕") ||
+             t.includes("left") || t.includes("quit"))            left++;
+    else if (t.includes("mode"))                                   modes++;
+  }
+  const parts=[];
+  if (joined) parts.push(`${joined} joined`);
+  if (left)   parts.push(`${left} left`);
+  if (kicked) parts.push(`${kicked} kicked`);
+  if (modes)  parts.push(`${modes} mode${modes>1?"s":""} set`);
+  if (!parts.length) parts.push(`${msgs.length} events`);
+  const label = parts.join(", ");
 
   return (
     <div style={{padding:"0 16px 0 58px",userSelect:"none"}}>
-      {open ? (
+      {/* Summary row — arrow stays at right whether open or closed */}
+      <div onClick={()=>setOpen(o=>!o)}
+        style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",padding:"1px 0"}}
+        onMouseEnter={e=>e.currentTarget.style.opacity="1"}
+        onMouseLeave={e=>e.currentTarget.style.opacity="0.85"}>
+        <span style={{fontSize:11,color:T.textFaint,fontStyle:"italic",
+          fontFamily:"'JetBrains Mono',monospace",flex:1}}>{label}</span>
+        <span style={{fontSize:10,color:T.textFaint,fontFamily:"'JetBrains Mono',monospace",
+          flexShrink:0,opacity:0.7}}>{open?"▼":"▶"}</span>
+      </div>
+      {/* Expanded detail */}
+      {open&&(
         <div style={{borderLeft:`2px solid ${T.borderFaint}`,paddingLeft:8,margin:"2px 0"}}>
-          {msgs.map((m,i) => (
+          {msgs.map((m,i)=>(
             <div key={i} style={{display:"flex",alignItems:"baseline",gap:8,padding:"1px 0"}}>
               <span style={{fontSize:12,color:T.textFaint,fontStyle:"italic",
                 fontFamily:"'JetBrains Mono',monospace",flex:1,userSelect:"text"}}>{m.text}</span>
@@ -827,26 +877,50 @@ function MembershipGroup({ msgs }) {
                 fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>{fmtTime(m.time)}</span>}
             </div>
           ))}
-          <span onClick={()=>setOpen(false)}
-            style={{fontSize:10,color:T.textFaint,cursor:"pointer",
-              fontFamily:"'JetBrains Mono',monospace",fontStyle:"italic",userSelect:"none",
-              display:"inline-block",marginTop:1}}
-            onMouseEnter={e=>e.currentTarget.style.color=T.textDim}
-            onMouseLeave={e=>e.currentTarget.style.color=T.textFaint}>
-            ▲ hide
-          </span>
         </div>
-      ) : (
-        <span onClick={()=>setOpen(true)}
-          title={summary}
-          style={{fontSize:11,color:T.textFaint,cursor:"pointer",
-            fontFamily:"'JetBrains Mono',monospace",fontStyle:"italic",userSelect:"none",
-            display:"inline-block",padding:"1px 0"}}
-          onMouseEnter={e=>e.currentTarget.style.color=T.textDim}
-          onMouseLeave={e=>e.currentTarget.style.color=T.textFaint}>
-          ▶ {label}
-        </span>
       )}
+    </div>
+  );
+}
+
+// ─── SnippetBlock ─────────────────────────────────────────────────────────────
+// Renders a code snippet fetched from /snippets/{id} with a copy button.
+function SnippetBlock({ url, lang }) {
+  const T = useTheme();
+  const [code, setCode] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    fetch(url, { credentials:"include" })
+      .then(r => r.ok ? r.text() : null)
+      .then(text => setCode(text ?? ""))
+      .catch(() => setCode(""));
+  }, [url]);
+
+  const copy = () => {
+    if (code == null) return;
+    navigator.clipboard?.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const label = lang || "code";
+  return (
+    <div style={{marginTop:6,borderRadius:6,overflow:"hidden",border:`1px solid ${T.border}`,maxWidth:560}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+        padding:"3px 10px",background:T.bgPanel,borderBottom:`1px solid ${T.border}`}}>
+        <span style={{fontSize:11,color:T.textFaint,fontFamily:"'JetBrains Mono',monospace"}}>{label}</span>
+        <button onClick={copy} style={{background:"none",border:"none",cursor:"pointer",
+          fontSize:11,color:copied?T.green:T.textDim,fontFamily:"'JetBrains Mono',monospace",padding:"1px 4px"}}>
+          {copied ? "copied!" : "copy"}
+        </button>
+      </div>
+      {code === null
+        ? <div style={{padding:"10px 14px",fontSize:12,color:T.textFaint,fontFamily:"'JetBrains Mono',monospace"}}>Loading…</div>
+        : <pre style={{margin:0,padding:"10px 14px",overflowX:"auto",background:T.bg,
+            fontSize:13,fontFamily:"'JetBrains Mono',monospace",color:T.text,lineHeight:1.5,
+            maxHeight:320,overflowY:"auto"}}><code>{code}</code></pre>
+      }
     </div>
   );
 }
@@ -856,8 +930,8 @@ function MsgRow({ msg, prev, myNick, onNickClick }) {
   const [pendingLink, setPendingLink] = useState(null);
   if (msg.type==="system") return (
     <div style={{padding:"2px 16px 2px 58px",userSelect:"text"}}>
-      <span style={{fontSize:13,color:T.textDim,fontStyle:"italic",fontFamily:"'JetBrains Mono',monospace"}}>{msg.text}</span>
-      {msg.time&&<span style={{fontSize:11,color:T.textDim,marginLeft:6,fontFamily:"'JetBrains Mono',monospace"}}>{fmtTime(msg.time)}</span>}
+      <span style={{fontSize:13,color:T.textDim,fontStyle:"italic",fontFamily:"'JetBrains Mono',monospace",whiteSpace:"pre-line"}}>{msg.text}</span>
+      {msg.time&&<span style={{fontSize:11,color:T.textDim,marginLeft:6,fontFamily:"'JetBrains Mono',monospace",verticalAlign:"top"}}>{fmtTime(msg.time)}</span>}
     </div>
   );
   const cont=prev?.type==="message"&&prev.nick===msg.nick&&(new Date(msg.time)-new Date(prev.time))<300000;
@@ -1770,13 +1844,23 @@ function ProfileModal({ currentUser, onClose, onUpdated }) {
 }
 
 // ─── Input bar ────────────────────────────────────────────────────────────────
-function InputBar({ onSend, onPhotoUpload, label, nick, disabled }) {
+const SNIPPET_LANGS = [
+  ["","Plain text"],["javascript","JavaScript"],["typescript","TypeScript"],
+  ["python","Python"],["go","Go"],["rust","Rust"],["java","Java"],
+  ["c","C"],["cpp","C++"],["html","HTML"],["css","CSS"],
+  ["json","JSON"],["bash","Bash/Shell"],["sql","SQL"],["yaml","YAML"],
+];
+
+function InputBar({ onSend, onPhotoUpload, onCodeUpload, label, nick, disabled }) {
   const [val,        setVal]      = useState("");
   const [hist,       setHist]     = useState([]);
   const [histIdx,    setHistIdx]  = useState(-1);
   const [suggest,    setSuggest]  = useState([]);
   const [sugIdx,     setSugIdx]   = useState(0);
   const [uploading,  setUploading]= useState(false);
+  const [codeModal,  setCodeModal]= useState(false);
+  const [codeText,   setCodeText] = useState("");
+  const [codeLang,   setCodeLang] = useState("");
   const inputRef  = useRef(null);
   const photoRef  = useRef(null);
 
@@ -1809,9 +1893,50 @@ function InputBar({ onSend, onPhotoUpload, label, nick, disabled }) {
     finally { setUploading(false); }
   };
 
+  const submitCode = async () => {
+    const code = codeText.trim();
+    if (!code || !onCodeUpload) return;
+    setCodeModal(false); setCodeText(""); setCodeLang("");
+    setUploading(true);
+    try { await onCodeUpload(code, codeLang); }
+    finally { setUploading(false); }
+  };
+
   const T=useTheme();
   return (
     <div style={{padding:"10px 14px 12px",borderTop:`1px solid ${T.borderMid}`,background:T.bgInputWrap,flexShrink:0}}>
+      {codeModal&&(
+        <div style={{position:"fixed",inset:0,background:"#00000088",zIndex:300,display:"flex",
+          alignItems:"center",justifyContent:"center"}}
+          onClick={e=>e.target===e.currentTarget&&setCodeModal(false)}>
+          <div style={{background:T.bgPanel,border:`1px solid ${T.border}`,borderRadius:10,
+            width:560,maxWidth:"calc(100vw - 32px)",padding:20,boxShadow:"0 8px 40px #0008"}}>
+            <div style={{fontWeight:700,fontSize:14,color:T.textBright,marginBottom:12}}>Paste code block</div>
+            <select value={codeLang} onChange={e=>setCodeLang(e.target.value)}
+              style={{marginBottom:8,background:T.bgInput,border:`1px solid ${T.border}`,
+                color:T.text,borderRadius:5,padding:"5px 8px",fontSize:13,width:"100%",
+                fontFamily:"'JetBrains Mono',monospace"}}>
+              {SNIPPET_LANGS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+            </select>
+            <textarea value={codeText} onChange={e=>setCodeText(e.target.value)}
+              onKeyDown={e=>{ if(e.key==="Escape") setCodeModal(false); }}
+              placeholder="Paste your code here…"
+              autoFocus
+              style={{width:"100%",height:220,background:T.bg,border:`1px solid ${T.border}`,
+                color:T.text,borderRadius:5,padding:"10px 12px",fontSize:13,resize:"vertical",
+                fontFamily:"'JetBrains Mono',monospace",lineHeight:1.5,boxSizing:"border-box"}}/>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
+              <button onClick={()=>setCodeModal(false)}
+                style={{background:"none",border:`1px solid ${T.border}`,color:T.textDim,
+                  borderRadius:5,padding:"6px 16px",cursor:"pointer",fontSize:13}}>Cancel</button>
+              <button onClick={submitCode} disabled={!codeText.trim()}
+                style={{background:T.accent,border:"none",color:"#0a1628",fontWeight:700,
+                  borderRadius:5,padding:"6px 16px",cursor:codeText.trim()?"pointer":"default",
+                  fontSize:13,opacity:codeText.trim()?1:0.5}}>Send</button>
+            </div>
+          </div>
+        </div>
+      )}
       {suggest.length>0&&(
         <div style={{background:T.bgPanel,border:`1px solid ${T.accentDim}`,borderRadius:6,
           padding:"4px 0",marginBottom:8,maxHeight:200,overflowY:"auto"}}>
@@ -1872,6 +1997,20 @@ function InputBar({ onSend, onPhotoUpload, label, nick, disabled }) {
               </svg>
             </button>
           </>
+        )}
+        {onCodeUpload&&(
+          <button title="Paste code block" disabled={disabled||uploading}
+            onClick={()=>setCodeModal(true)}
+            style={{background:"none",border:"none",cursor:(disabled||uploading)?"default":"pointer",
+              padding:"2px 4px",display:"flex",alignItems:"center",opacity:(disabled||uploading)?0.4:0.7,
+              flexShrink:0,color:T.textDim,transition:"opacity 0.15s"}}
+            onMouseEnter={e=>{if(!disabled&&!uploading)e.currentTarget.style.opacity="1";}}
+            onMouseLeave={e=>{if(!disabled&&!uploading)e.currentTarget.style.opacity="0.7";}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="16 18 22 12 16 6"/>
+              <polyline points="8 6 2 12 8 18"/>
+            </svg>
+          </button>
         )}
       </div>
     </div>
@@ -2738,6 +2877,8 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   const messagesRef  = useRef({});  // always-current mirror of state.messages
   const batchBufRef  = useRef({});  // netId+batchId → {type, chan, msgs[]}
   const namesBufRef  = useRef({});  // netId+chan → {nick: prefix} accumulator for 353/366
+  const motdBufRef   = useRef({});  // netId → string[] accumulator for 375/372 → 376 grouping
+  const whoisBufRef  = useRef({});  // netId → {nick, lines[]} accumulator for WHOIS response grouping
   const bottomRef    = useRef(null);
   const msgsRef      = useRef(null);
 
@@ -2763,6 +2904,12 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   }, []);
 
   // ── History loading ─────────────────────────────────────────────────────────
+  // replayDoneRef: tracks which networks have finished BNC replay so we know
+  // it's safe to trigger history fetches on new JOINs without racing the batch.
+  const replayDoneRef = useRef({});
+  // loadingChans: keys of channels currently fetching history (for UI feedback).
+  const [loadingChans, setLoadingChans] = useState({});
+
   // loadChannelHistory — populate a channel/DM window with past messages.
   //
   // Sequence:
@@ -2791,7 +2938,12 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
     loadedHistoryRef.current.add(key);
 
     const isChannel = chan.startsWith("#") || chan.startsWith("&");
-    const isDM = !isChannel && chan !== "__status__";
+    const isDM = !isChannel && chan !== STATUS_CHAN;
+
+    // STATUS_CHAN history is loaded separately by loadServerHistory.
+    if (!isChannel && !isDM) return;
+
+    setLoadingChans(prev => ({...prev, [key]: true}));
 
     // Find the oldest timestamp already in state for this channel so we only
     // ask the log for entries that pre-date what the ring buffer gave us.
@@ -2813,9 +2965,12 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       params.set("date_to_iso", new Date(oldestExisting).toISOString());
     }
 
+    const clearLoading = () => setLoadingChans(prev => { const n={...prev}; delete n[key]; return n; });
+
     fetch(`/api/v1/logs?${params}`, { credentials:"include" })
       .then(r => (r.ok ? r.json() : null))
       .then(data => {
+        clearLoading();
         if (!data?.entries?.length) return;
         const MEMBERSHIP_TYPES = new Set(["JOIN","PART","QUIT","KICK","MODE"]);
         const msgs = data.entries.map(e => ({
@@ -2840,6 +2995,48 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         setTimeout(() => {
           conn.send(`CHATHISTORY LATEST ${chan} timestamp=${newestLogTs} 100`);
         }, 200);
+      })
+      .catch(() => { clearLoading(); });
+  }, [ensureChan, setLoadingChans]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // loadServerHistory loads server-level log entries (channel="") for the
+  // STATUS_CHAN — things like NickServ notices, server NOTICEs addressed
+  // to the user nick, etc. Uses the server_only=true API filter.
+  const loadServerHistory = useCallback((netId, { limit=150, force=false }={}) => {
+    const key = `${netId}::${STATUS_CHAN}::server`;
+    if (!force && loadedHistoryRef.current.has(key)) return;
+    if (force) loadedHistoryRef.current.delete(key);
+    loadedHistoryRef.current.add(key);
+
+    const existingMsgs = messagesRef.current[`${netId}::${STATUS_CHAN}`] || [];
+    const validTimes = existingMsgs
+      .map(m => (m.time ? new Date(m.time).getTime() : 0))
+      .filter(t => t > 0);
+    const oldestExisting = validTimes.length ? Math.min(...validTimes) : null;
+
+    const params = new URLSearchParams({
+      network_id: netId,
+      server_only: "true",
+      limit: String(limit),
+      order: "asc",
+    });
+    if (oldestExisting !== null) {
+      params.set("date_to_iso", new Date(oldestExisting).toISOString());
+    }
+
+    fetch(`/api/v1/logs?${params}`, { credentials:"include" })
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => {
+        if (!data?.entries?.length) return;
+        const msgs = data.entries.map(e => ({
+          type: "message",
+          nick:  e.nick,
+          text:  e.text,
+          time:  e.timestamp,
+          id:    `log-${e.id}`,
+        }));
+        ensureChan(netId, STATUS_CHAN);
+        dispatch({ type:"PREPEND_MSGS", netId, chan:STATUS_CHAN, msgs });
       })
       .catch(() => {});
   }, [ensureChan]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -2867,10 +3064,22 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         break;
       }
 
-      case "372": case "375": case "376":
-        ensureChan(netId, STATUS_CHAN);
-        sys(STATUS_CHAN, params[params.length-1]||"");
+      case "375": // MOTD start — begin buffering
+        motdBufRef.current[netId] = [params[params.length-1]||""];
         break;
+      case "372": // MOTD line — append to buffer
+        (motdBufRef.current[netId] = motdBufRef.current[netId] || [])
+          .push(params[params.length-1]||"");
+        break;
+      case "376": { // End of MOTD — flush buffer as one grouped message
+        const lines = motdBufRef.current[netId];
+        delete motdBufRef.current[netId];
+        if (lines?.length) {
+          ensureChan(netId, STATUS_CHAN);
+          sys(STATUS_CHAN, lines.join("\n"));
+        }
+        break;
+      }
 
       case "432": case "433":
         ensureChan(netId, STATUS_CHAN);
@@ -2898,8 +3107,12 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         dispatch({ type:"CHAN_JOIN", netId, chan });
         if (from===me) {
           dispatch({ type:"SET_ACTIVE_CHAN", netId, chan });
-          // History is loaded by replay-done after the full BNC replay completes.
-          // Loading here would race with the replay sequence.
+          // After the initial BNC replay, load history automatically on each
+          // new JOIN so the user doesn't need to refresh.  We skip this during
+          // replay because the batch loader in replay-done handles it.
+          if (replayDoneRef.current[netId]) {
+            setTimeout(() => loadChannelHistory(netId, chan), 350);
+          }
         } else {
           dispatch({ type:"SET_MEMBERS", netId, chan, members:{[from]:""} });
           sys(chan, `→ ${from} joined`, "membership");
@@ -2977,6 +3190,11 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           if (text.startsWith("status:")) {
             const status=text.slice(7);
             dispatch({ type:"NET_STATUS", id:netId, status });
+            // In BNC mode the client never receives a 001 (IRC is already registered),
+            // so REPLAY_START is never dispatched from the 001 handler. Dispatch it
+            // here instead so unread counts are suppressed during the ring buffer
+            // replay that immediately follows status:connected on every subscribe.
+            if (status === "connected") dispatch({ type:"REPLAY_START", netId });
             break;
           }
           // replay-done nick:<nick> — BNC ring buffer replay complete, update our nick.
@@ -2984,6 +3202,12 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           if (text.startsWith("replay-done")) {
             const nickMatch=text.match(/nick:(\S+)/);
             if (nickMatch) dispatch({ type:"SET_NICK", netId, nick:nickMatch[1] });
+            // BNC only sends replay-done when it is genuinely connected to IRC,
+            // so treat it as an authoritative "connected" signal. This is the
+            // belt-and-suspenders companion to the server-side Subscribe fix:
+            // even if a stale "status:connecting" arrived after the fanOut
+            // "status:connected" due to a race, replay-done always wins.
+            dispatch({ type:"NET_STATUS", id:netId, status:"connected" });
             dispatch({ type:"REPLAY_DONE", netId }); // re-enable unread counting
             ensureChan(netId, STATUS_CHAN);
 
@@ -2997,14 +3221,25 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             // reflects the JOIN dispatches from this replay batch — those
             // dispatches are async (React state), so the ref hasn't updated yet
             // at the moment replay-done fires.
+            // Load DB history for the server window first (no timing dependency).
+            loadServerHistory(netId);
+
+            // Load DB history for all open channels.
+            // openKeys is captured inside the setTimeout so that channelsRef
+            // reflects the JOIN/ensureChan dispatches from the replay batch —
+            // those are async (React state), so the ref may not be updated yet
+            // at the moment replay-done fires. 500ms is generous but safe.
             const chanPrefix = netId + "::";
             setTimeout(() => {
-              const openKeys = Object.keys(channelsRef.current).filter(k => k.startsWith(chanPrefix));
+              replayDoneRef.current[netId] = true;
+              const openKeys = Object.keys(channelsRef.current).filter(k =>
+                k.startsWith(chanPrefix) && !k.endsWith("::" + STATUS_CHAN)
+              );
               openKeys.forEach(k => {
                 const chan = k.slice(chanPrefix.length);
                 loadChannelHistory(netId, chan);
               });
-            }, 100);
+            }, 500);
             break;
           }
           // Reconnect notices: suppress "Reconnecting in 5s… (attempt 1)" to avoid
@@ -3117,14 +3352,39 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         break;
       }
 
-      // Numeric replies — WHOIS results route to the target nick's DM window
-      // so they're always easy to find and don't pollute channel chat
-      case "311": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); sys(dest,`⦿ ${params[1]}  (${params[2]}@${params[3]})  — ${params[5]||""}`); break; }
-      case "312": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); sys(dest,`  Server: ${params[2]}  (${params[3]||""})`); break; }
-      case "317": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); const idle=parseInt(params[2]||0); const h=Math.floor(idle/3600),m=Math.floor((idle%3600)/60),s=idle%60; sys(dest,`  Idle: ${h?h+"h ":""}${m?m+"m ":""}${s}s`); break; }
-      case "318": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); sys(dest,`  ─── end of whois ───`); break; }
-      case "319": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); sys(dest,`  Channels: ${params[2]||""}`); break; }
-      case "330": { const dest=params[1]||activeChan[netId]||STATUS_CHAN; ensureChan(netId,dest); sys(dest,`  Account: ${params[2]}`); break; }
+      // WHOIS — buffer all response lines and flush as a single grouped message
+      // on 318 (End of WHOIS) so the result appears under one timestamp.
+      // 307/313/320/671 are also WHOIS fields; handle them here so they don't
+      // leak to STATUS_CHAN via the numeric fallback.
+      case "311": { // RPL_WHOISUSER — start buffer
+        whoisBufRef.current[netId] = {
+          nick: params[1],
+          lines: [`⦿ ${params[1]}  (${params[2]}@${params[3]})  —  ${params[5]||""}`]
+        };
+        break;
+      }
+      case "319": { const w=whoisBufRef.current[netId]; if(w) w.lines.push(`  Channels: ${params[2]||""}`); break; }
+      case "312": { const w=whoisBufRef.current[netId]; if(w) w.lines.push(`  Server: ${params[2]}  (${params[3]||""})`); break; }
+      case "330": { const w=whoisBufRef.current[netId]; if(w) w.lines.push(`  Account: ${params[2]}`); break; }
+      case "313": { const w=whoisBufRef.current[netId]; if(w) w.lines.push(`  IRC Operator`); break; }
+      case "320": { const w=whoisBufRef.current[netId]; if(w) w.lines.push(`  ${params[params.length-1]||"Network Administrator"}`); break; }
+      case "671": { const w=whoisBufRef.current[netId]; if(w) w.lines.push(`  Secure connection`); break; }
+      case "307": break; // Registered nick — redundant with Account field, suppress
+      case "317": { // RPL_WHOISIDLE
+        const w=whoisBufRef.current[netId];
+        if(w) { const idle=parseInt(params[2]||0); const h=Math.floor(idle/3600),m=Math.floor((idle%3600)/60),s=idle%60; w.lines.push(`  Idle: ${h?h+"h ":""}${m?m+"m ":""}${s}s`); }
+        break;
+      }
+      case "318": { // RPL_ENDOFWHOIS — flush buffer
+        const w=whoisBufRef.current[netId];
+        delete whoisBufRef.current[netId];
+        if(w?.lines?.length) {
+          w.lines.push(`  ─── end of whois ───`);
+          ensureChan(netId, w.nick);
+          sys(w.nick, w.lines.join("\n"));
+        }
+        break;
+      }
       case "321": break;
       case "322": ensureChan(netId,STATUS_CHAN); sys(STATUS_CHAN,`  ${params[1]}  (${params[2]} users)  ${params[3]||""}`); break;
       case "323": sys(STATUS_CHAN,"End of /LIST"); break;
@@ -3170,8 +3430,10 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       default:
         if (/^\d+$/.test(command)) {
           const text=params[params.length-1]||"";
+          // Suppress uninteresting numerics; show everything else as plain text
+          // (no [NNN] prefix — the number is IRC protocol noise, not useful to users).
           if (!["333","005","004","002","003","001"].includes(command)&&text&&text!==me) {
-            ensureChan(netId,STATUS_CHAN); sys(STATUS_CHAN,`[${command}] ${text}`);
+            ensureChan(netId,STATUS_CHAN); sys(STATUS_CHAN, text);
           }
         }
         break;
@@ -3721,13 +3983,61 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   // Note: reads networks/myNick/channels via refs — not in dep array on purpose
 
   const handlePhotoUpload = useCallback(async (file) => {
+    // Detect HEIC/HEIF by type, extension, or ISOBMFF magic bytes (bytes 4-7 = "ftyp")
+    const detectHeic = async () => {
+      if (file.type === "image/heic" || file.type === "image/heif") return true;
+      if (/\.(heic|heif)$/i.test(file.name)) return true;
+      try {
+        const buf = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+        const ftyp = String.fromCharCode(buf[4], buf[5], buf[6], buf[7]);
+        if (ftyp !== "ftyp") return false;
+        const brand = String.fromCharCode(buf[8], buf[9], buf[10], buf[11]);
+        return ["heic","heis","heix","hevc","hevx","mif1","msf1"].includes(brand);
+      } catch { return false; }
+    };
+    const isHeic = await detectHeic();
     try {
-      const data = await API.uploadPhoto(file);
+      let uploadFile = file;
+      if (isHeic) {
+        addSys(activeNet, activeChanName||STATUS_CHAN, "Converting HEIC photo…");
+        uploadFile = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(reader.error);
+          reader.onload = () => {
+            const img = new Image();
+            img.onerror = () => reject(new Error("Browser cannot decode HEIC on this platform. Please convert to JPEG or PNG first."));
+            img.onload = () => {
+              const canvas = document.createElement("canvas");
+              canvas.width  = img.naturalWidth;
+              canvas.height = img.naturalHeight;
+              canvas.getContext("2d").drawImage(img, 0, 0);
+              canvas.toBlob(blob => {
+                if (blob) resolve(new File([blob], file.name.replace(/\.(heic|heif)$/i, ".jpg"), { type: "image/jpeg" }));
+                else reject(new Error("Canvas JPEG conversion failed"));
+              }, "image/jpeg", 0.92);
+            };
+            img.src = reader.result;
+          };
+          reader.readAsDataURL(file);
+        });
+      }
+      const data = await API.uploadPhoto(uploadFile);
       if (data.error) { addSys(activeNet, activeChanName||STATUS_CHAN, `Photo upload failed: ${data.error}`); return; }
       const url = window.location.origin + data.url;
       handleSend(url);
     } catch (e) {
-      addSys(activeNet, activeChanName||STATUS_CHAN, `Photo upload failed: ${e}`);
+      addSys(activeNet, activeChanName||STATUS_CHAN, `Photo upload failed: ${e.message||e}`);
+    }
+  }, [activeNet, activeChanName, addSys, handleSend]);
+
+  const handleCodeUpload = useCallback(async (code, lang) => {
+    try {
+      const data = await API.uploadSnippet(code, lang);
+      if (data.error) { addSys(activeNet, activeChanName||STATUS_CHAN, `Code upload failed: ${data.error}`); return; }
+      const url = window.location.origin + data.url;
+      handleSend(url);
+    } catch (e) {
+      addSys(activeNet, activeChanName||STATUS_CHAN, `Code upload failed: ${e.message||e}`);
     }
   }, [activeNet, activeChanName, addSys, handleSend]);
 
@@ -4261,7 +4571,9 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           <div ref={msgsRef} style={{flex:1,overflowY:"auto",padding:"8px 0"}}>
             {activeMsgs.length===0&&activeChanName&&(
               <div style={{...MONO,padding:"32px 58px",color:T.textFaint,fontSize:13}}>
-                {isStatusChan?"Waiting for server messages…":`No messages yet in ${activeChanName}`}
+                {isStatusChan?"Waiting for server messages…":
+                 loadingChans[activeMsgKey]?"Loading history…":
+                 `No messages yet in ${activeChanName}`}
               </div>
             )}
             {(()=>{
@@ -4380,6 +4692,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           <InputBar
             onSend={handleSend}
             onPhotoUpload={!isStatusChan ? handlePhotoUpload : undefined}
+            onCodeUpload={!isStatusChan ? handleCodeUpload : undefined}
             label={isStatusChan?activeNetObj?.name||"server":activeChanName}
             nick={currentNick||"…"}
             disabled={!isConnected&&!isStatusChan}

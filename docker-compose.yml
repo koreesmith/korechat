@@ -42,6 +42,7 @@ services:
     volumes:
       - ./data/avatars:/data/avatars
       - ./data/uploads:/data/uploads
+      - ./data/snippets:/data/snippets
     networks:
       - korechat
     depends_on:

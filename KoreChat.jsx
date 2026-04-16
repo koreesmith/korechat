@@ -641,6 +641,24 @@ export default function KoreChat() {
           addSys(statusChan, text);
           break;
         }
+        // BNC status messages — update connection state and nick on every subscribe/reconnect.
+        // The BNC sends these two lines at the start of every WebSocket session:
+        //   :*bnc* NOTICE * :status:<connected|disconnected|reconnecting|error>
+        //   :*bnc* NOTICE * :replay-done nick:<currentNick>   (only when connected)
+        if (prefix === "*bnc*" || fromNick === "*bnc*") {
+          if (text.startsWith("status:")) {
+            const bncStatus = text.slice("status:".length).trim();
+            const isConn = bncStatus === "connected";
+            dispatch({ type:"SET_CONNECTED", netId, val: isConn });
+            dispatch({ type:"SET_NETWORKS", networks: networks.map(n =>
+              n.id === netId ? { ...n, status: bncStatus } : n
+            )});
+          } else if (text.startsWith("replay-done nick:")) {
+            const replayNick = text.slice("replay-done nick:".length).trim();
+            if (replayNick) dispatch({ type:"SET_NICK", netId, nick: replayNick });
+          }
+          break;
+        }
         if (fromNick === nick && command === "PRIVMSG") break; // echo suppression (hub already handles; proxy might not)
         dispatch({ type:"JOIN_CHANNEL", netId, chan });
         addMsg(chan, { type:"message", nick: fromNick, text, time, tags, id: tags?.msgid || Math.random().toString(36) });
@@ -699,7 +717,12 @@ export default function KoreChat() {
       nick: net.nick,
       onLine: (line) => handleLine(net.id, line),
       onOpen: () => {
-        dispatch({ type:"SET_CONNECTED", netId: net.id, val: true });
+        // Mark as "connecting" immediately so the status dot turns yellow
+        // while we wait for the BNC's :*bnc* NOTICE * :status:connected reply.
+        dispatch({ type:"SET_CONNECTED", netId: net.id, val: false });
+        dispatch({ type:"SET_NETWORKS", networks: state.networks.map(n =>
+          n.id === net.id ? { ...n, status: "connecting" } : n
+        )});
       },
       onClose: () => {
         dispatch({ type:"SET_CONNECTED", netId: net.id, val: false });

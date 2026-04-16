@@ -39,7 +39,7 @@ const (
 	writeTimeout      = 10 * time.Second
 	keepaliveInterval = 30 * time.Second  // how often we PING the upstream
 	keepaliveTimeout  = 90 * time.Second  // how long without any data before giving up
-	BufferSize        = 500               // lines retained per channel/server
+	BufferSize        = 1000              // lines retained per channel/server
 	maxBackoff        = 30 * time.Second   // cap at 30s so reconnect is prompt
 	initialBackoff    = 2 * time.Second
 )
@@ -222,20 +222,37 @@ func (c *Conn) Subscribe(id string, send SendFunc) {
 		}
 	}
 
-	connected := c.connected
-	nick := c.currentNick
 	c.mu.Unlock()
 
 	// ── Phase 2: send replay WITHOUT holding the lock ─────────────────────────
 	// The upstream readLoop can now continue processing IRC lines (keepalive
 	// PINGs, PRIVMSGs, etc.) while we push potentially hundreds of buffered
 	// lines to this subscriber.
+	//
+	// Send an early status hint so the UI can update immediately while the
+	// replay is loading. This may be stale if the upstream IRC connection
+	// transitions (e.g. "connecting" → "connected") during the replay below,
+	// so we follow up with a fresh authoritative status after the replay.
 	send(fmt.Sprintf(":*bnc* NOTICE * :status:%s", status))
 	for _, line := range replay {
 		send(line)
 	}
-	if connected {
-		send(fmt.Sprintf(":*bnc* NOTICE * :replay-done nick:%s", nick))
+
+	// ── Final authoritative status ────────────────────────────────────────────
+	// Re-read live state after the replay so we always close with the truth.
+	// This eliminates a race where the upstream IRC session completes its 001
+	// handshake *during* Phase 2: the fanOut("status:connected") lands in
+	// sendCh *before* our snapshot-based "status:connecting" send above, so
+	// without this re-check the client would end up stuck in "connecting".
+	c.mu.Lock()
+	finalConnected := c.connected
+	finalNick := c.currentNick
+	c.mu.Unlock()
+	finalStatus := string(c.store.StatusOf(c.net.ID))
+
+	send(fmt.Sprintf(":*bnc* NOTICE * :status:%s", finalStatus))
+	if finalConnected {
+		send(fmt.Sprintf(":*bnc* NOTICE * :replay-done nick:%s", finalNick))
 	}
 }
 
