@@ -3576,7 +3576,8 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   useEffect(() => {
     setNewMsgCount(0);
     prevMsgLenRef.current = 0;
-    scrollToBottom();
+    // Defer until after the browser has laid out the new channel's messages
+    requestAnimationFrame(() => scrollToBottom());
   }, [activeNet, activeChanName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // When new messages arrive: scroll if at bottom, else increment badge
