@@ -43,6 +43,11 @@ func main() {
 	ns := networks.NewStore()
 	bm := bnc.NewManager(ns)
 	bm.SetIRCDebug(cfg.IRCDebug)
+	bm.SetPersistChannelsFn(func(networkID string, chans []string) {
+		if err := db.SetJoinedChannels(networkID, chans); err != nil {
+			log.Printf("bnc: persist joined channels for %s: %v", networkID, err)
+		}
+	})
 	if cfg.IRCDebug {
 		log.Println("IRC_DEBUG enabled — raw IRC lines will be logged")
 	}
