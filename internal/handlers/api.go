@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"archive/zip"
 	"crypto/rand"
 	"encoding/csv"
 	"encoding/json"
@@ -344,6 +345,54 @@ func (a *API) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, updated.Safe())
+}
+
+// DeleteAccount DELETE /api/v1/profile
+// Allows a user to permanently delete their own account and all associated data.
+// Requires password confirmation. Disconnects all BNC networks, removes the avatar
+// file from disk, deletes the DB record (cascades to networks, logs, log_settings),
+// and clears the session cookie.
+func (a *API) DeleteAccount(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.ClaimsFromCtx(r.Context())
+
+	var body struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Password == "" {
+		writeErr(w, http.StatusBadRequest, "password is required")
+		return
+	}
+
+	u, err := a.store.GetUserByID(claims.UserID)
+	if err != nil {
+		writeErr(w, http.StatusUnauthorized, "user not found")
+		return
+	}
+	if !u.CheckPassword(body.Password) {
+		writeErr(w, http.StatusForbidden, "password is incorrect")
+		return
+	}
+
+	// Disconnect and remove all BNC connections for this user.
+	nets, _ := a.store.ListNetworks(claims.UserID)
+	for _, n := range nets {
+		a.bncMgr.RemoveNetwork(n.ID)
+	}
+
+	// Remove avatar file from disk.
+	if u.AvatarURL != "" {
+		avatarFile := filepath.Join(a.avatarDir, filepath.Base(u.AvatarURL))
+		_ = os.Remove(avatarFile)
+	}
+
+	// Delete user record — DB cascades remove networks, message_logs, log_settings.
+	if err := a.store.DeleteUser(claims.UserID); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	auth.ClearToken(w)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // UploadAvatar POST /api/v1/profile/avatar
@@ -853,6 +902,130 @@ func (a *API) DeleteLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]int64{"deleted": n})
+}
+
+// ExportUserData GET /api/v1/export/user-data  → zip download of all user data
+func (a *API) ExportUserData(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.ClaimsFromCtx(r.Context())
+
+	user, err := a.store.GetUserByID(claims.UserID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not load user: "+err.Error())
+		return
+	}
+
+	nets, err := a.store.ListNetworks(claims.UserID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not load networks: "+err.Error())
+		return
+	}
+
+	logs, err := a.logger.QueryAll(claims.UserID, logging.QueryParams{})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not load logs: "+err.Error())
+		return
+	}
+
+	filename := "korechat-export-" + time.Now().Format("2006-01-02") + ".zip"
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+
+	zw := zip.NewWriter(w)
+	defer zw.Close()
+
+	// profile.json — safe user data (no password hash)
+	type profileExport struct {
+		ID          string    `json:"id"`
+		Username    string    `json:"username"`
+		DisplayName string    `json:"display_name"`
+		AvatarURL   string    `json:"avatar_url"`
+		Role        string    `json:"role"`
+		Theme       string    `json:"theme"`
+		CreatedAt   time.Time `json:"created_at"`
+		UpdatedAt   time.Time `json:"updated_at"`
+	}
+	profile := profileExport{
+		ID:          user.ID,
+		Username:    user.Username,
+		DisplayName: user.DisplayName,
+		AvatarURL:   user.AvatarURL,
+		Role:        string(user.Role),
+		Theme:       user.Theme,
+		CreatedAt:   user.CreatedAt,
+		UpdatedAt:   user.UpdatedAt,
+	}
+	if pf, err := zw.Create("profile.json"); err == nil {
+		enc := json.NewEncoder(pf)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(profile)
+	}
+
+	// networks.json — IRC network configs (credentials omitted)
+	type networkExport struct {
+		ID        string    `json:"id"`
+		Name      string    `json:"name"`
+		Host      string    `json:"host"`
+		Port      int       `json:"port"`
+		TLS       bool      `json:"tls"`
+		Nick      string    `json:"nick"`
+		AltNick   string    `json:"alt_nick"`
+		Username  string    `json:"username"`
+		Realname  string    `json:"realname"`
+		AutoJoin  []string  `json:"auto_join"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+	}
+	netExports := make([]networkExport, 0, len(nets))
+	for _, n := range nets {
+		netExports = append(netExports, networkExport{
+			ID:        n.ID,
+			Name:      n.Name,
+			Host:      n.Host,
+			Port:      n.Port,
+			TLS:       n.TLS,
+			Nick:      n.Nick,
+			AltNick:   n.AltNick,
+			Username:  n.Username,
+			Realname:  n.Realname,
+			AutoJoin:  n.AutoJoin,
+			CreatedAt: n.CreatedAt,
+			UpdatedAt: n.UpdatedAt,
+		})
+	}
+	if nf, err := zw.Create("networks.json"); err == nil {
+		enc := json.NewEncoder(nf)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(netExports)
+	}
+
+	// message_logs.csv
+	if lf, err := zw.Create("message_logs.csv"); err == nil {
+		cw := csv.NewWriter(lf)
+		_ = cw.Write([]string{"timestamp", "network", "channel", "nick", "type", "text"})
+		for _, e := range logs {
+			_ = cw.Write([]string{
+				e.Timestamp.UTC().Format(time.RFC3339),
+				e.NetworkName,
+				e.Channel,
+				e.Nick,
+				e.Type,
+				e.Text,
+			})
+		}
+		cw.Flush()
+	}
+
+	// avatar file (if present on disk)
+	if user.AvatarURL != "" {
+		// AvatarURL is like "/avatars/usr-xxx.jpg" — resolve to disk path
+		avatarFile := filepath.Join(a.avatarDir, filepath.Base(user.AvatarURL))
+		if f, err := os.Open(avatarFile); err == nil {
+			defer f.Close()
+			if af, err := zw.Create("avatar" + filepath.Ext(user.AvatarURL)); err == nil {
+				_, _ = io.Copy(af, f)
+			}
+		}
+	}
 }
 
 // ─── Utility ─────────────────────────────────────────────────────────────────

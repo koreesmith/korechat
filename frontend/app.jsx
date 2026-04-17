@@ -444,7 +444,7 @@ function nickColor(nick) {
   for (let i = 0; i < nick.length; i++) h = (h * 31 + nick.charCodeAt(i)) & 0x7fffffff;
   return p[h % p.length];
 }
-function renderText(text, myNick, T, onLinkClick) {
+function renderText(text, myNick, T, onLinkClick, onImgLoad) {
   if (!text) return "";
   const accent  = T?.accent || "#7eb8f7";
   const red     = T?.red    || "#f7a07e";
@@ -472,7 +472,7 @@ function renderText(text, myNick, T, onLinkClick) {
       parts.push(
         <div key={key++} style={{marginTop:6}}>
           <a href={url} target="_blank" rel="noopener noreferrer">
-            <img src={url} alt="" loading="lazy"
+            <img src={url} alt="" loading="lazy" onLoad={onImgLoad}
               style={{maxWidth:400,maxHeight:300,borderRadius:6,display:"block",cursor:"pointer",
                 border:`1px solid ${T?.border||"#ffffff18"}`}}/>
           </a>
@@ -674,10 +674,15 @@ function reducer(s, a) {
       const msgs=[...existing,a.msg].slice(-1000);
       const isActive=s.activeNet===a.netId&&s.activeChan[a.netId]===a.chan;
       const isReplaying=s.replaying.has(a.netId);
+      // During replay, leave unread counts unchanged — replayed messages are
+      // historical, not new. On a fresh login/refresh the unread map starts empty
+      // (INIT), so "leave unchanged" is equivalent to "zero point". On a mid-session
+      // WS reconnect this also correctly preserves the counts the user accumulated
+      // before the drop, which isReplaying?0 would have incorrectly wiped.
       return { ...s,
         messages:   {...s.messages,  [k]:msgs},
         seenMsgIds: a.msg.id ? {...s.seenMsgIds, [a.msg.id]:true} : s.seenMsgIds,
-        unread:     {...s.unread,    [k]:isActive||isReplaying?0:(s.unread[k]||0)+1},
+        unread:     isReplaying ? s.unread : {...s.unread, [k]:isActive?0:(s.unread[k]||0)+1},
       };
     }
     case "PREPEND_MSGS": {
@@ -940,7 +945,7 @@ function SnippetBlock({ url, lang }) {
   );
 }
 
-function MsgRow({ msg, prev, myNick, onNickClick }) {
+function MsgRow({ msg, prev, myNick, onNickClick, onImgLoad }) {
   const T=useTheme();
   const [pendingLink, setPendingLink] = useState(null);
   if (msg.type==="system") return (
@@ -974,7 +979,7 @@ function MsgRow({ msg, prev, myNick, onNickClick }) {
             </div>
           )}
           <div style={{fontSize:16,color:T.text,lineHeight:1.6,wordBreak:"break-word"}}>
-            {renderText(msg.text,myNick,T,setPendingLink)}
+            {renderText(msg.text,myNick,T,setPendingLink,onImgLoad)}
           </div>
         </div>
       </div>
@@ -1667,7 +1672,7 @@ function UserMenuPopup({ menu, onClose, onSend, myPrefix, currentNick }) {
 }
 
 // ─── Profile modal ────────────────────────────────────────────────────────────
-function ProfileModal({ currentUser, onClose, onUpdated }) {
+function ProfileModal({ currentUser, onClose, onUpdated, onLogout }) {
   const T = useTheme();
   const MONO = { fontFamily:"'Inter var','Inter',sans-serif" };
   const IS = { width:"100%", padding:"8px 10px", borderRadius:5, fontSize:14,
@@ -1676,7 +1681,7 @@ function ProfileModal({ currentUser, onClose, onUpdated }) {
   const LS = { display:"block", fontSize:12, color:T.textDim, marginBottom:4,
     ...MONO, textTransform:"uppercase", letterSpacing:"0.05em" };
 
-  const [tab, setTab]               = React.useState("avatar"); // "avatar" | "password"
+  const [tab, setTab]               = React.useState("avatar"); // "avatar" | "password" | "data"
   const [preview, setPreview]       = React.useState(currentUser.avatar_url || null);
   const [file, setFile]             = React.useState(null);
   const [uploading, setUploading]   = React.useState(false);
@@ -1687,7 +1692,43 @@ function ProfileModal({ currentUser, onClose, onUpdated }) {
   const [pwSaving, setPwSaving]     = React.useState(false);
   const [pwErr, setPwErr]           = React.useState("");
   const [pwOk, setPwOk]             = React.useState(false);
+  const [exporting, setExporting]   = React.useState(false);
+  const [delPw, setDelPw]           = React.useState("");
+  const [deleting, setDeleting]     = React.useState(false);
+  const [delErr, setDelErr]         = React.useState("");
+  const [delConfirm, setDelConfirm] = React.useState(false);
   const fileRef = React.useRef();
+
+  const handleExportData = () => {
+    setExporting(true);
+    fetch("/api/v1/export/user-data", { credentials: "include" })
+      .then(async r => {
+        const blob = await r.blob();
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `korechat-export-${new Date().toISOString().slice(0,10)}.zip`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      })
+      .catch(() => {})
+      .finally(() => setExporting(false));
+  };
+
+  const handleDeleteAccount = async () => {
+    setDelErr(""); setDeleting(true);
+    try {
+      const r = await fetch("/api/v1/profile", {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: delPw }),
+      });
+      if (r.status === 204) { onLogout?.(); return; }
+      const data = await r.json().catch(() => ({}));
+      setDelErr(data.error || "Failed to delete account");
+    } catch(e) { setDelErr(String(e)); }
+    finally { setDeleting(false); }
+  };
 
   const handleFileChange = e => {
     const f = e.target.files[0];
@@ -1775,6 +1816,8 @@ function ProfileModal({ currentUser, onClose, onUpdated }) {
         <div style={{display:"flex",gap:8,marginBottom:18}}>
           <button style={tabStyle(tab==="avatar")} onClick={()=>setTab("avatar")}>Avatar</button>
           <button style={tabStyle(tab==="password")} onClick={()=>{setTab("password");setPwOk(false);}}>Password</button>
+          <button style={tabStyle(tab==="data")} onClick={()=>setTab("data")}>Data</button>
+          <button style={tabStyle(tab==="account")} onClick={()=>{setTab("account");setDelConfirm(false);setDelErr("");setDelPw("");}}>Account</button>
         </div>
 
         {/* Avatar tab */}
@@ -1815,6 +1858,70 @@ function ProfileModal({ currentUser, onClose, onUpdated }) {
                 opacity:uploading?0.6:1}}>
               {uploading ? "Uploading…" : "Save Avatar"}
             </button>
+          </div>
+        )}
+
+        {/* Data export tab */}
+        {tab==="data" && (
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{fontSize:13,color:T.textDim,...MONO,lineHeight:1.6}}>
+              Download a zip archive of all your data: profile info, network configurations, and message logs.
+            </div>
+            <button onClick={handleExportData} disabled={exporting}
+              style={{...MONO,width:"100%",padding:"9px 0",borderRadius:5,fontSize:14,
+                cursor:exporting?"default":"pointer",fontWeight:700,
+                background:exporting?T.bg:T.accentBg2,
+                border:`1px solid ${exporting?T.border:T.accent}`,
+                color:exporting?T.textFaint:T.accent,
+                opacity:exporting?0.6:1}}>
+              {exporting ? "Exporting…" : "⬇ Export My Data"}
+            </button>
+          </div>
+        )}
+
+        {/* Account tab */}
+        {tab==="account" && (
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{padding:12,borderRadius:6,background:T.redBg,border:`1px solid ${T.redBorder}`}}>
+              <div style={{...MONO,fontWeight:700,fontSize:13,color:T.red,marginBottom:6}}>
+                Delete Account
+              </div>
+              <div style={{fontSize:13,color:T.textDim,...MONO,lineHeight:1.6,marginBottom:10}}>
+                This permanently deletes your account, all IRC network configs, and all message logs. This cannot be undone.
+              </div>
+              {!delConfirm ? (
+                <button onClick={()=>setDelConfirm(true)}
+                  style={{...MONO,width:"100%",padding:"8px 0",borderRadius:5,fontSize:13,
+                    cursor:"pointer",fontWeight:700,
+                    background:"transparent",border:`1px solid ${T.redBorder}`,color:T.red}}>
+                  Delete My Account…
+                </button>
+              ) : (
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  <label style={LS}>Confirm your password</label>
+                  <input type="password" value={delPw} onChange={e=>{setDelPw(e.target.value);setDelErr("");}}
+                    style={IS} autoComplete="current-password"
+                    onKeyDown={e=>e.key==="Enter"&&handleDeleteAccount()}
+                    placeholder="Enter password to confirm"/>
+                  {delErr&&<div style={{background:T.redBg,border:`1px solid ${T.redBorder}`,
+                    borderRadius:5,padding:"7px 10px",color:T.red,fontSize:13,...MONO}}>{delErr}</div>}
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={()=>{setDelConfirm(false);setDelPw("");setDelErr("");}}
+                      style={{...MONO,flex:1,padding:"8px 0",borderRadius:5,fontSize:13,cursor:"pointer",
+                        background:"transparent",border:`1px solid ${T.border}`,color:T.textDim}}>
+                      Cancel
+                    </button>
+                    <button onClick={handleDeleteAccount} disabled={!delPw||deleting}
+                      style={{...MONO,flex:1,padding:"8px 0",borderRadius:5,fontSize:13,fontWeight:700,
+                        cursor:(!delPw||deleting)?"default":"pointer",
+                        background:T.redBg,border:`1px solid ${T.redBorder}`,
+                        color:T.red,opacity:deleting?0.6:1}}>
+                      {deleting ? "Deleting…" : "Confirm Delete"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -3618,6 +3725,11 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
     return () => clearTimeout(timer);
   }, [activeNet, activeChanName]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Re-scroll when an inline image finishes loading (ResizeObserver misses scrollHeight growth)
+  const onMediaLoad = useCallback(() => {
+    if (shouldPinBottomRef.current || isAtBottomRef.current) scrollToBottom();
+  }, [scrollToBottom]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Re-scroll when content height changes while pinned (e.g. snippets loading)
   useEffect(() => {
     const el = msgsRef.current;
@@ -4148,6 +4260,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             delete _avatarCache[updated.username];
             setShowProfile(false);
           }}
+          onLogout={onLogout}
         />
       )}
 
@@ -4603,7 +4716,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           {activeChanName?(
             <>
               <span style={{...MONO,fontSize:16,fontWeight:700,color:T.textBright,flexShrink:0}}>
-                {isStatusChan?`⚡ ${activeNetObj?.name||"server"}`:`#${activeChanName.replace(/^#/,"")}`}
+                {isStatusChan?`⚡ ${activeNetObj?.name||"server"}`:activeChanName.startsWith("#")?`#${activeChanName.replace(/^#/,"")}`:activeChanName}
               </span>
               {activeTopic&&!isStatusChan&&(
                 <span style={{fontSize:14,color:T.textFaint,flex:1,overflow:"hidden",
@@ -4687,7 +4800,8 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                   const prev=i>0?msgs[i-1]:null;
                   rows.push(
                     <MsgRow key={msg.id||i} msg={msg} prev={prev} myNick={currentNick}
-                      onNickClick={(nick,e)=>{if(nick!==currentNick)setMsgNickMenu({x:e.clientX,y:e.clientY,netId:activeNet,nick});}}/>
+                      onNickClick={(nick,e)=>{if(nick!==currentNick)setMsgNickMenu({x:e.clientX,y:e.clientY,netId:activeNet,nick});}}
+                      onImgLoad={onMediaLoad}/>
                   );
                   i++;
                 }
