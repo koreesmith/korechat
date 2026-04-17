@@ -1672,7 +1672,7 @@ function UserMenuPopup({ menu, onClose, onSend, myPrefix, currentNick }) {
 }
 
 // ─── Profile modal ────────────────────────────────────────────────────────────
-function ProfileModal({ currentUser, onClose, onUpdated }) {
+function ProfileModal({ currentUser, onClose, onUpdated, onLogout }) {
   const T = useTheme();
   const MONO = { fontFamily:"'Inter var','Inter',sans-serif" };
   const IS = { width:"100%", padding:"8px 10px", borderRadius:5, fontSize:14,
@@ -1693,6 +1693,10 @@ function ProfileModal({ currentUser, onClose, onUpdated }) {
   const [pwErr, setPwErr]           = React.useState("");
   const [pwOk, setPwOk]             = React.useState(false);
   const [exporting, setExporting]   = React.useState(false);
+  const [delPw, setDelPw]           = React.useState("");
+  const [deleting, setDeleting]     = React.useState(false);
+  const [delErr, setDelErr]         = React.useState("");
+  const [delConfirm, setDelConfirm] = React.useState(false);
   const fileRef = React.useRef();
 
   const handleExportData = () => {
@@ -1708,6 +1712,22 @@ function ProfileModal({ currentUser, onClose, onUpdated }) {
       })
       .catch(() => {})
       .finally(() => setExporting(false));
+  };
+
+  const handleDeleteAccount = async () => {
+    setDelErr(""); setDeleting(true);
+    try {
+      const r = await fetch("/api/v1/profile", {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: delPw }),
+      });
+      if (r.status === 204) { onLogout?.(); return; }
+      const data = await r.json().catch(() => ({}));
+      setDelErr(data.error || "Failed to delete account");
+    } catch(e) { setDelErr(String(e)); }
+    finally { setDeleting(false); }
   };
 
   const handleFileChange = e => {
@@ -1797,6 +1817,7 @@ function ProfileModal({ currentUser, onClose, onUpdated }) {
           <button style={tabStyle(tab==="avatar")} onClick={()=>setTab("avatar")}>Avatar</button>
           <button style={tabStyle(tab==="password")} onClick={()=>{setTab("password");setPwOk(false);}}>Password</button>
           <button style={tabStyle(tab==="data")} onClick={()=>setTab("data")}>Data</button>
+          <button style={tabStyle(tab==="account")} onClick={()=>{setTab("account");setDelConfirm(false);setDelErr("");setDelPw("");}}>Account</button>
         </div>
 
         {/* Avatar tab */}
@@ -1855,6 +1876,52 @@ function ProfileModal({ currentUser, onClose, onUpdated }) {
                 opacity:exporting?0.6:1}}>
               {exporting ? "Exporting…" : "⬇ Export My Data"}
             </button>
+          </div>
+        )}
+
+        {/* Account tab */}
+        {tab==="account" && (
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{padding:12,borderRadius:6,background:T.redBg,border:`1px solid ${T.redBorder}`}}>
+              <div style={{...MONO,fontWeight:700,fontSize:13,color:T.red,marginBottom:6}}>
+                Delete Account
+              </div>
+              <div style={{fontSize:13,color:T.textDim,...MONO,lineHeight:1.6,marginBottom:10}}>
+                This permanently deletes your account, all IRC network configs, and all message logs. This cannot be undone.
+              </div>
+              {!delConfirm ? (
+                <button onClick={()=>setDelConfirm(true)}
+                  style={{...MONO,width:"100%",padding:"8px 0",borderRadius:5,fontSize:13,
+                    cursor:"pointer",fontWeight:700,
+                    background:"transparent",border:`1px solid ${T.redBorder}`,color:T.red}}>
+                  Delete My Account…
+                </button>
+              ) : (
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  <label style={LS}>Confirm your password</label>
+                  <input type="password" value={delPw} onChange={e=>{setDelPw(e.target.value);setDelErr("");}}
+                    style={IS} autoComplete="current-password"
+                    onKeyDown={e=>e.key==="Enter"&&handleDeleteAccount()}
+                    placeholder="Enter password to confirm"/>
+                  {delErr&&<div style={{background:T.redBg,border:`1px solid ${T.redBorder}`,
+                    borderRadius:5,padding:"7px 10px",color:T.red,fontSize:13,...MONO}}>{delErr}</div>}
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={()=>{setDelConfirm(false);setDelPw("");setDelErr("");}}
+                      style={{...MONO,flex:1,padding:"8px 0",borderRadius:5,fontSize:13,cursor:"pointer",
+                        background:"transparent",border:`1px solid ${T.border}`,color:T.textDim}}>
+                      Cancel
+                    </button>
+                    <button onClick={handleDeleteAccount} disabled={!delPw||deleting}
+                      style={{...MONO,flex:1,padding:"8px 0",borderRadius:5,fontSize:13,fontWeight:700,
+                        cursor:(!delPw||deleting)?"default":"pointer",
+                        background:T.redBg,border:`1px solid ${T.redBorder}`,
+                        color:T.red,opacity:deleting?0.6:1}}>
+                      {deleting ? "Deleting…" : "Confirm Delete"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -4162,6 +4229,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             delete _avatarCache[updated.username];
             setShowProfile(false);
           }}
+          onLogout={onLogout}
         />
       )}
 

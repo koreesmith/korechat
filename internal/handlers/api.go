@@ -347,6 +347,54 @@ func (a *API) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, updated.Safe())
 }
 
+// DeleteAccount DELETE /api/v1/profile
+// Allows a user to permanently delete their own account and all associated data.
+// Requires password confirmation. Disconnects all BNC networks, removes the avatar
+// file from disk, deletes the DB record (cascades to networks, logs, log_settings),
+// and clears the session cookie.
+func (a *API) DeleteAccount(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.ClaimsFromCtx(r.Context())
+
+	var body struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Password == "" {
+		writeErr(w, http.StatusBadRequest, "password is required")
+		return
+	}
+
+	u, err := a.store.GetUserByID(claims.UserID)
+	if err != nil {
+		writeErr(w, http.StatusUnauthorized, "user not found")
+		return
+	}
+	if !u.CheckPassword(body.Password) {
+		writeErr(w, http.StatusForbidden, "password is incorrect")
+		return
+	}
+
+	// Disconnect and remove all BNC connections for this user.
+	nets, _ := a.store.ListNetworks(claims.UserID)
+	for _, n := range nets {
+		a.bncMgr.RemoveNetwork(n.ID)
+	}
+
+	// Remove avatar file from disk.
+	if u.AvatarURL != "" {
+		avatarFile := filepath.Join(a.avatarDir, filepath.Base(u.AvatarURL))
+		_ = os.Remove(avatarFile)
+	}
+
+	// Delete user record — DB cascades remove networks, message_logs, log_settings.
+	if err := a.store.DeleteUser(claims.UserID); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	auth.ClearToken(w)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // UploadAvatar POST /api/v1/profile/avatar
 // Accepts a multipart/form-data upload with field "avatar".
 // Stores the file under avatarDir/{userID}.{ext} and saves the URL in the DB.
