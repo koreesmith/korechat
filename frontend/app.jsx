@@ -674,10 +674,15 @@ function reducer(s, a) {
       const msgs=[...existing,a.msg].slice(-1000);
       const isActive=s.activeNet===a.netId&&s.activeChan[a.netId]===a.chan;
       const isReplaying=s.replaying.has(a.netId);
+      // During replay, leave unread counts unchanged — replayed messages are
+      // historical, not new. On a fresh login/refresh the unread map starts empty
+      // (INIT), so "leave unchanged" is equivalent to "zero point". On a mid-session
+      // WS reconnect this also correctly preserves the counts the user accumulated
+      // before the drop, which isReplaying?0 would have incorrectly wiped.
       return { ...s,
         messages:   {...s.messages,  [k]:msgs},
         seenMsgIds: a.msg.id ? {...s.seenMsgIds, [a.msg.id]:true} : s.seenMsgIds,
-        unread:     {...s.unread,    [k]:isActive||isReplaying?0:(s.unread[k]||0)+1},
+        unread:     isReplaying ? s.unread : {...s.unread, [k]:isActive?0:(s.unread[k]||0)+1},
       };
     }
     case "PREPEND_MSGS": {
