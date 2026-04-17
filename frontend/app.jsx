@@ -3276,7 +3276,9 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         const isDM=target&&!target.startsWith("#");
         // If the sender has no ! it's a server hostname, not a user — fold into status channel
         const isServer=!prefix.includes("!");
-        const chan=isServer?STATUS_CHAN:isDM?from:target;
+        // For DMs, use `target` when we're the sender (echo-message reflection),
+        // otherwise use `from` (incoming DM from someone else).
+        const chan=isServer?STATUS_CHAN:isDM?(from===me?target:from):target;
 
         if (!chan) break;
         const msgObj={ type:"message", nick:from, text:displayText, time, id:tags.msgid||Math.random().toString(36) };
