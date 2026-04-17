@@ -59,7 +59,7 @@ const THEMES = {
     mentionBg2:  "#f7a07e0d",
     mentionBdr:  "#f7a07e44",
     scrollThumb: "#ffffff18",
-    fontSize:    14,
+    fontSize:    15,
   },
   light: {
     name:        "light",
@@ -97,7 +97,7 @@ const THEMES = {
     mentionBg2:  "#c040200e",
     mentionBdr:  "#c0402045",
     scrollThumb: "#00000015",
-    fontSize:    14,
+    fontSize:    15,
   },
   newmorning: {
     name:        "newmorning",
@@ -135,7 +135,7 @@ const THEMES = {
     mentionBg2:  "#4d4332aa",
     mentionBdr:  "#f39c12cc",
     scrollThumb: "#b7c5d140",
-    fontSize:    14,
+    fontSize:    15,
   },
   solarized: {
     name:        "solarized",
@@ -173,7 +173,7 @@ const THEMES = {
     mentionBg2:  "#dc322f14",
     mentionBdr:  "#dc322f50",
     scrollThumb: "#586e7540",
-    fontSize:    14,
+    fontSize:    15,
   },
   dracula: {
     name:        "dracula",
@@ -211,7 +211,7 @@ const THEMES = {
     mentionBg2:  "#ff55551a",
     mentionBdr:  "#ff5555aa",
     scrollThumb: "#6272a440",
-    fontSize:    14,
+    fontSize:    15,
   },
 };
 const _savedTheme = localStorage.getItem("kc_theme") || "dark";
@@ -511,26 +511,26 @@ function LinkSafetyModal({ url, onConfirm, onCancel, T }) {
   return (
     <div style={overlay} onClick={e=>e.target===e.currentTarget&&onCancel()}>
       <div style={box}>
-        <div style={{fontWeight:700,fontSize:15,color:T.textBright,marginBottom:12,
-          fontFamily:"'JetBrains Mono',monospace"}}>
+        <div style={{fontWeight:700,fontSize:16,color:T.textBright,marginBottom:12,
+          fontFamily:"'Inter var','Inter',sans-serif"}}>
           Open external link?
         </div>
-        <div style={{fontSize:12,color:T.textDim,marginBottom:8,
-          fontFamily:"'JetBrains Mono',monospace"}}>You are about to open:</div>
+        <div style={{fontSize:13,color:T.textDim,marginBottom:8,
+          fontFamily:"'Inter var','Inter',sans-serif"}}>You are about to open:</div>
         <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:6,
           padding:"8px 12px",marginBottom:20,wordBreak:"break-all",
-          fontSize:13,color:T.accent||T.textBright,fontFamily:"'JetBrains Mono',monospace"}}>
+          fontSize:14,color:T.accent||T.textBright,fontFamily:"'Inter var','Inter',sans-serif"}}>
           {truncated}
         </div>
         <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
           <button onClick={onCancel} style={{background:"none",border:`1px solid ${T.border}`,
-            borderRadius:6,padding:"6px 16px",color:T.textDim,fontSize:13,cursor:"pointer",
-            fontFamily:"'JetBrains Mono',monospace"}}>
+            borderRadius:6,padding:"6px 16px",color:T.textDim,fontSize:14,cursor:"pointer",
+            fontFamily:"'Inter var','Inter',sans-serif"}}>
             Cancel
           </button>
           <button onClick={onConfirm} style={{background:T.accent||"#7eb8f7",border:"none",
-            borderRadius:6,padding:"6px 16px",color:T.bg||"#080f1e",fontSize:13,
-            fontWeight:700,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace"}}>
+            borderRadius:6,padding:"6px 16px",color:T.bg||"#080f1e",fontSize:14,
+            fontWeight:700,cursor:"pointer",fontFamily:"'Inter var','Inter',sans-serif"}}>
             Open
           </button>
         </div>
@@ -788,7 +788,7 @@ function Avatar({ nick, size=28 }) {
   return (
     <div style={{width:size,height:size,borderRadius:"50%",background:c+"18",border:`1.5px solid ${c}33`,
       display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*0.44,
-      fontWeight:700,color:c,flexShrink:0,fontFamily:"'JetBrains Mono',monospace"}}>
+      fontWeight:700,color:c,flexShrink:0,fontFamily:"'Inter var','Inter',sans-serif"}}>
       {(nick[0]||"?").toUpperCase()}
     </div>
   );
@@ -810,7 +810,7 @@ function DaySeparator({ label }) {
   return (
     <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 16px 6px",userSelect:"none"}}>
       <div style={{flex:1,height:1,background:T.border}}/>
-      <span style={{fontSize:11,color:T.textFaint,fontFamily:"'JetBrains Mono',monospace",
+      <span style={{fontSize:12,color:T.textFaint,fontFamily:"'Inter var','Inter',sans-serif",
         fontWeight:500,letterSpacing:"0.05em",whiteSpace:"nowrap"}}>{label}</span>
       <div style={{flex:1,height:1,background:T.border}}/>
     </div>
@@ -828,10 +828,10 @@ function MembershipGroup({ msgs }) {
   if (msgs.length === 1) {
     return (
       <div style={{padding:"1px 16px 1px 58px",userSelect:"text"}}>
-        <span style={{fontSize:12,color:T.textFaint,fontStyle:"italic",
-          fontFamily:"'JetBrains Mono',monospace"}}>{msgs[0].text}</span>
-        {msgs[0].time&&<span style={{fontSize:10,color:T.textFaint,marginLeft:6,
-          fontFamily:"'JetBrains Mono',monospace"}}>{fmtTime(msgs[0].time)}</span>}
+        <span style={{fontSize:13,color:T.textFaint,fontStyle:"italic",
+          fontFamily:"'Inter var','Inter',sans-serif"}}>{msgs[0].text}</span>
+        {msgs[0].time&&<span style={{fontSize:11,color:T.textFaint,marginLeft:6,
+          fontFamily:"'Inter var','Inter',sans-serif"}}>{fmtTime(msgs[0].time)}</span>}
       </div>
     );
   }
@@ -861,9 +861,9 @@ function MembershipGroup({ msgs }) {
         style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",padding:"1px 0"}}
         onMouseEnter={e=>e.currentTarget.style.opacity="1"}
         onMouseLeave={e=>e.currentTarget.style.opacity="0.85"}>
-        <span style={{fontSize:11,color:T.textFaint,fontStyle:"italic",
-          fontFamily:"'JetBrains Mono',monospace",flex:1}}>{label}</span>
-        <span style={{fontSize:10,color:T.textFaint,fontFamily:"'JetBrains Mono',monospace",
+        <span style={{fontSize:12,color:T.textFaint,fontStyle:"italic",
+          fontFamily:"'Inter var','Inter',sans-serif",flex:1}}>{label}</span>
+        <span style={{fontSize:11,color:T.textFaint,fontFamily:"'Inter var','Inter',sans-serif",
           flexShrink:0,opacity:0.7}}>{open?"▼":"▶"}</span>
       </div>
       {/* Expanded detail */}
@@ -871,10 +871,10 @@ function MembershipGroup({ msgs }) {
         <div style={{borderLeft:`2px solid ${T.borderFaint}`,paddingLeft:8,margin:"2px 0"}}>
           {msgs.map((m,i)=>(
             <div key={i} style={{display:"flex",alignItems:"baseline",gap:8,padding:"1px 0"}}>
-              <span style={{fontSize:12,color:T.textFaint,fontStyle:"italic",
-                fontFamily:"'JetBrains Mono',monospace",flex:1,userSelect:"text"}}>{m.text}</span>
-              {m.time&&<span style={{fontSize:10,color:T.textFaint,
-                fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>{fmtTime(m.time)}</span>}
+              <span style={{fontSize:13,color:T.textFaint,fontStyle:"italic",
+                fontFamily:"'Inter var','Inter',sans-serif",flex:1,userSelect:"text"}}>{m.text}</span>
+              {m.time&&<span style={{fontSize:11,color:T.textFaint,
+                fontFamily:"'Inter var','Inter',sans-serif",flexShrink:0}}>{fmtTime(m.time)}</span>}
             </div>
           ))}
         </div>
@@ -924,16 +924,16 @@ function SnippetBlock({ url, lang }) {
     <div style={{marginTop:6,borderRadius:6,overflow:"hidden",border:`1px solid ${T.border}`,maxWidth:560}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
         padding:"3px 10px",background:T.bgPanel,borderBottom:`1px solid ${T.border}`}}>
-        <span style={{fontSize:11,color:T.textFaint,fontFamily:"'JetBrains Mono',monospace"}}>{label}</span>
+        <span style={{fontSize:12,color:T.textFaint,fontFamily:"'Inter var','Inter',sans-serif"}}>{label}</span>
         <button onClick={copy} style={{background:"none",border:"none",cursor:"pointer",
-          fontSize:11,color:copied?T.green:T.textDim,fontFamily:"'JetBrains Mono',monospace",padding:"1px 4px"}}>
+          fontSize:12,color:copied?T.green:T.textDim,fontFamily:"'Inter var','Inter',sans-serif",padding:"1px 4px"}}>
           {copied ? "copied!" : "copy"}
         </button>
       </div>
       {code === null
-        ? <div style={{padding:"10px 14px",fontSize:12,color:T.textFaint,fontFamily:"'JetBrains Mono',monospace"}}>Loading…</div>
+        ? <div style={{padding:"10px 14px",fontSize:13,color:T.textFaint,fontFamily:"'Inter var','Inter',sans-serif"}}>Loading…</div>
         : <pre style={{margin:0,padding:"10px 14px",overflowX:"auto",background:T.bg,
-            fontSize:13,fontFamily:"'JetBrains Mono',monospace",color:T.text,lineHeight:1.5,
+            fontSize:14,fontFamily:"'Inter var','Inter',sans-serif",color:T.text,lineHeight:1.5,
             maxHeight:320,overflowY:"auto"}}><code>{code}</code></pre>
       }
     </div>
@@ -945,8 +945,8 @@ function MsgRow({ msg, prev, myNick, onNickClick }) {
   const [pendingLink, setPendingLink] = useState(null);
   if (msg.type==="system") return (
     <div style={{padding:"2px 16px 2px 58px",userSelect:"text"}}>
-      <span style={{fontSize:13,color:T.textDim,fontStyle:"italic",fontFamily:"'JetBrains Mono',monospace",whiteSpace:"pre-line"}}>{msg.text}</span>
-      {msg.time&&<span style={{fontSize:11,color:T.textDim,marginLeft:6,fontFamily:"'JetBrains Mono',monospace",verticalAlign:"top"}}>{fmtTime(msg.time)}</span>}
+      <span style={{fontSize:14,color:T.textDim,fontStyle:"italic",fontFamily:"'Inter var','Inter',sans-serif",whiteSpace:"pre-line"}}>{msg.text}</span>
+      {msg.time&&<span style={{fontSize:12,color:T.textDim,marginLeft:6,fontFamily:"'Inter var','Inter',sans-serif",verticalAlign:"top"}}>{fmtTime(msg.time)}</span>}
     </div>
   );
   const cont=prev?.type==="message"&&prev.nick===msg.nick&&(new Date(msg.time)-new Date(prev.time))<300000;
@@ -965,15 +965,15 @@ function MsgRow({ msg, prev, myNick, onNickClick }) {
         <div style={{flex:1,minWidth:0,userSelect:"text"}}>
           {!cont&&(
             <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:2}}>
-              <span style={{fontWeight:700,fontSize:14,color:nickColor(msg.nick),fontFamily:"'JetBrains Mono',monospace",
+              <span style={{fontWeight:700,fontSize:15,color:nickColor(msg.nick),fontFamily:"'Inter var','Inter',sans-serif",
                 cursor:"pointer"}}
                 onClick={e=>{if(onNickClick){e.stopPropagation();onNickClick(msg.nick,e);}}}
                 onContextMenu={e=>{if(onNickClick){e.preventDefault();onNickClick(msg.nick,e);}}}
               >{msg.nick}</span>
-              <span style={{fontSize:11,color:T.textDim,fontFamily:"'JetBrains Mono',monospace"}}>{fmtTime(msg.time)}</span>
+              <span style={{fontSize:12,color:T.textDim,fontFamily:"'Inter var','Inter',sans-serif"}}>{fmtTime(msg.time)}</span>
             </div>
           )}
-          <div style={{fontSize:15,color:T.text,lineHeight:1.6,wordBreak:"break-word"}}>
+          <div style={{fontSize:16,color:T.text,lineHeight:1.6,wordBreak:"break-word"}}>
             {renderText(msg.text,myNick,T,setPendingLink)}
           </div>
         </div>
@@ -988,7 +988,7 @@ function MsgRow({ msg, prev, myNick, onNickClick }) {
 // ─── Network Settings Modal ───────────────────────────────────────────────────
 function NetworkSettingsModal({ net, onClose, onSaved, onDelete }) {
   const T = useTheme();
-  const MONO = { fontFamily:"'JetBrains Mono',monospace" };
+  const MONO = { fontFamily:"'Inter var','Inter',sans-serif" };
   const [form, setForm] = useState({
     name:           net.name       || "",
     host:           net.host       || "",
@@ -1012,11 +1012,11 @@ function NetworkSettingsModal({ net, onClose, onSaved, onDelete }) {
 
   const set = k => e => setForm(f => ({...f, [k]: e.target.value}));
 
-  const IS = { width:"100%", padding:"8px 10px", borderRadius:5, fontSize:13,
+  const IS = { width:"100%", padding:"8px 10px", borderRadius:5, fontSize:14,
     background:T.bgPanel, border:`1px solid ${T.border}`, color:T.text,
     fontFamily:"'Inter var','Inter',sans-serif", outline:"none", boxSizing:"border-box" };
-  const LS = { display:"block", fontSize:11, color:T.textDim, marginBottom:4,
-    fontFamily:"'JetBrains Mono',monospace", textTransform:"uppercase", letterSpacing:"0.05em" };
+  const LS = { display:"block", fontSize:12, color:T.textDim, marginBottom:4,
+    fontFamily:"'Inter var','Inter',sans-serif", textTransform:"uppercase", letterSpacing:"0.05em" };
 
   const save = async () => {
     setErr(""); setSaving(true);
@@ -1060,15 +1060,15 @@ function NetworkSettingsModal({ net, onClose, onSaved, onDelete }) {
     <div style={overlay} onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div style={box}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
-          <span style={{...MONO,fontWeight:700,fontSize:15,color:T.textBright}}>
+          <span style={{...MONO,fontWeight:700,fontSize:16,color:T.textBright}}>
             ⚙ {net.name} — Settings
           </span>
           <button onClick={onClose} style={{background:"none",border:"none",color:T.textDim,
-            fontSize:18,cursor:"pointer",padding:"0 4px",lineHeight:1}}>✕</button>
+            fontSize:19,cursor:"pointer",padding:"0 4px",lineHeight:1}}>✕</button>
         </div>
 
         {err&&<div style={{background:T.redBg,border:`1px solid ${T.redBorder}`,borderRadius:5,
-          padding:"8px 12px",color:T.red,fontSize:12,marginBottom:14,...MONO}}>{err}</div>}
+          padding:"8px 12px",color:T.red,fontSize:13,marginBottom:14,...MONO}}>{err}</div>}
 
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
           {/* Name */}
@@ -1162,11 +1162,11 @@ function NetworkSettingsModal({ net, onClose, onSaved, onDelete }) {
           <div style={{gridColumn:"1/-1",borderTop:`1px solid ${T.borderFaint}`,paddingTop:12,marginTop:2}}>
             <div style={{...LS,marginBottom:4}}>
               On-Connect Commands
-              <span style={{opacity:0.6,textTransform:"none",letterSpacing:0,marginLeft:6,fontSize:11}}>
+              <span style={{opacity:0.6,textTransform:"none",letterSpacing:0,marginLeft:6,fontSize:12}}>
                 (executed after connecting, before auto-join)
               </span>
             </div>
-            <div style={{fontSize:11,color:T.textFaint,marginBottom:8,...MONO}}>
+            <div style={{fontSize:12,color:T.textFaint,marginBottom:8,...MONO}}>
               Examples:&nbsp;
               <span style={{color:T.textDim}}>/msg NickServ IDENTIFY mypass</span>
               &nbsp;·&nbsp;<span style={{color:T.textDim}}>/oper admin secret</span>
@@ -1178,11 +1178,11 @@ function NetworkSettingsModal({ net, onClose, onSaved, onDelete }) {
               <div style={{marginBottom:8,display:"flex",flexDirection:"column",gap:4}}>
                 {form.on_connect.map((cmd,i) => (
                   <div key={i} style={{display:"flex",gap:6,alignItems:"center"}}>
-                    <span style={{...MONO,fontSize:11,color:T.textFaint,minWidth:18,textAlign:"right",userSelect:"none"}}>
+                    <span style={{...MONO,fontSize:12,color:T.textFaint,minWidth:18,textAlign:"right",userSelect:"none"}}>
                       {i+1}.
                     </span>
                     <div style={{flex:1,background:T.bg,border:`1px solid ${T.border}`,borderRadius:4,
-                      padding:"5px 8px",...MONO,fontSize:12,color:T.text,overflow:"hidden",
+                      padding:"5px 8px",...MONO,fontSize:13,color:T.text,overflow:"hidden",
                       textOverflow:"ellipsis",whiteSpace:"nowrap"}}
                       title={cmd}>
                       {cmd}
@@ -1190,7 +1190,7 @@ function NetworkSettingsModal({ net, onClose, onSaved, onDelete }) {
                     <button
                       onClick={()=>setForm(f=>({...f,on_connect:f.on_connect.filter((_,j)=>j!==i)}))}
                       style={{background:"none",border:`1px solid ${T.border}`,borderRadius:4,
-                        color:T.textDim,cursor:"pointer",padding:"4px 7px",fontSize:12,
+                        color:T.textDim,cursor:"pointer",padding:"4px 7px",fontSize:13,
                         lineHeight:1,flexShrink:0}}
                       title="Remove">✕</button>
                     <button
@@ -1198,7 +1198,7 @@ function NetworkSettingsModal({ net, onClose, onSaved, onDelete }) {
                       disabled={i===0}
                       style={{background:"none",border:`1px solid ${T.border}`,borderRadius:4,
                         color:i===0?T.textGhost:T.textDim,cursor:i===0?"default":"pointer",
-                        padding:"4px 7px",fontSize:11,lineHeight:1,flexShrink:0}}
+                        padding:"4px 7px",fontSize:12,lineHeight:1,flexShrink:0}}
                       title="Move up">↑</button>
                     <button
                       onClick={()=>{if(i<form.on_connect.length-1){const a=[...form.on_connect];[a[i],a[i+1]]=[a[i+1],a[i]];setForm(f=>({...f,on_connect:a}));}}}
@@ -1206,7 +1206,7 @@ function NetworkSettingsModal({ net, onClose, onSaved, onDelete }) {
                       style={{background:"none",border:`1px solid ${T.border}`,borderRadius:4,
                         color:i===form.on_connect.length-1?T.textGhost:T.textDim,
                         cursor:i===form.on_connect.length-1?"default":"pointer",
-                        padding:"4px 7px",fontSize:11,lineHeight:1,flexShrink:0}}
+                        padding:"4px 7px",fontSize:12,lineHeight:1,flexShrink:0}}
                       title="Move down">↓</button>
                   </div>
                 ))}
@@ -1224,7 +1224,7 @@ function NetworkSettingsModal({ net, onClose, onSaved, onDelete }) {
                   }
                 }}
                 placeholder="/msg NickServ IDENTIFY password"
-                style={{...IS,flex:1,...MONO,fontSize:12}}
+                style={{...IS,flex:1,...MONO,fontSize:13}}
               />
               <button
                 onClick={()=>{
@@ -1233,7 +1233,7 @@ function NetworkSettingsModal({ net, onClose, onSaved, onDelete }) {
                     setNewCmd("");
                   }
                 }}
-                style={{...MONO,padding:"8px 14px",borderRadius:5,fontSize:12,cursor:"pointer",
+                style={{...MONO,padding:"8px 14px",borderRadius:5,fontSize:13,cursor:"pointer",
                   background:T.accentBg2,border:`1px solid ${T.accent}`,color:T.accent,
                   flexShrink:0,whiteSpace:"nowrap"}}>
                 + Add
@@ -1245,18 +1245,18 @@ function NetworkSettingsModal({ net, onClose, onSaved, onDelete }) {
         {/* Actions */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:20,gap:10}}>
           <button onClick={del} disabled={deleting}
-            style={{...MONO,padding:"8px 14px",borderRadius:5,fontSize:12,cursor:"pointer",
+            style={{...MONO,padding:"8px 14px",borderRadius:5,fontSize:13,cursor:"pointer",
               background:T.redBg,border:`1px solid ${T.redBorder}`,color:T.red,opacity:deleting?0.5:1}}>
             {deleting?"Deleting…":"Delete Network"}
           </button>
           <div style={{display:"flex",gap:8}}>
             <button onClick={onClose}
-              style={{...MONO,padding:"8px 16px",borderRadius:5,fontSize:12,cursor:"pointer",
+              style={{...MONO,padding:"8px 16px",borderRadius:5,fontSize:13,cursor:"pointer",
                 background:"transparent",border:`1px solid ${T.border}`,color:T.textDim}}>
               Cancel
             </button>
             <button onClick={save} disabled={saving}
-              style={{...MONO,padding:"8px 20px",borderRadius:5,fontSize:12,cursor:"pointer",
+              style={{...MONO,padding:"8px 20px",borderRadius:5,fontSize:13,cursor:"pointer",
                 background:T.accentBg2,border:`1px solid ${T.accent}`,color:T.accent,
                 fontWeight:700,opacity:saving?0.6:1}}>
               {saving?"Saving…":"Save Changes"}
@@ -1330,10 +1330,10 @@ function AddNetworkModal({ onClose, onAdded }) {
 
   const T=useTheme();
   const IS = {background:T.bg,border:`1px solid ${T.border}`,borderRadius:6,
-    color:T.text,padding:"9px 12px",fontSize:14,outline:"none",
+    color:T.text,padding:"9px 12px",fontSize:15,outline:"none",
     width:"100%",boxSizing:"border-box",fontFamily:"inherit"};
-  const LS = {fontSize:11,color:T.textMono,display:"block",marginBottom:5,
-    fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.07em"};
+  const LS = {fontSize:12,color:T.textMono,display:"block",marginBottom:5,
+    fontFamily:"'Inter var','Inter',sans-serif",textTransform:"uppercase",letterSpacing:"0.07em"};
 
   return (
     <div style={{position:"fixed",inset:0,background:"#000000cc",zIndex:300,
@@ -1344,8 +1344,8 @@ function AddNetworkModal({ onClose, onAdded }) {
 
         <div style={{padding:"18px 20px 14px",borderBottom:`1px solid ${T.borderFaint}`,
           display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <span style={{fontSize:15,fontWeight:800,color:T.textBright,fontFamily:"'JetBrains Mono',monospace"}}>Add IRC Network</span>
-          <button onClick={onClose} style={{background:"none",border:"none",color:T.textFaint,fontSize:22,cursor:"pointer"}}>×</button>
+          <span style={{fontSize:16,fontWeight:800,color:T.textBright,fontFamily:"'Inter var','Inter',sans-serif"}}>Add IRC Network</span>
+          <button onClick={onClose} style={{background:"none",border:"none",color:T.textFaint,fontSize:23,cursor:"pointer"}}>×</button>
         </div>
 
         <div style={{flex:1,overflowY:"auto",padding:"16px 20px"}}>
@@ -1357,7 +1357,7 @@ function AddNetworkModal({ onClose, onAdded }) {
                   style={{background:form.host===p.host&&p.host?T.accentBg:T.border,
                     border:`1px solid ${form.host===p.host&&p.host?T.accentDim:T.borderFaint}`,
                     borderRadius:5,color:form.host===p.host&&p.host?T.accent:T.textDim,
-                    padding:"5px 11px",fontSize:13,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace"}}>
+                    padding:"5px 11px",fontSize:14,cursor:"pointer",fontFamily:"'Inter var','Inter',sans-serif"}}>
                   {p.label}
                 </button>
               ))}
@@ -1365,7 +1365,7 @@ function AddNetworkModal({ onClose, onAdded }) {
           </div>
 
           {err&&<div style={{background:T.redBg,border:`1px solid ${T.redBorder}`,borderRadius:6,
-            padding:"8px 12px",fontSize:13,color:T.red,marginBottom:14}}>{err}</div>}
+            padding:"8px 12px",fontSize:14,color:T.red,marginBottom:14}}>{err}</div>}
 
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
             <div style={{gridColumn:"1/-1"}}>
@@ -1451,13 +1451,13 @@ function AddNetworkModal({ onClose, onAdded }) {
         <div style={{padding:"14px 20px",borderTop:`1px solid ${T.borderFaint}`,display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button onClick={onClose}
             style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,
-              color:T.textDim,padding:"9px 18px",fontSize:14,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace"}}>
+              color:T.textDim,padding:"9px 18px",fontSize:15,cursor:"pointer",fontFamily:"'Inter var','Inter',sans-serif"}}>
             Cancel
           </button>
           <button onClick={submit} disabled={busy}
             style={{background:T.accent,border:"none",borderRadius:6,color:T.bg,
-              fontWeight:700,padding:"9px 20px",fontSize:14,cursor:busy?"wait":"pointer",
-              fontFamily:"'JetBrains Mono',monospace",opacity:busy?0.6:1}}>
+              fontWeight:700,padding:"9px 20px",fontSize:15,cursor:busy?"wait":"pointer",
+              fontFamily:"'Inter var','Inter',sans-serif",opacity:busy?0.6:1}}>
             {busy?"Saving…":"Add & Connect"}
           </button>
         </div>
@@ -1522,7 +1522,7 @@ const CMDS = {
 // myPrefix: my own prefix in this channel ("~","&","@","%","+" or "")
 function UserMenuPopup({ menu, onClose, onSend, myPrefix, currentNick }) {
   const T = useTheme();
-  const MONO = { fontFamily:"'JetBrains Mono',monospace" };
+  const MONO = { fontFamily:"'Inter var','Inter',sans-serif" };
   const { nick, pfx, x, y, chan, netId } = menu;
 
   // Prefix rank: higher = more privileged
@@ -1564,9 +1564,9 @@ function UserMenuPopup({ menu, onClose, onSend, myPrefix, currentNick }) {
         userSelect:"none",opacity:dim?0.3:1,color:danger?T.red:T.text}}
       onMouseEnter={e=>{ if(!dim) e.currentTarget.style.background=danger?T.redBg:T.border; }}
       onMouseLeave={e=>{ e.currentTarget.style.background="transparent"; }}>
-      <span style={{width:16,textAlign:"center",fontSize:13,flexShrink:0}}>{icon}</span>
-      <span style={{flex:1,fontSize:13}}>{label}</span>
-      {sub&&<span style={{...MONO,fontSize:10,color:T.textFaint}}>{sub}</span>}
+      <span style={{width:16,textAlign:"center",fontSize:14,flexShrink:0}}>{icon}</span>
+      <span style={{flex:1,fontSize:14}}>{label}</span>
+      {sub&&<span style={{...MONO,fontSize:11,color:T.textFaint}}>{sub}</span>}
     </div>
   );
 
@@ -1583,15 +1583,15 @@ function UserMenuPopup({ menu, onClose, onSend, myPrefix, currentNick }) {
         onMouseEnter={e=>{ if(!dim) e.currentTarget.style.background=T.border; }}
         onMouseLeave={e=>{ e.currentTarget.style.background="transparent"; }}>
         {/* mode badge */}
-        <span style={{...MONO,fontSize:11,fontWeight:700,width:26,textAlign:"center",
+        <span style={{...MONO,fontSize:12,fontWeight:700,width:26,textAlign:"center",
           borderRadius:3,padding:"1px 3px",flexShrink:0,
           background: active ? T.accentBg3 : T.bgInput,
           color:      active ? T.accent    : T.textFaint,
           border:`1px solid ${active?T.accent:T.borderFaint}`}}>
           {active ? sub.replace("+","") : sub}
         </span>
-        <span style={{flex:1,fontSize:13}}>{label}</span>
-        <span style={{...MONO,fontSize:10,color:active?T.accent:T.textFaint}}>
+        <span style={{flex:1,fontSize:14}}>{label}</span>
+        <span style={{...MONO,fontSize:11,color:active?T.accent:T.textFaint}}>
           {active?"active":"—"}
         </span>
       </div>
@@ -1614,10 +1614,10 @@ function UserMenuPopup({ menu, onClose, onSend, myPrefix, currentNick }) {
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <Avatar nick={nick} size={26}/>
             <div>
-              <div style={{fontWeight:700,fontSize:14,color:T.textBright}}>{nick}</div>
+              <div style={{fontWeight:700,fontSize:15,color:T.textBright}}>{nick}</div>
               {pfx
-                ? <div style={{...MONO,fontSize:10,color:T.accent}}>{PREFIX_LABEL[pfx]||pfx}</div>
-                : <div style={{...MONO,fontSize:10,color:T.textFaint}}>Member</div>
+                ? <div style={{...MONO,fontSize:11,color:T.accent}}>{PREFIX_LABEL[pfx]||pfx}</div>
+                : <div style={{...MONO,fontSize:11,color:T.textFaint}}>Member</div>
               }
             </div>
           </div>
@@ -1631,7 +1631,7 @@ function UserMenuPopup({ menu, onClose, onSend, myPrefix, currentNick }) {
           {/* Mode section — visible to half-op and above, hidden for self */}
           {canSeeOps && nick !== currentNick && (<>
             <Divider/>
-            <div style={{...MONO,padding:"4px 12px 2px",fontSize:10,color:T.textFaint,
+            <div style={{...MONO,padding:"4px 12px 2px",fontSize:11,color:T.textFaint,
               textTransform:"uppercase",letterSpacing:"0.08em"}}>Channel Modes</div>
 
             {canOwner  && <ModeRow has={hasOwner} label="Owner"    sub="+q" canDo={canOwner} />}
@@ -1669,11 +1669,11 @@ function UserMenuPopup({ menu, onClose, onSend, myPrefix, currentNick }) {
 // ─── Profile modal ────────────────────────────────────────────────────────────
 function ProfileModal({ currentUser, onClose, onUpdated }) {
   const T = useTheme();
-  const MONO = { fontFamily:"'JetBrains Mono',monospace" };
-  const IS = { width:"100%", padding:"8px 10px", borderRadius:5, fontSize:13,
+  const MONO = { fontFamily:"'Inter var','Inter',sans-serif" };
+  const IS = { width:"100%", padding:"8px 10px", borderRadius:5, fontSize:14,
     background:T.bgPanel, border:`1px solid ${T.border}`, color:T.text,
     fontFamily:"'Inter var','Inter',sans-serif", outline:"none", boxSizing:"border-box" };
-  const LS = { display:"block", fontSize:11, color:T.textDim, marginBottom:4,
+  const LS = { display:"block", fontSize:12, color:T.textDim, marginBottom:4,
     ...MONO, textTransform:"uppercase", letterSpacing:"0.05em" };
 
   const [tab, setTab]               = React.useState("avatar"); // "avatar" | "password"
@@ -1727,7 +1727,7 @@ function ProfileModal({ currentUser, onClose, onUpdated }) {
   };
 
   const tabStyle = active => ({
-    ...MONO, padding:"7px 16px", fontSize:12, cursor:"pointer", borderRadius:5,
+    ...MONO, padding:"7px 16px", fontSize:13, cursor:"pointer", borderRadius:5,
     background: active ? T.accentBg2 : "transparent",
     border: `1px solid ${active ? T.accent : T.borderFaint}`,
     color: active ? T.accent : T.textDim,
@@ -1742,9 +1742,9 @@ function ProfileModal({ currentUser, onClose, onUpdated }) {
 
         {/* Header */}
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
-          <span style={{...MONO,fontWeight:700,fontSize:15,color:T.textBright}}>👤 My Profile</span>
+          <span style={{...MONO,fontWeight:700,fontSize:16,color:T.textBright}}>👤 My Profile</span>
           <button onClick={onClose} style={{background:"none",border:"none",color:T.textDim,
-            fontSize:18,cursor:"pointer",padding:"0 4px"}}>✕</button>
+            fontSize:19,cursor:"pointer",padding:"0 4px"}}>✕</button>
         </div>
 
         {/* Current user info */}
@@ -1759,9 +1759,9 @@ function ProfileModal({ currentUser, onClose, onUpdated }) {
             }
           </div>
           <div>
-            <div style={{fontWeight:700,fontSize:15,color:T.textBright}}>{currentUser.display_name||currentUser.username}</div>
-            <div style={{...MONO,fontSize:11,color:T.textFaint}}>@{currentUser.username}</div>
-            <div style={{...MONO,fontSize:10,color:T.textFaint,marginTop:2,
+            <div style={{fontWeight:700,fontSize:16,color:T.textBright}}>{currentUser.display_name||currentUser.username}</div>
+            <div style={{...MONO,fontSize:12,color:T.textFaint}}>@{currentUser.username}</div>
+            <div style={{...MONO,fontSize:11,color:T.textFaint,marginTop:2,
               background:currentUser.role==="admin"?T.amberBg:"transparent",
               border:`1px solid ${currentUser.role==="admin"?T.amber:T.borderFaint}`,
               borderRadius:3,padding:"1px 5px",display:"inline-block",
@@ -1789,7 +1789,7 @@ function ProfileModal({ currentUser, onClose, onUpdated }) {
                 {preview
                   ? <img src={preview} alt="preview"
                       style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-                  : <span style={{fontSize:11,color:T.textFaint,...MONO}}>No avatar</span>
+                  : <span style={{fontSize:12,color:T.textFaint,...MONO}}>No avatar</span>
                 }
               </div>
               <div style={{flex:1}}>
@@ -1798,16 +1798,16 @@ function ProfileModal({ currentUser, onClose, onUpdated }) {
                     color:file?T.text:T.textDim}}>
                   {file ? file.name : "Choose image…"}
                 </button>
-                <div style={{fontSize:11,color:T.textFaint,...MONO}}>
+                <div style={{fontSize:12,color:T.textFaint,...MONO}}>
                   JPEG, PNG, GIF, or WebP · max 4 MB
                 </div>
               </div>
             </div>
             {uploadErr&&<div style={{background:T.redBg,border:`1px solid ${T.redBorder}`,
-              borderRadius:5,padding:"7px 10px",color:T.red,fontSize:12,marginBottom:10,...MONO}}>
+              borderRadius:5,padding:"7px 10px",color:T.red,fontSize:13,marginBottom:10,...MONO}}>
               {uploadErr}</div>}
             <button onClick={handleUpload} disabled={!file||uploading}
-              style={{...MONO,width:"100%",padding:"9px 0",borderRadius:5,fontSize:13,
+              style={{...MONO,width:"100%",padding:"9px 0",borderRadius:5,fontSize:14,
                 cursor:(!file||uploading)?"default":"pointer",fontWeight:700,
                 background:(!file||uploading)?T.bg:T.accentBg2,
                 border:`1px solid ${(!file||uploading)?T.border:T.accent}`,
@@ -1838,12 +1838,12 @@ function ProfileModal({ currentUser, onClose, onUpdated }) {
                 onKeyDown={e=>e.key==="Enter"&&handlePassword()}/>
             </div>
             {pwErr&&<div style={{background:T.redBg,border:`1px solid ${T.redBorder}`,
-              borderRadius:5,padding:"7px 10px",color:T.red,fontSize:12,...MONO}}>{pwErr}</div>}
+              borderRadius:5,padding:"7px 10px",color:T.red,fontSize:13,...MONO}}>{pwErr}</div>}
             {pwOk&&<div style={{background:T.greenBg,border:`1px solid ${T.green}`,
-              borderRadius:5,padding:"7px 10px",color:T.green,fontSize:12,...MONO}}>
+              borderRadius:5,padding:"7px 10px",color:T.green,fontSize:13,...MONO}}>
               ✓ Password updated successfully</div>}
             <button onClick={handlePassword} disabled={!curPw||!newPw||!newPw2||pwSaving}
-              style={{...MONO,width:"100%",padding:"9px 0",borderRadius:5,fontSize:13,
+              style={{...MONO,width:"100%",padding:"9px 0",borderRadius:5,fontSize:14,
                 cursor:(!curPw||!newPw||!newPw2||pwSaving)?"default":"pointer",fontWeight:700,
                 background:(!curPw||!newPw||!newPw2||pwSaving)?T.bg:T.accentBg2,
                 border:`1px solid ${(!curPw||!newPw||!newPw2||pwSaving)?T.border:T.accent}`,
@@ -1926,11 +1926,11 @@ function InputBar({ onSend, onPhotoUpload, onCodeUpload, label, nick, disabled }
           onClick={e=>e.target===e.currentTarget&&setCodeModal(false)}>
           <div style={{background:T.bgPanel,border:`1px solid ${T.border}`,borderRadius:10,
             width:560,maxWidth:"calc(100vw - 32px)",padding:20,boxShadow:"0 8px 40px #0008"}}>
-            <div style={{fontWeight:700,fontSize:14,color:T.textBright,marginBottom:12}}>Paste code block</div>
+            <div style={{fontWeight:700,fontSize:15,color:T.textBright,marginBottom:12}}>Paste code block</div>
             <select value={codeLang} onChange={e=>setCodeLang(e.target.value)}
               style={{marginBottom:8,background:T.bgInput,border:`1px solid ${T.border}`,
-                color:T.text,borderRadius:5,padding:"5px 8px",fontSize:13,width:"100%",
-                fontFamily:"'JetBrains Mono',monospace"}}>
+                color:T.text,borderRadius:5,padding:"5px 8px",fontSize:14,width:"100%",
+                fontFamily:"'Inter var','Inter',sans-serif"}}>
               {SNIPPET_LANGS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
             </select>
             <textarea value={codeText} onChange={e=>setCodeText(e.target.value)}
@@ -1938,16 +1938,16 @@ function InputBar({ onSend, onPhotoUpload, onCodeUpload, label, nick, disabled }
               placeholder="Paste your code here…"
               autoFocus
               style={{width:"100%",height:220,background:T.bg,border:`1px solid ${T.border}`,
-                color:T.text,borderRadius:5,padding:"10px 12px",fontSize:13,resize:"vertical",
-                fontFamily:"'JetBrains Mono',monospace",lineHeight:1.5,boxSizing:"border-box"}}/>
+                color:T.text,borderRadius:5,padding:"10px 12px",fontSize:14,resize:"vertical",
+                fontFamily:"'Inter var','Inter',sans-serif",lineHeight:1.5,boxSizing:"border-box"}}/>
             <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
               <button onClick={()=>setCodeModal(false)}
                 style={{background:"none",border:`1px solid ${T.border}`,color:T.textDim,
-                  borderRadius:5,padding:"6px 16px",cursor:"pointer",fontSize:13}}>Cancel</button>
+                  borderRadius:5,padding:"6px 16px",cursor:"pointer",fontSize:14}}>Cancel</button>
               <button onClick={submitCode} disabled={!codeText.trim()}
                 style={{background:T.accent,border:"none",color:"#0a1628",fontWeight:700,
                   borderRadius:5,padding:"6px 16px",cursor:codeText.trim()?"pointer":"default",
-                  fontSize:13,opacity:codeText.trim()?1:0.5}}>Send</button>
+                  fontSize:14,opacity:codeText.trim()?1:0.5}}>Send</button>
             </div>
           </div>
         </div>
@@ -1957,21 +1957,21 @@ function InputBar({ onSend, onPhotoUpload, onCodeUpload, label, nick, disabled }
           padding:"4px 0",marginBottom:8,maxHeight:200,overflowY:"auto"}}>
           {suggest.map((cmd,i)=>(
             <div key={cmd} onClick={()=>{setVal(cmd+" ");setSuggest([]);inputRef.current?.focus();}}
-              style={{padding:"5px 14px",fontSize:13,cursor:"pointer",display:"flex",gap:12,
+              style={{padding:"5px 14px",fontSize:14,cursor:"pointer",display:"flex",gap:12,
                 background:i===sugIdx?T.accentBg:"transparent",
                 color:i===sugIdx?T.accent:T.textDim}}
               onMouseEnter={()=>setSugIdx(i)}>
-              <span style={{fontFamily:"'JetBrains Mono',monospace",minWidth:130,flexShrink:0}}>{cmd}</span>
-              <span style={{fontSize:12,color:T.textFaint,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{CMDS[cmd]}</span>
+              <span style={{fontFamily:"'Inter var','Inter',sans-serif",minWidth:130,flexShrink:0}}>{cmd}</span>
+              <span style={{fontSize:13,color:T.textFaint,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{CMDS[cmd]}</span>
             </div>
           ))}
         </div>
       )}
       <div style={{display:"flex",alignItems:"center",gap:10,background:T.bgInput,
         borderRadius:9,border:`1px solid ${T.borderFaint}`,padding:"9px 14px",opacity:disabled?0.45:1}}>
-        <span style={{fontSize:13,color:T.textMono,fontFamily:"'JetBrains Mono',monospace",
+        <span style={{fontSize:14,color:T.textMono,fontFamily:"'Inter var','Inter',sans-serif",
           flexShrink:0,userSelect:"none"}}>{label}</span>
-        <span style={{color:T.textFaint,flexShrink:0,fontSize:15}}>›</span>
+        <span style={{color:T.textFaint,flexShrink:0,fontSize:16}}>›</span>
         <input ref={inputRef} value={val} disabled={disabled}
           onChange={e=>{setVal(e.target.value);updateSuggest(e.target.value);}}
           onKeyDown={e=>{
@@ -1993,7 +1993,7 @@ function InputBar({ onSend, onPhotoUpload, onCodeUpload, label, nick, disabled }
           }}
           placeholder={disabled?"Not connected — type /connect to reconnect":`Message ${label} as ${nick}…`}
           style={{flex:1,background:"transparent",border:"none",outline:"none",
-            color:T.text,fontSize:16,caretColor:T.accent,fontFamily:"inherit"}}
+            color:T.text,fontSize:17,caretColor:T.accent,fontFamily:"inherit"}}
         />
         {onPhotoUpload&&(
           <>
@@ -2040,11 +2040,11 @@ function CtxItem({ icon, label, onClick, color, danger }) {
     <div onClick={onClick}
       onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
       style={{display:"flex",alignItems:"center",gap:8,padding:"6px 12px",
-        fontSize:13,cursor:"pointer",borderRadius:4,margin:"1px 4px",
+        fontSize:14,cursor:"pointer",borderRadius:4,margin:"1px 4px",
         background:hov?T.border:"transparent",
         color:color||(danger?T.red:T.text),
         fontFamily:"'Inter var','Inter',sans-serif"}}>
-      <span style={{width:16,textAlign:"center",fontSize:13,flexShrink:0}}>{icon}</span>
+      <span style={{width:16,textAlign:"center",fontSize:14,flexShrink:0}}>{icon}</span>
       <span>{label}</span>
     </div>
   );
@@ -2058,7 +2058,7 @@ function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, l
 
   let icon, label;
   if (kind==="server") {
-    icon = <span style={{fontSize:11,opacity:0.6,flexShrink:0}}>⚡</span>;
+    icon = <span style={{fontSize:12,opacity:0.6,flexShrink:0}}>⚡</span>;
     label = "server";
   } else if (kind==="dm") {
     icon = <Avatar nick={chanName} size={16}/>;
@@ -2066,8 +2066,8 @@ function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, l
   } else {
     // channel — show dimmed lock icon if left
     icon = left
-      ? <span style={{fontSize:11,opacity:0.35,flexShrink:0,fontFamily:"'JetBrains Mono',monospace"}}>#</span>
-      : <span style={{fontSize:12,opacity:0.7,flexShrink:0,fontFamily:"'JetBrains Mono',monospace"}}>#</span>;
+      ? <span style={{fontSize:12,opacity:0.35,flexShrink:0,fontFamily:"'Inter var','Inter',sans-serif"}}>#</span>
+      : <span style={{fontSize:13,opacity:0.7,flexShrink:0,fontFamily:"'Inter var','Inter',sans-serif"}}>#</span>;
     label = chanName.replace(/^#/,"");
   }
 
@@ -2083,7 +2083,7 @@ function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, l
         padding:"4px 10px 4px 24px",margin:"1px 6px",borderRadius:4,cursor:"pointer",
         background:active?T.accentBg2:hov?T.border:"transparent",
         color:textColor,
-        fontWeight:active||unread>0?600:400,fontSize:14,gap:6,
+        fontWeight:active||unread>0?600:400,fontSize:15,gap:6,
         opacity:left?0.55:1}}>
       <span style={{display:"flex",alignItems:"center",gap:5,overflow:"hidden",minWidth:0}}>
         {icon}
@@ -2091,9 +2091,9 @@ function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, l
           fontStyle:left?"italic":"normal"}}>{label}</span>
       </span>
       {unread>0&&!active&&(
-        <span style={{background:T.accent,color:T.bg,fontSize:10,fontWeight:800,
+        <span style={{background:T.accent,color:T.bg,fontSize:11,fontWeight:800,
           borderRadius:10,padding:"1px 5px",minWidth:16,textAlign:"center",
-          fontFamily:"'JetBrains Mono',monospace",flexShrink:0,lineHeight:"14px"}}>{unread>99?"99+":unread}</span>
+          fontFamily:"'Inter var','Inter',sans-serif",flexShrink:0,lineHeight:"14px"}}>{unread>99?"99+":unread}</span>
       )}
     </div>
   );
@@ -2108,13 +2108,13 @@ function SectionHeader({ label, count, open, onToggle }) {
         cursor:"pointer",userSelect:"none"}}
       onMouseEnter={e=>e.currentTarget.style.background=T.border}
       onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-      <span style={{fontSize:9,color:T.textFaint,transition:"transform 0.15s",
+      <span style={{fontSize:10,color:T.textFaint,transition:"transform 0.15s",
         display:"inline-block",transform:open?"rotate(90deg)":"rotate(0deg)"}}>▶</span>
-      <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10,fontWeight:700,
+      <span style={{fontFamily:"'Inter var','Inter',sans-serif",fontSize:11,fontWeight:700,
         color:T.textDim,textTransform:"uppercase",letterSpacing:"0.08em",flex:1}}>
         {label}
       </span>
-      {count>0&&<span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:9,
+      {count>0&&<span style={{fontFamily:"'Inter var','Inter',sans-serif",fontSize:10,
         color:T.textFaint}}>{count}</span>}
     </div>
   );
@@ -2123,9 +2123,9 @@ function SectionHeader({ label, count, open, onToggle }) {
 // ─── Logs Modal ───────────────────────────────────────────────────────────────
 function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, saveNotifPrefs }) {
   const T = useTheme();
-  const MONO = { fontFamily:"'JetBrains Mono',monospace" };
+  const MONO = { fontFamily:"'Inter var','Inter',sans-serif" };
   const IS = {
-    width:"100%", padding:"7px 10px", borderRadius:5, fontSize:13,
+    width:"100%", padding:"7px 10px", borderRadius:5, fontSize:14,
     border:`1px solid ${T.border}`, background:T.bgInput||T.bg, color:T.text,
     outline:"none", boxSizing:"border-box",
   };
@@ -2262,14 +2262,14 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
         {/* Header */}
         <div style={{padding:"16px 20px 0",borderBottom:`1px solid ${T.border}`,flexShrink:0}}>
           <div style={{display:"flex",alignItems:"center",marginBottom:14}}>
-            <span style={{...MONO,fontSize:15,fontWeight:700,color:T.textBright}}>⚙ User Settings</span>
+            <span style={{...MONO,fontSize:16,fontWeight:700,color:T.textBright}}>⚙ User Settings</span>
             <button onClick={onClose} style={{marginLeft:"auto",background:"transparent",
-              border:"none",color:T.textFaint,fontSize:18,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>
+              border:"none",color:T.textFaint,fontSize:19,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>
           </div>
           <div style={{display:"flex",gap:0}}>
             {[["browse","Browse"],["logs","Logs"],["notifications","Notifications"]].map(([id,label])=>(
               <button key={id} onClick={()=>setTab(id)}
-                style={{...MONO,fontSize:12,padding:"7px 16px",border:"none",cursor:"pointer",
+                style={{...MONO,fontSize:13,padding:"7px 16px",border:"none",cursor:"pointer",
                   borderBottom: tab===id ? `2px solid ${T.accent||T.blue||"#58a6ff"}` : "2px solid transparent",
                   background:"transparent",
                   color: tab===id ? T.textBright : T.textFaint,
@@ -2293,7 +2293,7 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
 
                 {/* Network */}
                 <div style={{display:"flex",flexDirection:"column",gap:3}}>
-                  <label style={{...MONO,fontSize:10,color:T.textFaint}}>NETWORK</label>
+                  <label style={{...MONO,fontSize:11,color:T.textFaint}}>NETWORK</label>
                   <select value={filters.network_id}
                     onChange={e=>{ handleFilter("network_id",e.target.value); }}
                     style={{...IS,width:130,padding:"5px 8px"}}>
@@ -2306,7 +2306,7 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
 
                 {/* Channel */}
                 <div style={{display:"flex",flexDirection:"column",gap:3}}>
-                  <label style={{...MONO,fontSize:10,color:T.textFaint}}>CHANNEL</label>
+                  <label style={{...MONO,fontSize:11,color:T.textFaint}}>CHANNEL</label>
                   {logChans.length > 0 ? (
                     <select value={filters.channel}
                       onChange={e=>handleFilter("channel",e.target.value)}
@@ -2325,7 +2325,7 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
 
                 {/* Nick */}
                 <div style={{display:"flex",flexDirection:"column",gap:3}}>
-                  <label style={{...MONO,fontSize:10,color:T.textFaint}}>NICK</label>
+                  <label style={{...MONO,fontSize:11,color:T.textFaint}}>NICK</label>
                   <input placeholder="nick…" value={filters.nick}
                     onChange={e=>handleFilter("nick",e.target.value)}
                     style={{...IS,width:110}} />
@@ -2333,7 +2333,7 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
 
                 {/* Type */}
                 <div style={{display:"flex",flexDirection:"column",gap:3}}>
-                  <label style={{...MONO,fontSize:10,color:T.textFaint}}>TYPE</label>
+                  <label style={{...MONO,fontSize:11,color:T.textFaint}}>TYPE</label>
                   <select value={filters.type} onChange={e=>handleFilter("type",e.target.value)}
                     style={{...IS,width:115,padding:"5px 8px"}}>
                     <option value="">All types</option>
@@ -2345,7 +2345,7 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
 
                 {/* Date from */}
                 <div style={{display:"flex",flexDirection:"column",gap:3}}>
-                  <label style={{...MONO,fontSize:10,color:T.textFaint}}>FROM</label>
+                  <label style={{...MONO,fontSize:11,color:T.textFaint}}>FROM</label>
                   <input type="date" value={filters.date_from}
                     onChange={e=>handleFilter("date_from",e.target.value)}
                     style={{...IS,width:130}} />
@@ -2353,7 +2353,7 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
 
                 {/* Date to */}
                 <div style={{display:"flex",flexDirection:"column",gap:3}}>
-                  <label style={{...MONO,fontSize:10,color:T.textFaint}}>TO</label>
+                  <label style={{...MONO,fontSize:11,color:T.textFaint}}>TO</label>
                   <input type="date" value={filters.date_to}
                     onChange={e=>handleFilter("date_to",e.target.value)}
                     style={{...IS,width:130}} />
@@ -2361,7 +2361,7 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
 
                 {/* Search text */}
                 <div style={{display:"flex",flexDirection:"column",gap:3,flex:1,minWidth:160}}>
-                  <label style={{...MONO,fontSize:10,color:T.textFaint}}>SEARCH TEXT</label>
+                  <label style={{...MONO,fontSize:11,color:T.textFaint}}>SEARCH TEXT</label>
                   <input placeholder="search messages…" value={filters.search}
                     onChange={e=>handleFilter("search",e.target.value)}
                     onKeyDown={e=>{ if(e.key==="Enter") search(0); }}
@@ -2370,7 +2370,7 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
 
                 <button onClick={runSearch}
                   style={{...MONO,padding:"6px 14px",borderRadius:5,border:"none",
-                    background:T.accent||T.blue||"#238636",color:"#fff",fontSize:12,
+                    background:T.accent||T.blue||"#238636",color:"#fff",fontSize:13,
                     cursor:"pointer",alignSelf:"flex-end",whiteSpace:"nowrap"}}>
                   🔍 Search
                 </button>
@@ -2380,20 +2380,20 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
               <div style={{flex:1,overflowY:"auto",padding:"0"}}>
                 {loading&&(
                   <div style={{textAlign:"center",padding:32,color:T.textFaint,
-                    ...MONO,fontSize:13}}>Loading…</div>
+                    ...MONO,fontSize:14}}>Loading…</div>
                 )}
                 {!loading&&results&&results.entries.length===0&&(
                   <div style={{textAlign:"center",padding:32,color:T.textFaint,
-                    ...MONO,fontSize:13}}>No log entries found.</div>
+                    ...MONO,fontSize:14}}>No log entries found.</div>
                 )}
                 {!loading&&results&&results.entries.length>0&&(
-                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
                     <thead>
                       <tr style={{borderBottom:`1px solid ${T.border}`,background:T.bgSide,
                         position:"sticky",top:0,zIndex:1}}>
                         {["Timestamp","Network","Channel","Nick","Type","Message"].map(h=>(
                           <th key={h} style={{...MONO,padding:"7px 12px",textAlign:"left",
-                            fontSize:10,fontWeight:700,color:T.textFaint,
+                            fontSize:11,fontWeight:700,color:T.textFaint,
                             textTransform:"uppercase",letterSpacing:"0.06em",
                             whiteSpace:"nowrap",borderBottom:`1px solid ${T.border}`}}>
                             {h}
@@ -2407,17 +2407,17 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                           onMouseEnter={ev=>ev.currentTarget.style.background=T.bgHover||T.border+"44"}
                           onMouseLeave={ev=>ev.currentTarget.style.background="transparent"}>
                           <td style={{...MONO,padding:"6px 12px",color:T.textFaint,
-                            fontSize:11,whiteSpace:"nowrap"}}>{fmtTime(e.timestamp)}</td>
+                            fontSize:12,whiteSpace:"nowrap"}}>{fmtTime(e.timestamp)}</td>
                           <td style={{...MONO,padding:"6px 12px",color:T.textDim,
-                            fontSize:11,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",
+                            fontSize:12,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",
                             whiteSpace:"nowrap"}}>{e.network_name}</td>
                           <td style={{...MONO,padding:"6px 12px",color:T.accent||T.blue||"#58a6ff",
-                            fontSize:11,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",
+                            fontSize:12,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",
                             whiteSpace:"nowrap"}}>{e.channel||<span style={{color:T.textFaint}}>—</span>}</td>
                           <td style={{...MONO,padding:"6px 12px",color:T.textBright,
-                            fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>{e.nick}</td>
+                            fontSize:12,fontWeight:600,whiteSpace:"nowrap"}}>{e.nick}</td>
                           <td style={{padding:"6px 12px",whiteSpace:"nowrap"}}>
-                            <span style={{...MONO,fontSize:10,fontWeight:700,
+                            <span style={{...MONO,fontSize:11,fontWeight:700,
                               color:typeColor(e.type),background:typeColor(e.type)+"18",
                               borderRadius:3,padding:"1px 6px"}}>{e.type}</span>
                           </td>
@@ -2436,19 +2436,19 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
               <div style={{borderTop:`1px solid ${T.border}`,padding:"10px 16px",
                 flexShrink:0,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                 {results&&(
-                  <span style={{...MONO,fontSize:11,color:T.textFaint}}>
+                  <span style={{...MONO,fontSize:12,color:T.textFaint}}>
                     {results.total.toLocaleString()} result{results.total!==1?"s":""} · page {page+1}/{Math.max(1,totalPages)}
                   </span>
                 )}
                 <div style={{display:"flex",gap:6}}>
                   <button disabled={page===0} onClick={()=>search(page-1)}
-                    style={{...MONO,fontSize:11,padding:"4px 10px",borderRadius:4,
+                    style={{...MONO,fontSize:12,padding:"4px 10px",borderRadius:4,
                       border:`1px solid ${T.border}`,background:"transparent",
                       color:page===0?T.textFaint:T.text,cursor:page===0?"default":"pointer"}}>
                     ← Prev
                   </button>
                   <button disabled={page+1>=totalPages} onClick={()=>search(page+1)}
-                    style={{...MONO,fontSize:11,padding:"4px 10px",borderRadius:4,
+                    style={{...MONO,fontSize:12,padding:"4px 10px",borderRadius:4,
                       border:`1px solid ${T.border}`,background:"transparent",
                       color:page+1>=totalPages?T.textFaint:T.text,cursor:page+1>=totalPages?"default":"pointer"}}>
                     Next →
@@ -2456,7 +2456,7 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                 </div>
                 <div style={{marginLeft:"auto",display:"flex",gap:8}}>
                   <button onClick={doExport} disabled={exporting}
-                    style={{...MONO,fontSize:11,padding:"5px 12px",borderRadius:5,
+                    style={{...MONO,fontSize:12,padding:"5px 12px",borderRadius:5,
                       border:`1px solid ${T.greenBorder||T.border}`,
                       background:T.greenBg||"transparent",
                       color:T.green||"#3fb950",cursor:"pointer"}}>
@@ -2464,25 +2464,25 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                   </button>
                   {!deleteConfirm ? (
                     <button onClick={()=>setDeleteConfirm(true)}
-                      style={{...MONO,fontSize:11,padding:"5px 12px",borderRadius:5,
+                      style={{...MONO,fontSize:12,padding:"5px 12px",borderRadius:5,
                         border:`1px solid ${T.border}`,background:"transparent",
                         color:T.red||"#f85149",cursor:"pointer"}}>
                       🗑 Clear All Logs
                     </button>
                   ) : (
                     <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                      <span style={{...MONO,fontSize:11,color:T.red||"#f85149"}}>
+                      <span style={{...MONO,fontSize:12,color:T.red||"#f85149"}}>
                         Delete all logs?
                       </span>
                       <button onClick={doDelete}
-                        style={{...MONO,fontSize:11,padding:"4px 10px",borderRadius:4,
+                        style={{...MONO,fontSize:12,padding:"4px 10px",borderRadius:4,
                           border:`1px solid ${T.red||"#f85149"}`,
                           background:T.red+"22"||"transparent",
                           color:T.red||"#f85149",cursor:"pointer"}}>
                         Yes, delete
                       </button>
                       <button onClick={()=>setDeleteConfirm(false)}
-                        style={{...MONO,fontSize:11,padding:"4px 10px",borderRadius:4,
+                        style={{...MONO,fontSize:12,padding:"4px 10px",borderRadius:4,
                           border:`1px solid ${T.border}`,background:"transparent",
                           color:T.textFaint,cursor:"pointer"}}>
                         Cancel
@@ -2498,7 +2498,7 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
           {tab==="logs"&&(
             <div style={{flex:1,overflowY:"auto",padding:"24px 28px"}}>
               {!settings ? (
-                <div style={{color:T.textFaint,...MONO,fontSize:13}}>Loading…</div>
+                <div style={{color:T.textFaint,...MONO,fontSize:14}}>Loading…</div>
               ) : (
                 <div style={{maxWidth:440,display:"flex",flexDirection:"column",gap:20}}>
 
@@ -2507,16 +2507,16 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                     padding:"16px 18px"}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                       <div>
-                        <div style={{...MONO,fontSize:13,fontWeight:700,color:T.textBright,
+                        <div style={{...MONO,fontSize:14,fontWeight:700,color:T.textBright,
                           marginBottom:4}}>Enable Logging</div>
-                        <div style={{fontSize:12,color:T.textFaint,lineHeight:1.5}}>
+                        <div style={{fontSize:13,color:T.textFaint,lineHeight:1.5}}>
                           When enabled, IRC messages are saved to your personal log history.
                         </div>
                       </div>
                       <button
                         onClick={()=>setSettings(s=>({...s,enabled:!s.enabled}))}
                         style={{...MONO,flexShrink:0,marginLeft:16,padding:"5px 16px",
-                          borderRadius:20,border:"none",cursor:"pointer",fontSize:12,
+                          borderRadius:20,border:"none",cursor:"pointer",fontSize:13,
                           fontWeight:700,
                           background: settings.enabled ? (T.green||"#3fb950") : T.border,
                           color: settings.enabled ? "#fff" : T.textFaint}}>
@@ -2528,10 +2528,10 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                   {/* Retention */}
                   <div style={{background:T.bg,borderRadius:8,border:`1px solid ${T.border}`,
                     padding:"16px 18px",opacity:settings.enabled?1:0.5}}>
-                    <div style={{...MONO,fontSize:13,fontWeight:700,color:T.textBright,marginBottom:4}}>
+                    <div style={{...MONO,fontSize:14,fontWeight:700,color:T.textBright,marginBottom:4}}>
                       Log Retention
                     </div>
-                    <div style={{fontSize:12,color:T.textFaint,lineHeight:1.5,marginBottom:14}}>
+                    <div style={{fontSize:13,color:T.textFaint,lineHeight:1.5,marginBottom:14}}>
                       Logs older than this many days are automatically deleted.
                       Set to <strong style={{color:T.text}}>0</strong> to keep logs forever.
                     </div>
@@ -2543,16 +2543,16 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                         onChange={e=>setSettings(s=>({...s,retention_days:parseInt(e.target.value)||0}))}
                         style={{...IS,width:100,textAlign:"right"}}
                       />
-                      <span style={{fontSize:13,color:T.textFaint}}>days</span>
+                      <span style={{fontSize:14,color:T.textFaint}}>days</span>
                       {settings.retention_days===0&&(
-                        <span style={{...MONO,fontSize:11,color:T.amber||"#d4a72c",
+                        <span style={{...MONO,fontSize:12,color:T.amber||"#d4a72c",
                           background:(T.amber||"#d4a72c")+"18",borderRadius:4,padding:"2px 8px"}}>
                           keep forever
                         </span>
                       )}
                     </div>
                     {settings.retention_days > 0 && (
-                      <div style={{marginTop:10,fontSize:12,color:T.textFaint}}>
+                      <div style={{marginTop:10,fontSize:13,color:T.textFaint}}>
                         Logs older than <strong style={{color:T.text}}>{settings.retention_days} days</strong> will be
                         automatically purged daily.
                       </div>
@@ -2562,7 +2562,7 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                   {/* What gets logged */}
                   <div style={{background:T.bg,borderRadius:8,border:`1px solid ${T.border}`,
                     padding:"16px 18px"}}>
-                    <div style={{...MONO,fontSize:13,fontWeight:700,color:T.textBright,marginBottom:10}}>
+                    <div style={{...MONO,fontSize:14,fontWeight:700,color:T.textBright,marginBottom:10}}>
                       What Gets Logged
                     </div>
                     {[
@@ -2575,13 +2575,13 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                     ].map(([type,desc])=>(
                       <div key={type} style={{display:"flex",alignItems:"center",
                         gap:10,marginBottom:7}}>
-                        <span style={{...MONO,fontSize:10,fontWeight:700,
+                        <span style={{...MONO,fontSize:11,fontWeight:700,
                           color:typeColor(type.split(" ")[0]),
                           background:typeColor(type.split(" ")[0])+"18",
                           borderRadius:3,padding:"1px 6px",minWidth:60,textAlign:"center"}}>
                           {type}
                         </span>
-                        <span style={{fontSize:12,color:T.textFaint}}>{desc}</span>
+                        <span style={{fontSize:13,color:T.textFaint}}>{desc}</span>
                       </div>
                     ))}
                   </div>
@@ -2591,11 +2591,11 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                     <button onClick={saveSettings} disabled={settingsSaving}
                       style={{...MONO,padding:"8px 20px",borderRadius:6,border:"none",
                         background:T.accent||T.blue||"#238636",color:"#fff",
-                        fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                        fontSize:14,fontWeight:700,cursor:"pointer"}}>
                       {settingsSaving ? "Saving…" : "Save Settings"}
                     </button>
                     {settingsMsg&&(
-                      <span style={{fontSize:12,color:T.green||"#3fb950"}}>{settingsMsg}</span>
+                      <span style={{fontSize:13,color:T.green||"#3fb950"}}>{settingsMsg}</span>
                     )}
                   </div>
                 </div>
@@ -2609,10 +2609,10 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
               <div style={{maxWidth:440,display:"flex",flexDirection:"column",gap:20}}>
                 {/* ── Notifications ── */}
                 <div style={{background:T.bg,borderRadius:8,border:`1px solid ${T.border}`,padding:"16px 18px"}}>
-                  <div style={{...MONO,fontSize:13,fontWeight:700,color:T.textBright,marginBottom:4}}>
+                  <div style={{...MONO,fontSize:14,fontWeight:700,color:T.textBright,marginBottom:4}}>
                     Browser Notifications
                   </div>
-                  <div style={{fontSize:12,color:T.textFaint,lineHeight:1.5,marginBottom:14}}>
+                  <div style={{fontSize:13,color:T.textFaint,lineHeight:1.5,marginBottom:14}}>
                     Get notified even when the tab is in the background.
                   </div>
 
@@ -2621,11 +2621,11 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                     padding:"10px 12px",borderRadius:6,
                     background: notifPerms==="granted"?T.greenBg:notifPerms==="denied"?T.redBg:T.accentBg,
                     border:`1px solid ${notifPerms==="granted"?T.greenBorder:notifPerms==="denied"?T.redBorder:T.accentDim}`}}>
-                    <span style={{fontSize:14}}>
+                    <span style={{fontSize:15}}>
                       {notifPerms==="granted"?"🔔":notifPerms==="denied"?"🔕":"🔔"}
                     </span>
                     <div style={{flex:1}}>
-                      <div style={{fontSize:12,fontWeight:600,
+                      <div style={{fontSize:13,fontWeight:600,
                         color:notifPerms==="granted"?T.green:notifPerms==="denied"?T.red:T.accent}}>
                         {notifPerms==="granted"?"Notifications enabled"
                           :notifPerms==="denied"?"Notifications blocked by browser"
@@ -2633,7 +2633,7 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
 
                       </div>
                       {notifPerms==="denied"&&(
-                        <div style={{fontSize:11,color:T.textFaint,marginTop:2,lineHeight:1.6}}>
+                        <div style={{fontSize:12,color:T.textFaint,marginTop:2,lineHeight:1.6}}>
                           {(()=>{
                             if (location.protocol !== "https:") return "Notifications require HTTPS. This page is loaded over HTTP — switch to a secure connection and try again.";
                             const ua = navigator.userAgent;
@@ -2660,7 +2660,7 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                       }} style={{...MONO,padding:"5px 12px",borderRadius:6,border:"none",
                         background:notifPerms==="denied"?T.border:T.accent,
                         color:notifPerms==="denied"?T.textDim:"#fff",
-                        fontSize:11,fontWeight:700,cursor:"pointer",flexShrink:0}}>
+                        fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0}}>
                         {notifPerms==="denied"?"Reload page":"Enable"}
                       </button>
                     )}
@@ -2676,15 +2676,15 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                       justifyContent:"space-between",padding:"8px 0",
                       borderTop:`1px solid ${T.borderFaint}`}}>
                       <div>
-                        <div style={{fontSize:13,color:T.text,fontWeight:500}}>{label}</div>
-                        <div style={{fontSize:11,color:T.textFaint,marginTop:2}}>{desc}</div>
+                        <div style={{fontSize:14,color:T.text,fontWeight:500}}>{label}</div>
+                        <div style={{fontSize:12,color:T.textFaint,marginTop:2}}>{desc}</div>
                       </div>
                       <button
                         disabled={notifPerms!=="granted"}
                         onClick={()=>saveNotifPrefs({...notifPrefs,[key]:notifPrefs[key]===false?true:!(notifPrefs[key]??true)})}
                         style={{...MONO,flexShrink:0,marginLeft:16,padding:"4px 14px",
                           borderRadius:20,border:"none",cursor:notifPerms==="granted"?"pointer":"not-allowed",
-                          fontSize:11,fontWeight:700,opacity:notifPerms==="granted"?1:0.4,
+                          fontSize:12,fontWeight:700,opacity:notifPerms==="granted"?1:0.4,
                           background:(notifPrefs[key]??true)?T.green:T.border,
                           color:(notifPrefs[key]??true)?"#fff":T.textFaint}}>
                         {(notifPrefs[key]??true)?"ON":"OFF"}
@@ -2721,8 +2721,8 @@ function ThemePicker({ T, theme, onSelect }) {
         onClick={()=>setOpen(true)}
         title="Switch theme"
         style={{background:T.accentBg,border:`1px solid ${T.accentDim}`,borderRadius:6,
-          color:T.accent,fontSize:13,cursor:"pointer",padding:"4px 7px",lineHeight:1,
-          fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}
+          color:T.accent,fontSize:14,cursor:"pointer",padding:"4px 7px",lineHeight:1,
+          fontFamily:"'Inter var','Inter',sans-serif",flexShrink:0}}
         onMouseEnter={e=>e.currentTarget.style.background=T.accentBg2}
         onMouseLeave={e=>e.currentTarget.style.background=T.accentBg}>
         🎨
@@ -2739,11 +2739,11 @@ function ThemePicker({ T, theme, onSelect }) {
             {/* Header */}
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
               <div>
-                <div style={{fontSize:15,fontWeight:700,color:T.textBright}}>Choose Theme</div>
-                <div style={{fontSize:11,color:T.textFaint,marginTop:2}}>Select a color scheme for KoreChat</div>
+                <div style={{fontSize:16,fontWeight:700,color:T.textBright}}>Choose Theme</div>
+                <div style={{fontSize:12,color:T.textFaint,marginTop:2}}>Select a color scheme for KoreChat</div>
               </div>
               <button onClick={()=>setOpen(false)}
-                style={{background:"transparent",border:"none",color:T.textDim,fontSize:18,
+                style={{background:"transparent",border:"none",color:T.textDim,fontSize:19,
                   cursor:"pointer",padding:"2px 6px",borderRadius:4,lineHeight:1}}
                 onMouseEnter={e=>e.currentTarget.style.color=T.text}
                 onMouseLeave={e=>e.currentTarget.style.color=T.textDim}>✕</button>
@@ -2764,37 +2764,37 @@ function ThemePicker({ T, theme, onSelect }) {
                     onMouseLeave={e=>{ e.currentTarget.style.borderColor=active?T.accent:T.borderFaint; }}>
 
                     {/* Mini IRC preview */}
-                    <div style={{display:"flex",height:110,background:P.bg,fontSize:10,fontFamily:"'JetBrains Mono',monospace"}}>
+                    <div style={{display:"flex",height:110,background:P.bg,fontSize:11,fontFamily:"'Inter var','Inter',sans-serif"}}>
                       {/* Sidebar */}
                       <div style={{width:88,background:P.bgSide,borderRight:`1px solid ${P.border}`,padding:"6px 0",flexShrink:0}}>
-                        <div style={{padding:"2px 8px",fontSize:9,color:P.textDim,marginBottom:3,letterSpacing:"0.08em"}}>NETWORKS</div>
-                        <div style={{padding:"3px 8px",background:P.accent+"22",borderLeft:`2px solid ${P.accent}`,color:P.accent,fontSize:9}}>● Ameth</div>
-                        <div style={{padding:"3px 8px",color:P.textDim,fontSize:9,marginTop:1}}>○ Libera</div>
-                        <div style={{padding:"2px 8px",fontSize:9,color:P.textDim,marginTop:4,letterSpacing:"0.08em"}}>CHANNELS</div>
-                        <div style={{padding:"3px 8px",background:P.accent+"15",color:P.text,fontSize:9}}># general</div>
-                        <div style={{padding:"3px 8px",color:P.textDim,fontSize:9}}># random</div>
+                        <div style={{padding:"2px 8px",fontSize:10,color:P.textDim,marginBottom:3,letterSpacing:"0.08em"}}>NETWORKS</div>
+                        <div style={{padding:"3px 8px",background:P.accent+"22",borderLeft:`2px solid ${P.accent}`,color:P.accent,fontSize:10}}>● Ameth</div>
+                        <div style={{padding:"3px 8px",color:P.textDim,fontSize:10,marginTop:1}}>○ Libera</div>
+                        <div style={{padding:"2px 8px",fontSize:10,color:P.textDim,marginTop:4,letterSpacing:"0.08em"}}>CHANNELS</div>
+                        <div style={{padding:"3px 8px",background:P.accent+"15",color:P.text,fontSize:10}}># general</div>
+                        <div style={{padding:"3px 8px",color:P.textDim,fontSize:10}}># random</div>
                       </div>
                       {/* Messages */}
                       <div style={{flex:1,padding:"6px 8px",display:"flex",flexDirection:"column",gap:4,overflow:"hidden"}}>
                         <div style={{display:"flex",gap:4,alignItems:"baseline"}}>
-                          <span style={{color:P.textDim,fontSize:8}}>12:34</span>
-                          <span style={{color:P.nick1,fontWeight:600,fontSize:9}}>eerok</span>
-                          <span style={{color:P.text,fontSize:9,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>hey, this theme looks great</span>
+                          <span style={{color:P.textDim,fontSize:9}}>12:34</span>
+                          <span style={{color:P.nick1,fontWeight:600,fontSize:10}}>eerok</span>
+                          <span style={{color:P.text,fontSize:10,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>hey, this theme looks great</span>
                         </div>
                         <div style={{display:"flex",gap:4,alignItems:"baseline"}}>
-                          <span style={{color:P.textDim,fontSize:8}}>12:35</span>
-                          <span style={{color:P.nick2,fontWeight:600,fontSize:9}}>alice</span>
-                          <span style={{color:P.text,fontSize:9}}>agreed! very clean 👍</span>
+                          <span style={{color:P.textDim,fontSize:9}}>12:35</span>
+                          <span style={{color:P.nick2,fontWeight:600,fontSize:10}}>alice</span>
+                          <span style={{color:P.text,fontSize:10}}>agreed! very clean 👍</span>
                         </div>
                         <div style={{display:"flex",gap:4,alignItems:"baseline"}}>
-                          <span style={{color:P.textDim,fontSize:8}}>12:35</span>
-                          <span style={{color:P.nick3,fontWeight:600,fontSize:9}}>bob</span>
-                          <span style={{color:P.text,fontSize:9,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>the colors work perfectly</span>
+                          <span style={{color:P.textDim,fontSize:9}}>12:35</span>
+                          <span style={{color:P.nick3,fontWeight:600,fontSize:10}}>bob</span>
+                          <span style={{color:P.text,fontSize:10,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>the colors work perfectly</span>
                         </div>
                         {/* Input bar */}
                         <div style={{marginTop:"auto",background:P.bgPanel,borderRadius:4,
                           border:`1px solid ${P.border}`,padding:"2px 6px",
-                          color:P.textDim,fontSize:9}}>
+                          color:P.textDim,fontSize:10}}>
                           Message #general...
                         </div>
                       </div>
@@ -2804,13 +2804,13 @@ function ThemePicker({ T, theme, onSelect }) {
                     <div style={{background:T.bgPanel,padding:"8px 10px",
                       display:"flex",alignItems:"center",justifyContent:"space-between",
                       borderTop:`1px solid ${T.borderFaint}`}}>
-                      <span style={{fontSize:12,fontWeight:active?700:500,
+                      <span style={{fontSize:13,fontWeight:active?700:500,
                         color:active?T.accent:T.text,fontFamily:"'Inter',sans-serif"}}>
                         {t.label}
                       </span>
                       {active
-                        ? <span style={{fontSize:10,color:T.accent,fontWeight:600}}>✓ Active</span>
-                        : <span style={{fontSize:10,color:T.textFaint}}>Click to apply</span>
+                        ? <span style={{fontSize:11,color:T.accent,fontWeight:600}}>✓ Active</span>
+                        : <span style={{fontSize:11,color:T.textFaint}}>Click to apply</span>
                       }
                     </div>
                   </div>
@@ -2906,7 +2906,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   useEffect(() => { channelsRef.current = channels; },  [channels]);
   useEffect(() => { messagesRef.current  = messages; },  [messages]);
 
-  const MONO = { fontFamily:"'JetBrains Mono',monospace" };
+  const MONO = { fontFamily:"'Inter var','Inter',sans-serif" };
 
   // ── helpers ────────────────────────────────────────────────────────────────
   const addSys = useCallback((netId, chan, text, subtype, t) => {
@@ -4191,9 +4191,9 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             <div style={{padding:"6px 12px 4px",borderBottom:`1px solid ${T.borderFaint}`,marginBottom:2}}>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
                 <StatusDot status={ctxMenu.net.status||"disconnected"}/>
-                <span style={{fontSize:13,fontWeight:700,color:T.textBright}}>{ctxMenu.net.name}</span>
+                <span style={{fontSize:14,fontWeight:700,color:T.textBright}}>{ctxMenu.net.name}</span>
               </div>
-              <span style={{fontSize:11,color:T.textFaint,fontFamily:"'JetBrains Mono',monospace"}}>
+              <span style={{fontSize:12,color:T.textFaint,fontFamily:"'Inter var','Inter',sans-serif"}}>
                 {ctxMenu.net.host}:{ctxMenu.net.port}
               </span>
             </div>
@@ -4218,7 +4218,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             {/* Header */}
             <div style={{padding:"6px 12px 4px",borderBottom:`1px solid ${T.borderFaint}`,
               marginBottom:2}}>
-              <span style={{...MONO,fontSize:11,color:T.textDim}}>{chanCtxMenu.chan}</span>
+              <span style={{...MONO,fontSize:12,color:T.textDim}}>{chanCtxMenu.chan}</span>
             </div>
             {chanCtxMenu.left ? (
               <CtxItem color={T.green} icon="↩" label="Rejoin Channel" onClick={()=>{
@@ -4252,7 +4252,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             <div style={{padding:"6px 12px 4px",borderBottom:`1px solid ${T.borderFaint}`,
               marginBottom:2,display:"flex",alignItems:"center",gap:8}}>
               <Avatar nick={dmCtxMenu.nick} size={20}/>
-              <span style={{fontSize:13,fontWeight:600,color:T.textBright}}>{dmCtxMenu.nick}</span>
+              <span style={{fontSize:14,fontWeight:600,color:T.textBright}}>{dmCtxMenu.nick}</span>
             </div>
             <CtxItem icon="✉" label="Send Message" onClick={()=>{
               dispatch({type:"SET_ACTIVE_NET",id:dmCtxMenu.netId});
@@ -4287,7 +4287,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             <div style={{padding:"6px 12px 5px",borderBottom:`1px solid ${T.borderFaint}`,
               marginBottom:2,display:"flex",alignItems:"center",gap:8}}>
               <Avatar nick={msgNickMenu.nick} size={22}/>
-              <span style={{fontSize:14,fontWeight:700,color:T.textBright}}>{msgNickMenu.nick}</span>
+              <span style={{fontSize:15,fontWeight:700,color:T.textBright}}>{msgNickMenu.nick}</span>
             </div>
             <CtxItem icon="✉" label="Message" onClick={()=>{
               // Open or navigate to DM
@@ -4329,14 +4329,14 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         <div style={{padding:"13px 14px 10px",borderBottom:`1px solid ${T.border}`,flexShrink:0,
           display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div>
-            <div style={{fontWeight:800,fontSize:15,letterSpacing:"-0.3px",color:T.textBright,
-              fontFamily:"'JetBrains Mono',monospace",display:"flex",alignItems:"center",gap:8}}>
+            <div style={{fontWeight:800,fontSize:16,letterSpacing:"-0.3px",color:T.textBright,
+              fontFamily:"'Inter var','Inter',sans-serif",display:"flex",alignItems:"center",gap:8}}>
               <div style={{width:22,height:22,borderRadius:6,background:"linear-gradient(135deg,#7eb8f7,#7ef7d0)",
-                display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:900,color:"#0a1628"}}>K</div>
+                display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,color:"#0a1628"}}>K</div>
               KoreChat
             </div>
-            <div style={{fontSize:9,color:T.textGhost,marginTop:2,paddingLeft:30,
-              fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.06em"}}>IRCv3</div>
+            <div style={{fontSize:10,color:T.textGhost,marginTop:2,paddingLeft:30,
+              fontFamily:"'Inter var','Inter',sans-serif",letterSpacing:"0.06em"}}>IRCv3</div>
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
             <ThemePicker T={T} theme={theme} onSelect={appSetTheme} />
@@ -4344,7 +4344,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             {isMobile&&(
               <button onClick={()=>setSidebarOpen(false)}
                 style={{background:"transparent",border:"none",color:T.textDim,
-                  fontSize:20,cursor:"pointer",padding:"2px 4px",lineHeight:1}}>
+                  fontSize:21,cursor:"pointer",padding:"2px 4px",lineHeight:1}}>
                 ✕
               </button>
             )}
@@ -4354,8 +4354,8 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         {/* Add network button */}
         <button onClick={()=>setShowAddNet(true)}
           style={{margin:"8px 10px 4px",padding:"8px 12px",background:T.accentBg,
-            border:`1px solid ${T.accentDim}`,borderRadius:6,color:T.accent,fontSize:13,
-            cursor:"pointer",textAlign:"left",fontFamily:"'JetBrains Mono',monospace",
+            border:`1px solid ${T.accentDim}`,borderRadius:6,color:T.accent,fontSize:14,
+            cursor:"pointer",textAlign:"left",fontFamily:"'Inter var','Inter',sans-serif",
             display:"flex",alignItems:"center",gap:6,flexShrink:0}}
           onMouseEnter={e=>{e.currentTarget.style.background=T.accentBg2;}}
           onMouseLeave={e=>{e.currentTarget.style.background=T.accentBg;}}>
@@ -4365,7 +4365,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         {/* Network / channel list */}
         <div style={{flex:1,overflowY:"auto",paddingTop:4}}>
           {networkOrder.length===0&&(
-            <div style={{...MONO,padding:"20px 14px",fontSize:12,color:T.textFaint,
+            <div style={{...MONO,padding:"20px 14px",fontSize:13,color:T.textFaint,
               textAlign:"center",lineHeight:1.8}}>
               No networks yet.<br/>Click ⊕ Add Network<br/>to connect to IRC.
             </div>
@@ -4406,34 +4406,42 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
               <div key={netId} style={{marginBottom:6}}>
                 {/* Network header */}
                 <div style={{padding:"5px 10px 3px",display:"flex",alignItems:"center",gap:6,
-                  cursor:"pointer",borderRadius:4,margin:"0 4px"}}
-                  onClick={e=>{setCtxMenu({x:e.clientX,y:e.clientY,net});dispatch({type:"SET_ACTIVE_NET",id:netId});}}
+                  cursor:"pointer",borderRadius:4,margin:"0 4px",
+                  background:isActiveNet&&activeChanName2===STATUS_CHAN?T.accentBg2:"transparent"}}
+                  onClick={()=>goTo(STATUS_CHAN)}
                   onContextMenu={e=>{e.preventDefault();setCtxMenu({x:e.clientX,y:e.clientY,net});}}
                   onMouseEnter={e=>e.currentTarget.style.background=T.border}
-                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  onMouseLeave={e=>e.currentTarget.style.background=isActiveNet&&activeChanName2===STATUS_CHAN?T.accentBg2:"transparent"}>
                   <StatusDot status={net.status||"disconnected"}/>
-                  <span style={{...MONO,fontSize:11,fontWeight:700,color:isActiveNet?T.textBright:T.textDim,
+                  <span style={{...MONO,fontSize:12,fontWeight:700,color:isActiveNet?T.textBright:T.textDim,
                     flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
                     textTransform:"uppercase",letterSpacing:"0.04em"}}>
                     {net.name}
                   </span>
+                  {(unread[CHAN_KEY(netId,STATUS_CHAN)]||0)>0&&!(isActiveNet&&activeChanName2===STATUS_CHAN)&&(
+                    <span style={{background:T.accent,color:T.bg,fontSize:11,fontWeight:800,
+                      borderRadius:10,padding:"1px 5px",minWidth:17,textAlign:"center",flexShrink:0,
+                      fontFamily:"'Inter var','Inter',sans-serif"}}>
+                      {unread[CHAN_KEY(netId,STATUS_CHAN)]>99?"99+":unread[CHAN_KEY(netId,STATUS_CHAN)]}
+                    </span>
+                  )}
                   {net.tls&&(
-                    <span title="TLS encrypted" style={{fontSize:10,opacity:0.7,flexShrink:0}}>🔒</span>
+                    <span title="TLS encrypted" style={{fontSize:11,opacity:0.7,flexShrink:0}}>🔒</span>
                   )}
                   {!net.tls&&net.status==="connected"&&(
-                    <span title="Unencrypted connection" style={{fontSize:10,opacity:0.5,flexShrink:0}}>🔓</span>
+                    <span title="Unencrypted connection" style={{fontSize:11,opacity:0.5,flexShrink:0}}>🔓</span>
                   )}
                   {net.status==="connected"&&(
-                    <span title="Connected" style={{fontSize:9,color:T.green,flexShrink:0}}>●</span>
+                    <span title="Connected" style={{fontSize:10,color:T.green,flexShrink:0}}>●</span>
                   )}
                   {net.status==="connecting"&&(
-                    <span title="Connecting…" style={{fontSize:9,color:T.amber,flexShrink:0}}>●</span>
+                    <span title="Connecting…" style={{fontSize:10,color:T.amber,flexShrink:0}}>●</span>
                   )}
                   {(net.status==="disconnected"||net.status==="error")&&(
-                    <span title={net.status==="error"?"Connection error — will retry":"Disconnected"} style={{fontSize:9,color:T.red+"99",flexShrink:0}}>●</span>
+                    <span title={net.status==="error"?"Connection error — will retry":"Disconnected"} style={{fontSize:10,color:T.red+"99",flexShrink:0}}>●</span>
                   )}
                   <span title="Settings" onClick={e=>{e.stopPropagation();setNetSettings(net);}}
-                    style={{fontSize:11,opacity:0.4,cursor:"pointer",flexShrink:0,lineHeight:1,
+                    style={{fontSize:12,opacity:0.4,cursor:"pointer",flexShrink:0,lineHeight:1,
                       padding:"1px 2px",borderRadius:3}}
                     onMouseEnter={e=>e.currentTarget.style.opacity="1"}
                     onMouseLeave={e=>e.currentTarget.style.opacity="0.4"}>⚙</span>
@@ -4441,14 +4449,6 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
 
                 {/* Indented content under this network */}
                 <div style={{borderLeft:`1px solid ${T.borderFaint}`,marginLeft:14,paddingLeft:2}}>
-
-                {/* Server tab */}
-                {serverTab&&(
-                  <SidebarItem chanName={STATUS_CHAN} kind="server"
-                    active={isActiveNet&&activeChanName2===STATUS_CHAN}
-                    unread={unread[CHAN_KEY(netId,STATUS_CHAN)]||0}
-                    onClick={()=>goTo(STATUS_CHAN)}/>
-                )}
 
                 {/* Channels section */}
                 {chans.length>0&&(
@@ -4486,7 +4486,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
 
                 {/* Join channel */}
                 {net.status==="connected"&&(
-                  <div style={{...MONO,padding:"3px 10px 3px 24px",fontSize:12,
+                  <div style={{...MONO,padding:"3px 10px 3px 24px",fontSize:13,
                     color:T.textDim,cursor:"pointer",marginTop:2}}
                     onClick={()=>{
                       const ch=prompt("Channel to join:");
@@ -4513,18 +4513,18 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
               <Avatar nick={me?.username||"?"} size={28}/>
             </div>
             <div style={{flex:1,overflow:"hidden",cursor:"pointer"}} onClick={()=>setShowProfile(true)}>
-              <div style={{...MONO,fontSize:13,fontWeight:600,color:T.text,
+              <div style={{...MONO,fontSize:14,fontWeight:600,color:T.text,
                 overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                 {me?.display_name||me?.username||""}
               </div>
               {currentNick&&currentNick!==me?.username&&(
-                <div style={{fontSize:11,color:T.textFaint,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                <div style={{fontSize:12,color:T.textFaint,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                   IRC: {currentNick}
                 </div>
               )}
             </div>
             <button onClick={onLogout} title="Sign out"
-              style={{background:"transparent",border:"none",color:T.textFaint,fontSize:14,
+              style={{background:"transparent",border:"none",color:T.textFaint,fontSize:15,
                 cursor:"pointer",padding:"2px 4px",flexShrink:0}}
               onMouseEnter={e=>e.currentTarget.style.color=T.red}
               onMouseLeave={e=>e.currentTarget.style.color=T.textFaint}>⏏</button>
@@ -4532,7 +4532,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           {me?.role==="admin"&&(
             <button onClick={onAdmin}
               style={{...MONO,width:"100%",background:T.amberBg,border:`1px solid ${T.amberBorder}`,
-                borderRadius:5,color:T.amber+"88",fontSize:11,padding:"5px 8px",cursor:"pointer",
+                borderRadius:5,color:T.amber+"88",fontSize:12,padding:"5px 8px",cursor:"pointer",
                 textAlign:"left"}}
               onMouseEnter={e=>{e.currentTarget.style.background=T.amberBg;e.currentTarget.style.color=T.amber;}}
               onMouseLeave={e=>{e.currentTarget.style.background=T.amberBg;e.currentTarget.style.color=T.amber+"88";}}>
@@ -4542,7 +4542,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           <button onClick={()=>setShowLogs(true)}
             style={{...MONO,width:"100%",background:"transparent",
               border:`1px solid ${T.borderFaint}`,marginTop:me?.role==="admin"?5:0,
-              borderRadius:5,color:T.textFaint,fontSize:11,padding:"5px 8px",cursor:"pointer",
+              borderRadius:5,color:T.textFaint,fontSize:12,padding:"5px 8px",cursor:"pointer",
               textAlign:"left"}}
             onMouseEnter={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.color=T.text;}}
             onMouseLeave={e=>{e.currentTarget.style.borderColor=T.borderFaint;e.currentTarget.style.color=T.textFaint;}}>
@@ -4562,23 +4562,23 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           {isMobile&&(
             <button onClick={()=>setSidebarOpen(true)}
               style={{background:"transparent",border:"none",color:T.textDim,
-                fontSize:20,cursor:"pointer",padding:"2px 6px",lineHeight:1,flexShrink:0}}>
+                fontSize:21,cursor:"pointer",padding:"2px 6px",lineHeight:1,flexShrink:0}}>
               ☰
             </button>
           )}
 
           {activeChanName?(
             <>
-              <span style={{...MONO,fontSize:15,fontWeight:700,color:T.textBright,flexShrink:0}}>
+              <span style={{...MONO,fontSize:16,fontWeight:700,color:T.textBright,flexShrink:0}}>
                 {isStatusChan?`⚡ ${activeNetObj?.name||"server"}`:`#${activeChanName.replace(/^#/,"")}`}
               </span>
               {activeTopic&&!isStatusChan&&(
-                <span style={{fontSize:13,color:T.textFaint,flex:1,overflow:"hidden",
+                <span style={{fontSize:14,color:T.textFaint,flex:1,overflow:"hidden",
                   textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{activeTopic}</span>
               )}
               <div style={{display:"flex",gap:6,marginLeft:"auto",flexShrink:0,alignItems:"center"}}>
                 {isConnected&&(
-                  <span style={{...MONO,fontSize:11,color:T.green,background:T.greenBg,
+                  <span style={{...MONO,fontSize:12,color:T.green,background:T.greenBg,
                     border:`1px solid ${T.greenBorder}`,borderRadius:4,padding:"2px 7px"}}>
                     ● {activeNetObj?.name}
                   </span>
@@ -4587,14 +4587,14 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                   <button onClick={()=>isMobile?setShowUsersMobile(s=>!s):setShowUsers(s=>!s)}
                     style={{...MONO,background:(isMobile?showUsersMobile:showUsers)?T.accentBg3:"transparent",
                       border:`1px solid ${T.borderFaint}`,borderRadius:4,padding:"3px 9px",
-                      fontSize:12,color:T.accent,cursor:"pointer"}}>
+                      fontSize:13,color:T.accent,cursor:"pointer"}}>
                     {Object.keys(activeMembers).length} users
                   </button>
                 )}
               </div>
             </>
           ):(
-            <span style={{...MONO,fontSize:13,color:T.textFaint}}>
+            <span style={{...MONO,fontSize:14,color:T.textFaint}}>
               {networkOrder.length===0?"Add a network to get started":"Select a channel or /join #channel"}
             </span>
           )}
@@ -4604,7 +4604,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         <div style={{flex:1,display:"flex",overflow:"hidden",position:"relative"}}>
           <div ref={msgsRef} style={{flex:1,overflowY:"auto",padding:"8px 0"}}>
             {activeMsgs.length===0&&activeChanName&&(
-              <div style={{...MONO,padding:"32px 58px",color:T.textFaint,fontSize:13}}>
+              <div style={{...MONO,padding:"32px 58px",color:T.textFaint,fontSize:14}}>
                 {isStatusChan?"Waiting for server messages…":
                  loadingChans[activeMsgKey]?"Loading history…":
                  `No messages yet in ${activeChanName}`}
@@ -4671,7 +4671,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                 zIndex:20,cursor:"pointer",
                 background:T.accent,color:"#fff",
                 borderRadius:20,padding:"5px 16px",
-                fontSize:13,fontFamily:"'JetBrains Mono',monospace",fontWeight:600,
+                fontSize:14,fontFamily:"'Inter var','Inter',sans-serif",fontWeight:600,
                 boxShadow:"0 2px 8px rgba(0,0,0,0.3)",
                 display:"flex",alignItems:"center",gap:6,userSelect:"none",
                 whiteSpace:"nowrap"}}>
@@ -4698,7 +4698,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
               ].map(([lbl, list, color]) =>
                 list.length===0 ? null : (
                   <div key={lbl}>
-                    <div style={{...MONO,padding:"9px 10px 4px",fontSize:10,
+                    <div style={{...MONO,padding:"9px 10px 4px",fontSize:11,
                       color:T.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em"}}>
                       {lbl} — {list.length}
                     </div>
@@ -4709,9 +4709,9 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                         onMouseEnter={e=>e.currentTarget.style.background=T.border}
                         onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                         <Avatar nick={nick} size={22}/>
-                        <span style={{fontSize:13,color:T.textDim,flex:1,overflow:"hidden",
+                        <span style={{fontSize:14,color:T.textDim,flex:1,overflow:"hidden",
                           textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nick}</span>
-                        {pfx&&<span style={{...MONO,fontSize:11,fontWeight:700,
+                        {pfx&&<span style={{...MONO,fontSize:12,fontWeight:700,
                           color,opacity:0.85}}>{pfx}</span>}
                       </div>
                     ))}
@@ -4734,7 +4734,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         )}
         {!activeChanName&&networkOrder.length>0&&(
           <div style={{...MONO,padding:"13px 18px",borderTop:`1px solid ${T.borderFaint}`,
-            fontSize:13,color:T.textFaint}}>
+            fontSize:14,color:T.textFaint}}>
             Type /join #channel to get started
           </div>
         )}
@@ -4766,9 +4766,9 @@ function SetupPage({ onDone }) {
   const set = k => e => setForm(f=>({...f,[k]:e.target.value}));
 
   const IS = {background:T.bg,border:`1px solid ${T.border}`,borderRadius:6,
-    color:T.text,padding:"10px 12px",fontSize:15,outline:"none",width:"100%",boxSizing:"border-box"};
-  const LS = {display:"block",fontSize:11,color:T.textMono,marginBottom:6,
-    fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.07em"};
+    color:T.text,padding:"10px 12px",fontSize:16,outline:"none",width:"100%",boxSizing:"border-box"};
+  const LS = {display:"block",fontSize:12,color:T.textMono,marginBottom:6,
+    fontFamily:"'Inter var','Inter',sans-serif",textTransform:"uppercase",letterSpacing:"0.07em"};
 
   const submit = async () => {
     setErr("");
@@ -4793,16 +4793,16 @@ function SetupPage({ onDone }) {
       <div style={{width:"100%",maxWidth:440}}>
         <div style={{textAlign:"center",marginBottom:32}}>
           <div style={{width:56,height:56,borderRadius:16,background:"linear-gradient(135deg,#7eb8f7,#7ef7d0)",
-            display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,fontWeight:900,
-            color:"#0a1628",margin:"0 auto 16px",fontFamily:"'JetBrains Mono',monospace"}}>K</div>
-          <div style={{fontSize:22,fontWeight:800,color:T.textBright,fontFamily:"'JetBrains Mono',monospace"}}>Welcome to KoreChat</div>
-          <div style={{fontSize:13,color:T.textFaint,marginTop:6}}>Create the first admin account to get started</div>
+            display:"flex",alignItems:"center",justifyContent:"center",fontSize:29,fontWeight:900,
+            color:"#0a1628",margin:"0 auto 16px",fontFamily:"'Inter var','Inter',sans-serif"}}>K</div>
+          <div style={{fontSize:23,fontWeight:800,color:T.textBright,fontFamily:"'Inter var','Inter',sans-serif"}}>Welcome to KoreChat</div>
+          <div style={{fontSize:14,color:T.textFaint,marginTop:6}}>Create the first admin account to get started</div>
         </div>
 
         <div style={{background:T.bgPanel,border:`1px solid ${T.accentDim}`,borderRadius:12,padding:"28px 28px 24px",
           boxShadow:"0 24px 64px #00000060"}}>
           {err && <div style={{background:T.redBg,border:`1px solid ${T.redBorder}`,borderRadius:6,
-            padding:"9px 12px",fontSize:14,color:T.red,marginBottom:16}}>{err}</div>}
+            padding:"9px 12px",fontSize:15,color:T.red,marginBottom:16}}>{err}</div>}
 
           <div style={{display:"flex",flexDirection:"column",gap:16}}>
             <div>
@@ -4827,8 +4827,8 @@ function SetupPage({ onDone }) {
 
           <button onClick={submit} disabled={busy}
             style={{width:"100%",marginTop:24,padding:"12px 0",background:"linear-gradient(135deg,#7eb8f7,#7ef7d0)",
-              border:"none",borderRadius:8,color:"#0a1628",fontWeight:800,fontSize:15,cursor:busy?"wait":"pointer",
-              fontFamily:"'JetBrains Mono',monospace",opacity:busy?0.7:1}}>
+              border:"none",borderRadius:8,color:"#0a1628",fontWeight:800,fontSize:16,cursor:busy?"wait":"pointer",
+              fontFamily:"'Inter var','Inter',sans-serif",opacity:busy?0.7:1}}>
             {busy?"Creating…":"Create Admin Account"}
           </button>
         </div>
@@ -4846,9 +4846,9 @@ function LoginPage({ onLogin }) {
   const set = k => e => setForm(f=>({...f,[k]:e.target.value}));
 
   const IS = {background:T.bg,border:`1px solid ${T.border}`,borderRadius:6,
-    color:T.text,padding:"10px 12px",fontSize:15,outline:"none",width:"100%",boxSizing:"border-box"};
-  const LS = {display:"block",fontSize:11,color:T.textMono,marginBottom:6,
-    fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.07em"};
+    color:T.text,padding:"10px 12px",fontSize:16,outline:"none",width:"100%",boxSizing:"border-box"};
+  const LS = {display:"block",fontSize:12,color:T.textMono,marginBottom:6,
+    fontFamily:"'Inter var','Inter',sans-serif",textTransform:"uppercase",letterSpacing:"0.07em"};
 
   const submit = async () => {
     setErr("");
@@ -4867,16 +4867,16 @@ function LoginPage({ onLogin }) {
       <div style={{width:"100%",maxWidth:380}}>
         <div style={{textAlign:"center",marginBottom:32}}>
           <div style={{width:56,height:56,borderRadius:16,background:"linear-gradient(135deg,#7eb8f7,#7ef7d0)",
-            display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,fontWeight:900,
-            color:"#0a1628",margin:"0 auto 16px",fontFamily:"'JetBrains Mono',monospace"}}>K</div>
-          <div style={{fontSize:22,fontWeight:800,color:T.textBright,fontFamily:"'JetBrains Mono',monospace"}}>KoreChat</div>
-          <div style={{fontSize:13,color:T.textFaint,marginTop:6}}>Sign in to your account</div>
+            display:"flex",alignItems:"center",justifyContent:"center",fontSize:29,fontWeight:900,
+            color:"#0a1628",margin:"0 auto 16px",fontFamily:"'Inter var','Inter',sans-serif"}}>K</div>
+          <div style={{fontSize:23,fontWeight:800,color:T.textBright,fontFamily:"'Inter var','Inter',sans-serif"}}>KoreChat</div>
+          <div style={{fontSize:14,color:T.textFaint,marginTop:6}}>Sign in to your account</div>
         </div>
 
         <div style={{background:T.bgPanel,border:`1px solid ${T.accentDim}`,borderRadius:12,padding:"28px 28px 24px",
           boxShadow:"0 24px 64px #00000060"}}>
           {err && <div style={{background:T.redBg,border:`1px solid ${T.redBorder}`,borderRadius:6,
-            padding:"9px 12px",fontSize:14,color:T.red,marginBottom:16}}>{err}</div>}
+            padding:"9px 12px",fontSize:15,color:T.red,marginBottom:16}}>{err}</div>}
 
           <div style={{display:"flex",flexDirection:"column",gap:16}}>
             <div>
@@ -4893,8 +4893,8 @@ function LoginPage({ onLogin }) {
 
           <button onClick={submit} disabled={busy}
             style={{width:"100%",marginTop:24,padding:"12px 0",background:"linear-gradient(135deg,#7eb8f7,#7ef7d0)",
-              border:"none",borderRadius:8,color:"#0a1628",fontWeight:800,fontSize:15,cursor:busy?"wait":"pointer",
-              fontFamily:"'JetBrains Mono',monospace",opacity:busy?0.7:1}}>
+              border:"none",borderRadius:8,color:"#0a1628",fontWeight:800,fontSize:16,cursor:busy?"wait":"pointer",
+              fontFamily:"'Inter var','Inter',sans-serif",opacity:busy?0.7:1}}>
             {busy?"Signing in…":"Sign In"}
           </button>
         </div>
@@ -4912,7 +4912,7 @@ function AdminPanel({ currentUser, onBack, theme, toggleTheme }) {
   const [editUser,  setEditUser]  = useState(null);
   const [busy,      setBusy]      = useState(false);
 
-  const MONO = {fontFamily:"'JetBrains Mono',monospace"};
+  const MONO = {fontFamily:"'Inter var','Inter',sans-serif"};
 
   useEffect(() => {
     AuthAPI.listUsers().then(setUsers).catch(e=>setErr(e.message));
@@ -4932,18 +4932,18 @@ function AdminPanel({ currentUser, onBack, theme, toggleTheme }) {
       <div style={{background:T.bgSide,borderBottom:`1px solid ${T.borderFaint}`,padding:"12px 24px",
         display:"flex",alignItems:"center",gap:16}}>
         <div style={{width:32,height:32,borderRadius:9,background:"linear-gradient(135deg,#7eb8f7,#7ef7d0)",
-          display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:900,
-          color:"#0a1628",fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>K</div>
-        <span style={{...MONO,fontWeight:800,fontSize:15,color:T.textBright}}>KoreChat Admin</span>
+          display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:900,
+          color:"#0a1628",fontFamily:"'Inter var','Inter',sans-serif",flexShrink:0}}>K</div>
+        <span style={{...MONO,fontWeight:800,fontSize:16,color:T.textBright}}>KoreChat Admin</span>
         <div style={{flex:1}}/>
         {toggleTheme&&<button onClick={toggleTheme} title="Toggle theme"
           style={{...MONO,background:T.accentBg,border:`1px solid ${T.accentDim}`,borderRadius:6,
-            color:T.accent,padding:"4px 9px",fontSize:14,cursor:"pointer",marginRight:4}}>
+            color:T.accent,padding:"4px 9px",fontSize:15,cursor:"pointer",marginRight:4}}>
           {T.label}
         </button>}
         <button onClick={onBack}
           style={{...MONO,background:T.accentBg,border:`1px solid ${T.accentDim}`,borderRadius:6,
-            color:T.accent,padding:"5px 14px",fontSize:13,cursor:"pointer"}}>
+            color:T.accent,padding:"5px 14px",fontSize:14,cursor:"pointer"}}>
           ← Back to Chat
         </button>
       </div>
@@ -4951,18 +4951,18 @@ function AdminPanel({ currentUser, onBack, theme, toggleTheme }) {
       <div style={{maxWidth:840,margin:"0 auto",padding:"32px 24px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24}}>
           <div>
-            <div style={{fontSize:20,fontWeight:800,color:"#e8f4ff"}}>User Management</div>
-            <div style={{fontSize:12,color:"#ffffff35",marginTop:3}}>{users.length} user{users.length!==1?"s":""}</div>
+            <div style={{fontSize:21,fontWeight:800,color:"#e8f4ff"}}>User Management</div>
+            <div style={{fontSize:13,color:"#ffffff35",marginTop:3}}>{users.length} user{users.length!==1?"s":""}</div>
           </div>
           <button onClick={()=>setShowAdd(true)}
             style={{...MONO,background:"#7eb8f7",border:"none",borderRadius:7,color:"#0a1628",
-              fontWeight:700,padding:"8px 18px",fontSize:13,cursor:"pointer"}}>
+              fontWeight:700,padding:"8px 18px",fontSize:14,cursor:"pointer"}}>
             + Add User
           </button>
         </div>
 
         {err && <div style={{background:T.redBg,border:`1px solid ${T.redBorder}`,borderRadius:6,
-          padding:"9px 12px",fontSize:14,color:T.red,marginBottom:16}}>{err}</div>}
+          padding:"9px 12px",fontSize:15,color:T.red,marginBottom:16}}>{err}</div>}
 
         <div style={{background:T.bgPanel,border:`1px solid ${T.borderFaint}`,borderRadius:10,overflow:"hidden"}}>
           {users.map((u,i)=>(
@@ -4971,20 +4971,20 @@ function AdminPanel({ currentUser, onBack, theme, toggleTheme }) {
               background:u.id===currentUser.id?T.accentBg:"transparent"}}>
               <div style={{width:36,height:36,borderRadius:"50%",background:nickColor(u.username)+"18",
                 border:`1.5px solid ${nickColor(u.username)}33`,display:"flex",alignItems:"center",
-                justifyContent:"center",fontSize:15,fontWeight:700,color:nickColor(u.username),
-                fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>
+                justifyContent:"center",fontSize:16,fontWeight:700,color:nickColor(u.username),
+                fontFamily:"'Inter var','Inter',sans-serif",flexShrink:0}}>
                 {(u.username[0]||"?").toUpperCase()}
               </div>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{fontWeight:600,fontSize:14,color:T.textBright}}>{u.display_name||u.username}</span>
-                  {u.id===currentUser.id&&<span style={{...MONO,fontSize:9,color:T.accent,
+                  <span style={{fontWeight:600,fontSize:15,color:T.textBright}}>{u.display_name||u.username}</span>
+                  {u.id===currentUser.id&&<span style={{...MONO,fontSize:10,color:T.accent,
                     background:T.accentBg,border:`1px solid ${T.accentDim}`,borderRadius:3,padding:"1px 5px"}}>you</span>}
                 </div>
-                <div style={{fontSize:12,color:T.textFaint,marginTop:1}}>@{u.username}</div>
+                <div style={{fontSize:13,color:T.textFaint,marginTop:1}}>@{u.username}</div>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                <span style={{...MONO,fontSize:10,padding:"2px 8px",borderRadius:4,
+                <span style={{...MONO,fontSize:11,padding:"2px 8px",borderRadius:4,
                   background:u.role==="admin"?T.amberBg:T.border,
                   border:`1px solid ${u.role==="admin"?T.amberBorder:T.borderFaint}`,
                   color:u.role==="admin"?T.amber:T.textFaint}}>
@@ -4992,13 +4992,13 @@ function AdminPanel({ currentUser, onBack, theme, toggleTheme }) {
                 </span>
                 <button onClick={()=>setEditUser(u)}
                   style={{...MONO,background:"transparent",border:`1px solid ${T.border}`,borderRadius:5,
-                    color:T.textDim,padding:"4px 10px",fontSize:11,cursor:"pointer"}}>
+                    color:T.textDim,padding:"4px 10px",fontSize:12,cursor:"pointer"}}>
                   Edit
                 </button>
                 {u.id!==currentUser.id && (
                   <button onClick={()=>deleteUser(u.id)}
                     style={{...MONO,background:"transparent",border:`1px solid ${T.redBorder}`,borderRadius:5,
-                      color:T.red+"60",padding:"4px 10px",fontSize:11,cursor:"pointer"}}
+                      color:T.red+"60",padding:"4px 10px",fontSize:12,cursor:"pointer"}}
                     onMouseEnter={e=>e.currentTarget.style.color=T.red}
                     onMouseLeave={e=>e.currentTarget.style.color=T.red+"60"}>
                     Delete
@@ -5008,7 +5008,7 @@ function AdminPanel({ currentUser, onBack, theme, toggleTheme }) {
             </div>
           ))}
           {users.length===0&&(
-            <div style={{...MONO,padding:"32px",textAlign:"center",fontSize:12,color:T.textFaint}}>
+            <div style={{...MONO,padding:"32px",textAlign:"center",fontSize:13,color:T.textFaint}}>
               No users yet
             </div>
           )}
@@ -5050,9 +5050,9 @@ function UserFormModal({ user, onClose, onSave, busy }) {
   const set = k => e => setForm(f=>({...f,[k]:e.target.value}));
 
   const IS = {background:T.bg,border:`1px solid ${T.border}`,borderRadius:6,
-    color:T.text,padding:"9px 11px",fontSize:14,outline:"none",width:"100%",boxSizing:"border-box"};
-  const LS = {display:"block",fontSize:10,color:T.textMono,marginBottom:5,
-    fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.07em"};
+    color:T.text,padding:"9px 11px",fontSize:15,outline:"none",width:"100%",boxSizing:"border-box"};
+  const LS = {display:"block",fontSize:11,color:T.textMono,marginBottom:5,
+    fontFamily:"'Inter var','Inter',sans-serif",textTransform:"uppercase",letterSpacing:"0.07em"};
 
   const submit = async () => {
     setErr("");
@@ -5072,14 +5072,14 @@ function UserFormModal({ user, onClose, onSave, busy }) {
         boxShadow:"0 32px 96px #000e",overflow:"hidden"}}>
         <div style={{padding:"16px 20px 12px",borderBottom:`1px solid ${T.borderFaint}`,display:"flex",
           alignItems:"center",justifyContent:"space-between"}}>
-          <span style={{fontSize:14,fontWeight:800,color:T.textBright,fontFamily:"'JetBrains Mono',monospace"}}>
+          <span style={{fontSize:15,fontWeight:800,color:T.textBright,fontFamily:"'Inter var','Inter',sans-serif"}}>
             {isEdit?"Edit User":"Add User"}
           </span>
-          <button onClick={onClose} style={{background:"none",border:"none",color:T.textFaint,fontSize:20,cursor:"pointer"}}>×</button>
+          <button onClick={onClose} style={{background:"none",border:"none",color:T.textFaint,fontSize:21,cursor:"pointer"}}>×</button>
         </div>
         <div style={{padding:"16px 20px"}}>
           {err&&<div style={{background:T.redBg,border:`1px solid ${T.redBorder}`,borderRadius:6,
-            padding:"8px 12px",fontSize:13,color:T.red,marginBottom:12}}>{err}</div>}
+            padding:"8px 12px",fontSize:14,color:T.red,marginBottom:12}}>{err}</div>}
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
             {!isEdit && <div><label style={LS}>Username *</label><input value={form.username} onChange={set("username")} style={IS} autoFocus /></div>}
             <div><label style={LS}>Display Name</label><input value={form.display_name} onChange={set("display_name")} style={IS} /></div>
@@ -5096,12 +5096,12 @@ function UserFormModal({ user, onClose, onSave, busy }) {
         </div>
         <div style={{padding:"12px 20px 16px",borderTop:`1px solid ${T.borderFaint}`,display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button onClick={onClose} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,
-            color:T.textDim,padding:"8px 16px",fontSize:14,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace"}}>
+            color:T.textDim,padding:"8px 16px",fontSize:15,cursor:"pointer",fontFamily:"'Inter var','Inter',sans-serif"}}>
             Cancel
           </button>
           <button onClick={submit} disabled={busy} style={{background:T.accent,border:"none",borderRadius:6,
-            color:T.bg,fontWeight:700,padding:"8px 18px",fontSize:14,cursor:busy?"wait":"pointer",
-            fontFamily:"'JetBrains Mono',monospace",opacity:busy?0.6:1}}>
+            color:T.bg,fontWeight:700,padding:"8px 18px",fontSize:15,cursor:busy?"wait":"pointer",
+            fontFamily:"'Inter var','Inter',sans-serif",opacity:busy?0.6:1}}>
             {busy?"Saving…":isEdit?"Save Changes":"Add User"}
           </button>
         </div>
@@ -5177,8 +5177,8 @@ function App() {
       <div style={{position:"relative",minHeight:"100dvh",background:T.bg}}>
         <button onClick={toggleTheme} title={`Switch to ${theme==="dark"?"light":"dark"} theme`}
           style={{position:"fixed",top:14,right:14,background:T.accentBg,border:`1px solid ${T.accentDim}`,
-            borderRadius:6,color:T.accent,fontSize:15,cursor:"pointer",padding:"5px 9px",
-            fontFamily:"'JetBrains Mono',monospace",zIndex:10}}>
+            borderRadius:6,color:T.accent,fontSize:16,cursor:"pointer",padding:"5px 9px",
+            fontFamily:"'Inter var','Inter',sans-serif",zIndex:10}}>
           {T.label}
         </button>
         {children}
