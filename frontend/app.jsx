@@ -4577,7 +4577,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           {activeChanName?(
             <>
               <span style={{...MONO,fontSize:16,fontWeight:700,color:T.textBright,flexShrink:0}}>
-                {isStatusChan?`⚡ ${activeNetObj?.name||"server"}`:`#${activeChanName.replace(/^#/,"")}`}
+                {isStatusChan?`⚡ ${activeNetObj?.name||"server"}`:activeChanName.startsWith("#")?`#${activeChanName.replace(/^#/,"")}`:activeChanName}
               </span>
               {activeTopic&&!isStatusChan&&(
                 <span style={{fontSize:14,color:T.textFaint,flex:1,overflow:"hidden",
