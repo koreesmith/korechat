@@ -129,6 +129,9 @@ func main() {
 			r.Get("/channels", api.GetLogChannels)
 		})
 
+		// ── User data export ──────────────────────────────────────────────────
+		r.Get("/api/v1/export/user-data", api.ExportUserData)
+
 		// ── Admin-only routes ─────────────────────────────────────────────────
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireAdmin)
