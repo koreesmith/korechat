@@ -444,7 +444,7 @@ function nickColor(nick) {
   for (let i = 0; i < nick.length; i++) h = (h * 31 + nick.charCodeAt(i)) & 0x7fffffff;
   return p[h % p.length];
 }
-function renderText(text, myNick, T, onLinkClick) {
+function renderText(text, myNick, T, onLinkClick, onImgLoad) {
   if (!text) return "";
   const accent  = T?.accent || "#7eb8f7";
   const red     = T?.red    || "#f7a07e";
@@ -472,7 +472,7 @@ function renderText(text, myNick, T, onLinkClick) {
       parts.push(
         <div key={key++} style={{marginTop:6}}>
           <a href={url} target="_blank" rel="noopener noreferrer">
-            <img src={url} alt="" loading="lazy"
+            <img src={url} alt="" loading="lazy" onLoad={onImgLoad}
               style={{maxWidth:400,maxHeight:300,borderRadius:6,display:"block",cursor:"pointer",
                 border:`1px solid ${T?.border||"#ffffff18"}`}}/>
           </a>
@@ -945,7 +945,7 @@ function SnippetBlock({ url, lang }) {
   );
 }
 
-function MsgRow({ msg, prev, myNick, onNickClick }) {
+function MsgRow({ msg, prev, myNick, onNickClick, onImgLoad }) {
   const T=useTheme();
   const [pendingLink, setPendingLink] = useState(null);
   if (msg.type==="system") return (
@@ -979,7 +979,7 @@ function MsgRow({ msg, prev, myNick, onNickClick }) {
             </div>
           )}
           <div style={{fontSize:16,color:T.text,lineHeight:1.6,wordBreak:"break-word"}}>
-            {renderText(msg.text,myNick,T,setPendingLink)}
+            {renderText(msg.text,myNick,T,setPendingLink,onImgLoad)}
           </div>
         </div>
       </div>
@@ -3592,6 +3592,11 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
     return () => clearTimeout(timer);
   }, [activeNet, activeChanName]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Re-scroll when an inline image finishes loading (ResizeObserver misses scrollHeight growth)
+  const onMediaLoad = useCallback(() => {
+    if (shouldPinBottomRef.current || isAtBottomRef.current) scrollToBottom();
+  }, [scrollToBottom]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Re-scroll when content height changes while pinned (e.g. snippets loading)
   useEffect(() => {
     const el = msgsRef.current;
@@ -4661,7 +4666,8 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                   const prev=i>0?msgs[i-1]:null;
                   rows.push(
                     <MsgRow key={msg.id||i} msg={msg} prev={prev} myNick={currentNick}
-                      onNickClick={(nick,e)=>{if(nick!==currentNick)setMsgNickMenu({x:e.clientX,y:e.clientY,netId:activeNet,nick});}}/>
+                      onNickClick={(nick,e)=>{if(nick!==currentNick)setMsgNickMenu({x:e.clientX,y:e.clientY,netId:activeNet,nick});}}
+                      onImgLoad={onMediaLoad}/>
                   );
                   i++;
                 }
