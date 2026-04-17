@@ -1681,7 +1681,7 @@ function ProfileModal({ currentUser, onClose, onUpdated }) {
   const LS = { display:"block", fontSize:12, color:T.textDim, marginBottom:4,
     ...MONO, textTransform:"uppercase", letterSpacing:"0.05em" };
 
-  const [tab, setTab]               = React.useState("avatar"); // "avatar" | "password"
+  const [tab, setTab]               = React.useState("avatar"); // "avatar" | "password" | "data"
   const [preview, setPreview]       = React.useState(currentUser.avatar_url || null);
   const [file, setFile]             = React.useState(null);
   const [uploading, setUploading]   = React.useState(false);
@@ -1692,7 +1692,23 @@ function ProfileModal({ currentUser, onClose, onUpdated }) {
   const [pwSaving, setPwSaving]     = React.useState(false);
   const [pwErr, setPwErr]           = React.useState("");
   const [pwOk, setPwOk]             = React.useState(false);
+  const [exporting, setExporting]   = React.useState(false);
   const fileRef = React.useRef();
+
+  const handleExportData = () => {
+    setExporting(true);
+    fetch("/api/v1/export/user-data", { credentials: "include" })
+      .then(async r => {
+        const blob = await r.blob();
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `korechat-export-${new Date().toISOString().slice(0,10)}.zip`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      })
+      .catch(() => {})
+      .finally(() => setExporting(false));
+  };
 
   const handleFileChange = e => {
     const f = e.target.files[0];
@@ -1780,6 +1796,7 @@ function ProfileModal({ currentUser, onClose, onUpdated }) {
         <div style={{display:"flex",gap:8,marginBottom:18}}>
           <button style={tabStyle(tab==="avatar")} onClick={()=>setTab("avatar")}>Avatar</button>
           <button style={tabStyle(tab==="password")} onClick={()=>{setTab("password");setPwOk(false);}}>Password</button>
+          <button style={tabStyle(tab==="data")} onClick={()=>setTab("data")}>Data</button>
         </div>
 
         {/* Avatar tab */}
@@ -1819,6 +1836,24 @@ function ProfileModal({ currentUser, onClose, onUpdated }) {
                 color:(!file||uploading)?T.textFaint:T.accent,
                 opacity:uploading?0.6:1}}>
               {uploading ? "Uploading…" : "Save Avatar"}
+            </button>
+          </div>
+        )}
+
+        {/* Data export tab */}
+        {tab==="data" && (
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{fontSize:13,color:T.textDim,...MONO,lineHeight:1.6}}>
+              Download a zip archive of all your data: profile info, network configurations, and message logs.
+            </div>
+            <button onClick={handleExportData} disabled={exporting}
+              style={{...MONO,width:"100%",padding:"9px 0",borderRadius:5,fontSize:14,
+                cursor:exporting?"default":"pointer",fontWeight:700,
+                background:exporting?T.bg:T.accentBg2,
+                border:`1px solid ${exporting?T.border:T.accent}`,
+                color:exporting?T.textFaint:T.accent,
+                opacity:exporting?0.6:1}}>
+              {exporting ? "Exporting…" : "⬇ Export My Data"}
             </button>
           </div>
         )}
