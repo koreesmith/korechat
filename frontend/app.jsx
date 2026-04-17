@@ -867,9 +867,11 @@ function MembershipGroup({ msgs }) {
         onMouseEnter={e=>e.currentTarget.style.opacity="1"}
         onMouseLeave={e=>e.currentTarget.style.opacity="0.85"}>
         <span style={{fontSize:12,color:T.textFaint,fontStyle:"italic",
-          fontFamily:"'Inter var','Inter',sans-serif",flex:1}}>{label}</span>
+          fontFamily:"'Inter var','Inter',sans-serif"}}>{label}</span>
+        {msgs[msgs.length-1].time&&<span style={{fontSize:11,color:T.textFaint,
+          fontFamily:"'Inter var','Inter',sans-serif",opacity:0.7}}>{fmtTime(msgs[msgs.length-1].time)}</span>}
         <span style={{fontSize:11,color:T.textFaint,fontFamily:"'Inter var','Inter',sans-serif",
-          flexShrink:0,opacity:0.7}}>{open?"▼":"▶"}</span>
+          opacity:0.7}}>{open?"▼":"▶"}</span>
       </div>
       {/* Expanded detail */}
       {open&&(
@@ -877,9 +879,9 @@ function MembershipGroup({ msgs }) {
           {msgs.map((m,i)=>(
             <div key={i} style={{display:"flex",alignItems:"baseline",gap:8,padding:"1px 0"}}>
               <span style={{fontSize:13,color:T.textFaint,fontStyle:"italic",
-                fontFamily:"'Inter var','Inter',sans-serif",flex:1,userSelect:"text"}}>{m.text}</span>
+                fontFamily:"'Inter var','Inter',sans-serif",userSelect:"text"}}>{m.text}</span>
               {m.time&&<span style={{fontSize:11,color:T.textFaint,
-                fontFamily:"'Inter var','Inter',sans-serif",flexShrink:0}}>{fmtTime(m.time)}</span>}
+                fontFamily:"'Inter var','Inter',sans-serif"}}>{fmtTime(m.time)}</span>}
             </div>
           ))}
         </div>
