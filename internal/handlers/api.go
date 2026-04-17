@@ -385,7 +385,19 @@ func (a *API) DeleteAccount(w http.ResponseWriter, r *http.Request) {
 		_ = os.Remove(avatarFile)
 	}
 
-	// Delete user record — DB cascades remove networks, message_logs, log_settings.
+	// Remove uploaded photos and snippets from disk.
+	if uploads, err := a.store.GetUploadsByUser(claims.UserID); err == nil {
+		for _, up := range uploads {
+			switch up.UploadType {
+			case "photo":
+				_ = os.Remove(filepath.Join(a.uploadDir, up.Filename))
+			case "snippet":
+				_ = os.Remove(filepath.Join(a.snippetDir, up.Filename))
+			}
+		}
+	}
+
+	// Delete user record — DB cascades remove networks, message_logs, log_settings, user_uploads.
 	if err := a.store.DeleteUser(claims.UserID); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -527,6 +539,7 @@ func (a *API) UploadPhoto(w http.ResponseWriter, r *http.Request) {
 	}
 
 	photoURL := "/uploads/" + filename
+	_ = a.store.InsertUpload(claims.UserID, filename, "photo")
 	log.Printf("upload: user %s uploaded photo %s", claims.UserID, filename)
 	writeJSON(w, http.StatusOK, map[string]string{"url": photoURL})
 }
@@ -571,6 +584,7 @@ func (a *API) UploadSnippet(w http.ResponseWriter, r *http.Request) {
 	if lang != "" {
 		snippetURL += "?lang=" + lang
 	}
+	_ = a.store.InsertUpload(claims.UserID, filename, "snippet")
 	log.Printf("upload: user %s uploaded snippet %s (lang=%s)", claims.UserID, filename, lang)
 	writeJSON(w, http.StatusOK, map[string]string{"url": snippetURL})
 }
@@ -1023,6 +1037,29 @@ func (a *API) ExportUserData(w http.ResponseWriter, r *http.Request) {
 			defer f.Close()
 			if af, err := zw.Create("avatar" + filepath.Ext(user.AvatarURL)); err == nil {
 				_, _ = io.Copy(af, f)
+			}
+		}
+	}
+
+	// uploaded photos and snippets
+	if uploads, err := a.store.GetUploadsByUser(claims.UserID); err == nil {
+		for _, up := range uploads {
+			var diskPath, zipPath string
+			switch up.UploadType {
+			case "photo":
+				diskPath = filepath.Join(a.uploadDir, up.Filename)
+				zipPath = "uploads/" + up.Filename
+			case "snippet":
+				diskPath = filepath.Join(a.snippetDir, up.Filename)
+				zipPath = "snippets/" + up.Filename
+			default:
+				continue
+			}
+			if f, err := os.Open(diskPath); err == nil {
+				if zf, err := zw.Create(zipPath); err == nil {
+					_, _ = io.Copy(zf, f)
+				}
+				f.Close()
 			}
 		}
 	}
