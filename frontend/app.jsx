@@ -2982,20 +2982,24 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
 
     const clearLoading = () => setLoadingChans(prev => { const n={...prev}; delete n[key]; return n; });
 
+    const toLogMsg = e => {
+      const MEMBERSHIP_TYPES = new Set(["JOIN","PART","QUIT","KICK","MODE"]);
+      return {
+        type:    MEMBERSHIP_TYPES.has(e.type) ? "system" : "message",
+        subtype: MEMBERSHIP_TYPES.has(e.type) ? "membership" : undefined,
+        nick:    e.nick,
+        text:    e.text,
+        time:    e.timestamp,
+        id:      `log-${e.id}`,
+      };
+    };
+
     fetch(`/api/v1/logs?${params}`, { credentials:"include" })
       .then(r => (r.ok ? r.json() : null))
       .then(data => {
         clearLoading();
         if (!data?.entries?.length) return;
-        const MEMBERSHIP_TYPES = new Set(["JOIN","PART","QUIT","KICK","MODE"]);
-        const msgs = data.entries.map(e => ({
-          type:    MEMBERSHIP_TYPES.has(e.type) ? "system" : "message",
-          subtype: MEMBERSHIP_TYPES.has(e.type) ? "membership" : undefined,
-          nick:    e.nick,
-          text:    e.text,
-          time:    e.timestamp,
-          id:      `log-${e.id}`,
-        }));
+        const msgs = data.entries.map(toLogMsg);
         ensureChan(netId, chan);
         dispatch({ type:"PREPEND_MSGS", netId, chan, msgs });
 
@@ -3012,6 +3016,33 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         }, 200);
       })
       .catch(() => { clearLoading(); });
+
+    // JOIN/QUIT/PART/KICK/MODE events are filtered from BNC ring buffer replay
+    // (no accurate timestamp at replay time) but are persisted in the log DB.
+    // Fetch them separately for the ring buffer time window so they appear in
+    // the channel view at their correct logged timestamps.
+    if (oldestExisting !== null) {
+      // Use oldestExisting - 1ms so the since param (which adds 1ms) lands
+      // exactly at oldestExisting, returning events from that point forward.
+      const sinceTs = new Date(oldestExisting - 1).toISOString();
+      const mParams = new URLSearchParams({
+        network_id: netId,
+        membership_only: "true",
+        since: sinceTs,
+        order: "asc",
+        limit: "500",
+      });
+      if (isChannel) mParams.set("channel", chan);
+      else if (isDM)  mParams.set("nick", chan);
+      fetch(`/api/v1/logs?${mParams}`, { credentials:"include" })
+        .then(r => (r.ok ? r.json() : null))
+        .then(data => {
+          if (!data?.entries?.length) return;
+          const msgs = data.entries.map(toLogMsg);
+          dispatch({ type:"PREPEND_MSGS", netId, chan, msgs });
+        })
+        .catch(() => {});
+    }
   }, [ensureChan, setLoadingChans]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // loadServerHistory loads server-level log entries (channel="") for the

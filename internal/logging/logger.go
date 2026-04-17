@@ -136,8 +136,9 @@ type QueryParams struct {
 	DateTo     time.Time
 	Limit      int
 	Offset     int
-	Ascending  bool // if true, return oldest-first (for history display)
-	ServerOnly bool // if true, return only entries with channel="" (server/DM NOTICEs)
+	Ascending      bool // if true, return oldest-first (for history display)
+	ServerOnly     bool // if true, return only entries with channel="" (server/DM NOTICEs)
+	MembershipOnly bool // if true, filter for JOIN/PART/QUIT/KICK/MODE only
 }
 
 type QueryResult struct {
@@ -507,6 +508,9 @@ func (l *Logger) buildWhere(userID string, p QueryParams) (string, []interface{}
 	}
 	if p.MsgType != "" {
 		add("type = $%d", strings.ToUpper(p.MsgType))
+	}
+	if p.MembershipOnly {
+		conds = append(conds, "type IN ('JOIN','PART','QUIT','KICK','MODE')")
 	}
 	if !p.DateFrom.IsZero() {
 		add("timestamp >= $%d", p.DateFrom)
