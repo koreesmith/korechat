@@ -165,6 +165,20 @@ func (s *DB) migrate() error {
 		return fmt.Errorf("migrate v5 (logging): %w", err)
 	}
 
+	// v8: user upload tracking (idempotent)
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS user_uploads (
+			id          BIGSERIAL PRIMARY KEY,
+			user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			filename    TEXT NOT NULL,
+			upload_type TEXT NOT NULL,
+			uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+		CREATE INDEX IF NOT EXISTS user_uploads_user_id ON user_uploads(user_id);
+	`); err != nil {
+		return fmt.Errorf("migrate v8 (user_uploads): %w", err)
+	}
+
 	log.Printf("store: migrations OK")
 	return nil
 }
@@ -585,6 +599,45 @@ func (s *DB) SetJoinedChannels(networkID string, chans []string) error {
 		autoJoinToDB(chans), networkID,
 	)
 	return err
+}
+
+// ─── Uploads ──────────────────────────────────────────────────────────────────
+
+// Upload represents a user-uploaded file tracked in the database.
+type Upload struct {
+	Filename   string
+	UploadType string // "photo" or "snippet"
+	UploadedAt time.Time
+}
+
+// InsertUpload records a newly uploaded file for a user.
+func (s *DB) InsertUpload(userID, filename, uploadType string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO user_uploads (user_id, filename, upload_type) VALUES ($1, $2, $3)`,
+		userID, filename, uploadType,
+	)
+	return err
+}
+
+// GetUploadsByUser returns all tracked uploads for a user.
+func (s *DB) GetUploadsByUser(userID string) ([]Upload, error) {
+	rows, err := s.db.Query(
+		`SELECT filename, upload_type, uploaded_at FROM user_uploads WHERE user_id=$1 ORDER BY uploaded_at ASC`,
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Upload
+	for rows.Next() {
+		var u Upload
+		if err := rows.Scan(&u.Filename, &u.UploadType, &u.UploadedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
