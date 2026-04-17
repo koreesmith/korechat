@@ -102,6 +102,7 @@ func main() {
 
 		// Self-service profile
 		r.Patch("/api/v1/profile", api.UpdateProfile)
+		r.Delete("/api/v1/profile", api.DeleteAccount)
 		r.Post("/api/v1/profile/avatar", api.UploadAvatar)
 
 		// Photo and snippet uploads for channel messages
