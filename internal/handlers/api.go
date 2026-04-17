@@ -787,6 +787,9 @@ func (a *API) QueryLogs(w http.ResponseWriter, r *http.Request) {
 	if q.Get("server_only") == "true" {
 		p.ServerOnly = true
 	}
+	if q.Get("membership_only") == "true" {
+		p.MembershipOnly = true
+	}
 	result, err := a.logger.Query(claims.UserID, p)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
