@@ -950,7 +950,7 @@ export default function KoreChat() {
           )}
         </div>
 
-        {activeChan && <InputBar onSend={handleSend} channel={activeChan} nick={currentNick} />}
+        {activeChan && <InputBar key={activeChanKey} onSend={handleSend} channel={activeChan} nick={currentNick} />}
       </div>
     </div>
   );
