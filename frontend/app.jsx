@@ -3108,6 +3108,8 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
     return {...prev, [netId]: next};
   });
   const isMuted = (netId, name) => (muted[netId] || []).includes(name);
+  const [unreadOnly, setUnreadOnly] = useState(() => localStorage.getItem("kc_unread_only")==="1");
+  React.useEffect(() => { localStorage.setItem("kc_unread_only", unreadOnly?"1":"0"); }, [unreadOnly]);
   const [userMenu,     setUserMenu]     = useState(null); // {nick, pfx, x, y, chan, netId}
   const [ignoredNicks, setIgnoredNicks] = useState(new Set()); // client-side ignore list
   const [showProfile,  setShowProfile]  = useState(false);
@@ -4707,6 +4709,16 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
               fontFamily:"'Inter var','Inter',sans-serif",letterSpacing:"0.06em"}}>IRCv3</div>
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <button title={unreadOnly?"Show all channels":"Show unread only"}
+              onClick={()=>setUnreadOnly(v=>!v)}
+              style={{background:unreadOnly?T.accentBg:"transparent",border:`1px solid ${unreadOnly?T.accentDim:T.border}`,
+                borderRadius:5,color:unreadOnly?T.accent:T.textDim,fontSize:13,cursor:"pointer",
+                padding:"3px 7px",lineHeight:1,fontFamily:"'Inter var','Inter',sans-serif",
+                fontWeight:unreadOnly?700:400,flexShrink:0,transition:"all 0.15s"}}
+              onMouseEnter={e=>{if(!unreadOnly)e.currentTarget.style.borderColor=T.accent;}}
+              onMouseLeave={e=>{if(!unreadOnly)e.currentTarget.style.borderColor=T.border;}}>
+              ● unread
+            </button>
             <ThemePicker T={T} theme={theme} onSelect={appSetTheme} />
             {/* Mobile close button */}
             {isMobile&&(
@@ -4749,13 +4761,15 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             const allNames=allKeys.map(k=>k.split("::")[1]);
 
             const serverTab = allNames.includes(STATUS_CHAN) ? STATUS_CHAN : null;
-            const starredNames = (starred[netId] || []).filter(n => allNames.includes(n)).sort((a,b)=>a.localeCompare(b));
-            const starredSet = new Set(starredNames);
+            const hasUnread = n => (unread[CHAN_KEY(netId,n)]||0)>0;
+            const keepWhenFiltered = n => !unreadOnly || hasUnread(n) || (isActiveNet&&n===activeChanName2);
+            const starredNames = (starred[netId] || []).filter(n => allNames.includes(n) && keepWhenFiltered(n)).sort((a,b)=>a.localeCompare(b));
+            const starredSet = new Set((starred[netId] || []).filter(n => allNames.includes(n)));
             const chans = allNames
-              .filter(n=>n!==STATUS_CHAN && n.startsWith("#") && !starredSet.has(n))
+              .filter(n=>n!==STATUS_CHAN && n.startsWith("#") && !starredSet.has(n) && keepWhenFiltered(n))
               .sort((a,b)=>a.localeCompare(b));
             const dms = allNames
-              .filter(n=>n!==STATUS_CHAN && !n.startsWith("#") && !starredSet.has(n))
+              .filter(n=>n!==STATUS_CHAN && !n.startsWith("#") && !starredSet.has(n) && keepWhenFiltered(n))
               .sort((a,b)=>a.localeCompare(b));
 
             const chansKey = netId+"::channels";
