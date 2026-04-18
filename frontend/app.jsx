@@ -4538,8 +4538,8 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
 
       {/* Context menu for network (left-click or right-click) */}
       {ctxMenu&&(
-        <div style={{position:"fixed",inset:0,zIndex:150}} onClick={()=>setCtxMenu(null)}>
-          <div style={{position:"fixed",left:ctxMenu.x,top:ctxMenu.y,zIndex:151,
+        <div style={{position:"fixed",inset:0,zIndex:220}} onClick={()=>setCtxMenu(null)}>
+          <div style={{position:"fixed",left:ctxMenu.x,top:ctxMenu.y,zIndex:221,
             background:T.bgPanel,border:`1px solid ${T.border}`,
             borderRadius:6,boxShadow:"0 4px 20px #0006",minWidth:175,padding:4}}
             onClick={e=>e.stopPropagation()}>
@@ -4566,8 +4566,8 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
 
       {/* ── Channel context menu ── */}
       {chanCtxMenu&&(
-        <div style={{position:"fixed",inset:0,zIndex:150}} onClick={()=>setChanCtxMenu(null)}>
-          <div style={{position:"fixed",left:chanCtxMenu.x,top:chanCtxMenu.y,zIndex:151,
+        <div style={{position:"fixed",inset:0,zIndex:220}} onClick={()=>setChanCtxMenu(null)}>
+          <div style={{position:"fixed",left:chanCtxMenu.x,top:chanCtxMenu.y,zIndex:221,
             background:T.bgPanel,border:`1px solid ${T.border}`,
             borderRadius:6,boxShadow:"0 4px 20px #0006",minWidth:160,padding:4}}
             onClick={e=>e.stopPropagation()}>
@@ -4605,8 +4605,8 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
 
       {/* ── DM context menu ── */}
       {dmCtxMenu&&(
-        <div style={{position:"fixed",inset:0,zIndex:150}} onClick={()=>setDmCtxMenu(null)}>
-          <div style={{position:"fixed",left:dmCtxMenu.x,top:dmCtxMenu.y,zIndex:151,
+        <div style={{position:"fixed",inset:0,zIndex:220}} onClick={()=>setDmCtxMenu(null)}>
+          <div style={{position:"fixed",left:dmCtxMenu.x,top:dmCtxMenu.y,zIndex:221,
             background:T.bgPanel,border:`1px solid ${T.border}`,
             borderRadius:6,boxShadow:"0 4px 20px #0006",minWidth:160,padding:4}}
             onClick={e=>e.stopPropagation()}>
@@ -4646,8 +4646,8 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
 
       {/* ── Message nick context menu ── */}
       {msgNickMenu&&(
-        <div style={{position:"fixed",inset:0,zIndex:150}} onClick={()=>setMsgNickMenu(null)}>
-          <div style={{position:"fixed",left:msgNickMenu.x,top:msgNickMenu.y,zIndex:151,
+        <div style={{position:"fixed",inset:0,zIndex:220}} onClick={()=>setMsgNickMenu(null)}>
+          <div style={{position:"fixed",left:msgNickMenu.x,top:msgNickMenu.y,zIndex:221,
             background:T.bgPanel,border:`1px solid ${T.border}`,
             borderRadius:6,boxShadow:"0 4px 20px #0006",minWidth:160,padding:4}}
             onClick={e=>e.stopPropagation()}>
