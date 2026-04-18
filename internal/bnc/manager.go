@@ -12,9 +12,10 @@ import (
 // Manager owns all persistent BNC connections.
 // One Manager exists for the lifetime of the server process.
 type Manager struct {
-	store    *networks.Store
-	logFn    LogFunc // may be nil
-	ircDebug bool
+	store     *networks.Store
+	logFn     LogFunc    // may be nil
+	replayFn  ReplayFunc // may be nil
+	ircDebug  bool
 
 	// persistChansFn is called after every JOIN/PART to save the channel list.
 	// Set via SetPersistChannelsFn before Start(). May be nil (no persistence).
@@ -45,6 +46,12 @@ func (m *Manager) SetPersistChannelsFn(fn func(networkID string, chans []string)
 // SetLogFunc attaches a logging callback. Call before Start().
 func (m *Manager) SetLogFunc(fn LogFunc) {
 	m.logFn = fn
+}
+
+// SetReplayFunc attaches a Postgres replay callback used to fill ring-buffer
+// gaps during subscriber replay. Call before Start().
+func (m *Manager) SetReplayFunc(fn ReplayFunc) {
+	m.replayFn = fn
 }
 
 // Start connects to all provided networks.
@@ -198,6 +205,7 @@ func (m *Manager) Shutdown() {
 
 func (m *Manager) startConn(n *networks.Network) {
 	c := newConn(n, m.store, m, m.logFn)
+	c.replayFn = m.replayFn
 
 	if m.persistChansFn != nil {
 		networkID := n.ID

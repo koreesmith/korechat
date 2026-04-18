@@ -61,6 +61,7 @@ func main() {
 	// ── Message logger ────────────────────────────────────────────────────────
 	msgLogger := logging.New(db.RawDB())
 	bm.SetLogFunc(msgLogger.Log)
+	bm.SetReplayFunc(msgLogger.ReplayLines)
 
 	bm.Start(allNets)
 

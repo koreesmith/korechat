@@ -39,7 +39,7 @@ const (
 	writeTimeout      = 10 * time.Second
 	keepaliveInterval = 30 * time.Second  // how often we PING the upstream
 	keepaliveTimeout  = 90 * time.Second  // how long without any data before giving up
-	BufferSize        = 1000              // lines retained per channel/server
+	BufferSize        = 5000              // lines retained per channel/server
 	maxBackoff        = 30 * time.Second   // cap at 30s so reconnect is prompt
 	initialBackoff    = 2 * time.Second
 )
@@ -71,6 +71,15 @@ func (r *RingBuffer) Push(line string) {
 	}
 }
 
+// OldestLine returns the chronologically oldest buffered line, or "" if empty.
+func (r *RingBuffer) OldestLine() string {
+	if r == nil || r.n == 0 {
+		return ""
+	}
+	start := (r.head - r.n + r.cap) % r.cap
+	return r.buf[start]
+}
+
 // Lines returns all buffered lines in chronological order.
 func (r *RingBuffer) Lines() []string {
 	if r == nil || r.n == 0 {
@@ -88,13 +97,19 @@ func (r *RingBuffer) Lines() []string {
 // userID is the owner of the network.
 type LogFunc func(userID, networkID, networkName, rawLine string)
 
+// ReplayFunc fetches historical IRC lines from persistent storage to fill
+// gaps not covered by the in-memory ring buffer. Returns raw IRC lines in
+// chronological order (oldest first), with timestamps before `before`.
+type ReplayFunc func(userID, networkID, channel string, before time.Time, limit int) ([]string, error)
+
 // Conn is one persistent upstream IRC connection for one network.
 // It survives browser disconnects.
 type Conn struct {
-	net     *networks.Network
-	store   *networks.Store
-	manager *Manager
-	logFn   LogFunc // may be nil
+	net      *networks.Network
+	store    *networks.Store
+	manager  *Manager
+	logFn    LogFunc    // may be nil
+	replayFn ReplayFunc // may be nil; used in Subscribe to fill ring-buffer gaps from Postgres
 
 	mu          sync.Mutex
 	wmu         sync.Mutex // serialises all writes to tcpConn
@@ -192,8 +207,32 @@ func (c *Conn) Stop() {
 	c.store.SetStatus(c.net.ID, networks.StatusDisconnected, "")
 }
 
+// parseTimeTag extracts the @time= timestamp from an IRCv3-tagged line.
+// Returns the zero value if no valid tag is found.
+func parseTimeTag(line string) time.Time {
+	if !strings.HasPrefix(line, "@") {
+		return time.Time{}
+	}
+	sp := strings.Index(line, " ")
+	if sp < 0 {
+		return time.Time{}
+	}
+	for _, tag := range strings.Split(line[1:sp], ";") {
+		if strings.HasPrefix(tag, "time=") {
+			if t, err := time.Parse(time.RFC3339Nano, tag[5:]); err == nil {
+				return t.UTC()
+			}
+			if t, err := time.Parse(time.RFC3339, tag[5:]); err == nil {
+				return t.UTC()
+			}
+		}
+	}
+	return time.Time{}
+}
+
 // Subscribe attaches a new browser session to this connection.
-// It immediately replays the ring buffer to the subscriber.
+// It immediately replays the ring buffer to the subscriber, with a Postgres
+// fallback for channels whose ring buffer has wrapped (high-volume channels).
 func (c *Conn) Subscribe(id string, send SendFunc) {
 	// ── Phase 1: register subscriber and snapshot state (lock held briefly) ───
 	c.mu.Lock()
@@ -211,6 +250,15 @@ func (c *Conn) Subscribe(id string, send SendFunc) {
 	if buf := c.buffers["__server__"]; buf != nil {
 		replay = append(replay, buf.Lines()...)
 	}
+
+	// For channels whose ring buffer is full (wrapping), queue a Postgres
+	// fallback query to recover history that was evicted from the buffer.
+	type pgQuery struct {
+		chanName string
+		before   time.Time
+	}
+	var pgQueries []pgQuery
+
 	for chanName, buf := range c.buffers {
 		if chanName == "__server__" || buf == nil {
 			continue
@@ -218,6 +266,11 @@ func (c *Conn) Subscribe(id string, send SendFunc) {
 		for _, line := range buf.Lines() {
 			if !isMembershipReplayLine(line) {
 				replay = append(replay, line)
+			}
+		}
+		if c.replayFn != nil && buf.n == buf.cap {
+			if t := parseTimeTag(buf.OldestLine()); !t.IsZero() {
+				pgQueries = append(pgQueries, pgQuery{chanName, t})
 			}
 		}
 	}
@@ -234,6 +287,20 @@ func (c *Conn) Subscribe(id string, send SendFunc) {
 	// transitions (e.g. "connecting" → "connected") during the replay below,
 	// so we follow up with a fresh authoritative status after the replay.
 	send(fmt.Sprintf(":*bnc* NOTICE * :status:%s", status))
+
+	// Postgres fallback: send older history (before ring buffer) first so the
+	// client receives messages in roughly chronological order.
+	for _, q := range pgQueries {
+		lines, err := c.replayFn(c.net.UserID, c.net.ID, q.chanName, q.before, 2000)
+		if err != nil {
+			log.Printf("bnc[%s]: postgres replay for %s: %v", c.net.ID, q.chanName, err)
+			continue
+		}
+		for _, line := range lines {
+			send(line)
+		}
+	}
+
 	for _, line := range replay {
 		send(line)
 	}
@@ -1182,7 +1249,7 @@ func (c *Conn) requestHistory(ch string) {
 	}
 	// CHATHISTORY LATEST <target> * <limit>
 	// "* " means "from the newest message going back"
-	c.sendRaw(fmt.Sprintf("CHATHISTORY LATEST %s * 100", ch))
+	c.sendRaw(fmt.Sprintf("CHATHISTORY LATEST %s * 500", ch))
 	log.Printf("bnc[%s]: requested chathistory for %s", c.net.ID, ch)
 }
 

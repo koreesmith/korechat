@@ -264,6 +264,47 @@ func (l *Logger) Channels(userID, networkID string) ([]string, error) {
 	return out, rows.Err()
 }
 
+// ToRawLine reconstructs a synthetic raw IRC line suitable for BNC replay.
+// Includes an @time= tag so the client can sort by timestamp.
+// Returns "" for event types that cannot be meaningfully reconstructed.
+func (e *Entry) ToRawLine() string {
+	ts := e.Timestamp.UTC().Format(time.RFC3339Nano)
+	switch e.Type {
+	case "PRIVMSG", "NOTICE":
+		if e.Channel == "" {
+			return "" // DM with no channel target — skip
+		}
+		return fmt.Sprintf("@time=%s :%s!*@* %s %s :%s", ts, e.Nick, e.Type, e.Channel, e.Text)
+	}
+	return ""
+}
+
+// ReplayLines returns reconstructed raw IRC lines for the given channel,
+// in chronological order (oldest first), for messages with timestamp < before.
+// Used by the BNC to fill ring-buffer gaps during subscriber replay.
+func (l *Logger) ReplayLines(userID, networkID, channel string, before time.Time, limit int) ([]string, error) {
+	if limit <= 0 || limit > 2000 {
+		limit = 2000
+	}
+	result, err := l.Query(userID, QueryParams{
+		NetworkID: networkID,
+		Channel:   channel,
+		DateTo:    before,
+		Limit:     limit,
+		Ascending: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	lines := make([]string, 0, len(result.Entries))
+	for _, e := range result.Entries {
+		if line := e.ToRawLine(); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines, nil
+}
+
 // DeleteAll removes every log entry for a user.
 func (l *Logger) DeleteAll(userID string) (int64, error) {
 	res, err := l.db.Exec(`DELETE FROM message_logs WHERE user_id=$1`, userID)
