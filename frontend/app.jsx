@@ -3051,6 +3051,16 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
   const [showUsers,    setShowUsers]    = useState(true);
   const [showUsersMobile, setShowUsersMobile] = useState(false);
   const [collapsed,    setCollapsed]    = useState({}); // key: netId+"::channels" | netId+"::dms"
+  const [starred, setStarred] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("kc_starred") || "{}"); } catch { return {}; }
+  }); // { [netId]: string[] }
+  React.useEffect(() => { localStorage.setItem("kc_starred", JSON.stringify(starred)); }, [starred]);
+  const toggleStar = (netId, name) => setStarred(prev => {
+    const cur = prev[netId] || [];
+    const next = cur.includes(name) ? cur.filter(n => n !== name) : [...cur, name];
+    return {...prev, [netId]: next};
+  });
+  const isStarred = (netId, name) => (starred[netId] || []).includes(name);
   const [userMenu,     setUserMenu]     = useState(null); // {nick, pfx, x, y, chan, netId}
   const [ignoredNicks, setIgnoredNicks] = useState(new Set()); // client-side ignore list
   const [showProfile,  setShowProfile]  = useState(false);
@@ -4517,6 +4527,9 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
               marginBottom:2}}>
               <span style={{...MONO,fontSize:12,color:T.textDim}}>{chanCtxMenu.chan}</span>
             </div>
+            <CtxItem icon={isStarred(chanCtxMenu.netId,chanCtxMenu.chan)?"★":"☆"}
+              label={isStarred(chanCtxMenu.netId,chanCtxMenu.chan)?"Unstar":"Star"}
+              onClick={()=>{toggleStar(chanCtxMenu.netId,chanCtxMenu.chan);setChanCtxMenu(null);}}/>
             {chanCtxMenu.left ? (
               <CtxItem color={T.green} icon="↩" label="Rejoin Channel" onClick={()=>{
                 const c=connections.current[chanCtxMenu.netId];
@@ -4551,6 +4564,9 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
               <Avatar nick={dmCtxMenu.nick} size={20}/>
               <span style={{fontSize:14,fontWeight:600,color:T.textBright}}>{dmCtxMenu.nick}</span>
             </div>
+            <CtxItem icon={isStarred(dmCtxMenu.netId,dmCtxMenu.nick)?"★":"☆"}
+              label={isStarred(dmCtxMenu.netId,dmCtxMenu.nick)?"Unstar":"Star"}
+              onClick={()=>{toggleStar(dmCtxMenu.netId,dmCtxMenu.nick);setDmCtxMenu(null);}}/>
             <CtxItem icon="✉" label="Send Message" onClick={()=>{
               dispatch({type:"SET_ACTIVE_NET",id:dmCtxMenu.netId});
               dispatch({type:"SET_ACTIVE_CHAN",netId:dmCtxMenu.netId,chan:dmCtxMenu.nick});
@@ -4687,9 +4703,13 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
 
             const chansKey = netId+"::channels";
             const dmsKey   = netId+"::dms";
+            const starredKey = netId+"::starred";
             const chansOpen = collapsed[chansKey] !== false; // default open
             const dmsOpen   = collapsed[dmsKey]   !== false;
+            const starredOpen = collapsed[starredKey] !== false;
             const toggle = key => setCollapsed(c=>({...c,[key]:c[key]===false?true:false}));
+
+            const starredNames = (starred[netId] || []).filter(n => allNames.includes(n)).sort((a,b)=>a.localeCompare(b));
 
             const goTo = (chan) => {
               dispatch({type:"SET_ACTIVE_NET",id:netId});
@@ -4746,6 +4766,30 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
 
                 {/* Indented content under this network */}
                 <div style={{borderLeft:`1px solid ${T.borderFaint}`,marginLeft:14,paddingLeft:2}}>
+
+                {/* Starred section */}
+                {starredNames.length>0&&(
+                  <>
+                    <SectionHeader label="Starred" count={starredNames.length}
+                      open={starredOpen} onToggle={()=>toggle(starredKey)}/>
+                    {starredOpen&&starredNames.map(name=>{
+                      const isChannel = name.startsWith("#");
+                      const chanLeft = isChannel && channels[CHAN_KEY(netId,name)]?.left;
+                      return (
+                        <SidebarItem key={name} chanName={name} kind={isChannel?"channel":"dm"}
+                          active={isActiveNet&&name===activeChanName2}
+                          unread={unread[CHAN_KEY(netId,name)]||0}
+                          left={!!chanLeft}
+                          onClick={()=>goTo(name)}
+                          onContextMenu={e=>{
+                            e.preventDefault();
+                            if (isChannel) setChanCtxMenu({x:e.clientX,y:e.clientY,netId,chan:name,left:!!chanLeft});
+                            else setDmCtxMenu({x:e.clientX,y:e.clientY,netId,nick:name});
+                          }}/>
+                      );
+                    })}
+                  </>
+                )}
 
                 {/* Channels section */}
                 {chans.length>0&&(
