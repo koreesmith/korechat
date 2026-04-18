@@ -2223,8 +2223,6 @@ function SectionHeader({ label, count, open, onToggle }) {
         color:T.textDim,textTransform:"uppercase",letterSpacing:"0.08em",flex:1}}>
         {label}
       </span>
-      {count>0&&<span style={{fontFamily:"'Inter var','Inter',sans-serif",fontSize:10,
-        color:T.textFaint}}>{count}</span>}
     </div>
   );
 }
