@@ -18,15 +18,16 @@ const (
 
 // User is a KoreChat application account.
 type User struct {
-	ID           string    `json:"id"`
-	Username     string    `json:"username"`
-	PasswordHash string    `json:"-"` // never serialised to JSON
-	DisplayName  string    `json:"display_name"`
-	AvatarURL    string    `json:"avatar_url"`
-	Theme        string    `json:"theme"`
-	Role         Role      `json:"role"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID               string    `json:"id"`
+	Username         string    `json:"username"`
+	PasswordHash     string    `json:"-"` // never serialised to JSON
+	DisplayName      string    `json:"display_name"`
+	AvatarURL        string    `json:"avatar_url"`
+	Theme            string    `json:"theme"`
+	SidebarCollapsed string    `json:"sidebar_collapsed"` // JSON-encoded map[string]bool
+	Role             Role      `json:"role"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 // SetPassword hashes and stores a plaintext password.
