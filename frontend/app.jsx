@@ -3072,7 +3072,22 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
   const [netSettings,  setNetSettings]  = useState(null); // network object being edited
   const [showUsers,    setShowUsers]    = useState(true);
   const [showUsersMobile, setShowUsersMobile] = useState(false);
-  const [collapsed,    setCollapsed]    = useState({}); // key: netId+"::channels" | netId+"::dms"
+  const [collapsed,    setCollapsed]    = useState(() => {
+    try { return JSON.parse(_currentUser?.sidebar_collapsed || '{}'); } catch { return {}; }
+  }); // key: netId+"::channels" | netId+"::dms" | netId+"::starred"
+  const _collapsedMounted = React.useRef(false);
+  React.useEffect(() => {
+    if (!_collapsedMounted.current) { _collapsedMounted.current = true; return; }
+    const t = setTimeout(() => {
+      fetch("/api/v1/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sidebar_collapsed: JSON.stringify(collapsed) }),
+        credentials: "include",
+      }).catch(() => {});
+    }, 800);
+    return () => clearTimeout(t);
+  }, [collapsed]);
   const [starred, setStarred] = useState(() => {
     try { return JSON.parse(localStorage.getItem("kc_starred") || "{}"); } catch { return {}; }
   }); // { [netId]: string[] }
