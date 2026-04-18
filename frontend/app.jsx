@@ -2955,6 +2955,22 @@ const [chanCtxMenu, setChanCtxMenu] = useState(null); // {x,y,netId,chan,left} c
 const [dmCtxMenu, setDmCtxMenu] = useState(null);     // {x,y,netId,nick} DM right-click
 const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick click in messages
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
+  const [leftWidth,  setLeftWidth]  = useState(224);
+  const [rightWidth, setRightWidth] = useState(190);
+  const resizeDragRef = useRef(null);
+  useEffect(()=>{
+    const onMove = e => {
+      const drag = resizeDragRef.current;
+      if(!drag) return;
+      const delta = e.clientX - drag.startX;
+      if(drag.side==="left")  setLeftWidth( Math.max(160, Math.min(400, drag.startWidth + delta)));
+      if(drag.side==="right") setRightWidth(Math.max(140, Math.min(400, drag.startWidth - delta)));
+    };
+    const onUp = () => { resizeDragRef.current = null; document.body.style.cursor=""; };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup",   onUp);
+    return ()=>{ window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
 
 
   // Notification preferences (persisted to sessionStorage, loaded once)
@@ -4465,7 +4481,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
 
       {/* ── Sidebar ── */}
       {(!isMobile||sidebarOpen)&&<div style={{
-          width:224,flexShrink:0,background:T.bgSide,borderRight:`1px solid ${T.border}`,
+          width:isMobile?224:leftWidth,flexShrink:0,background:T.bgSide,borderRight:`1px solid ${T.border}`,
           display:"flex",flexDirection:"column",overflow:"hidden",
           ...(isMobile?{position:"fixed",top:0,left:0,height:"100dvh",zIndex:210,
             boxShadow:"4px 0 24px #00000060"}:{}),
@@ -4697,6 +4713,13 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         </div>
       </div>}
 
+      {!isMobile&&<div
+        onMouseDown={e=>{e.preventDefault();document.body.style.cursor="col-resize";resizeDragRef.current={side:"left",startX:e.clientX,startWidth:leftWidth};}}
+        style={{width:4,flexShrink:0,cursor:"col-resize",background:"transparent",alignSelf:"stretch",zIndex:5}}
+        onMouseEnter={e=>e.currentTarget.style.background=T.border}
+        onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+      />}
+
       {/* ── Main area ── */}
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minWidth:0}}>
 
@@ -4826,13 +4849,20 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             </div>
           )}
 
+          {!isMobile&&!isStatusChan&&activeChanName&&showUsers&&<div
+            onMouseDown={e=>{e.preventDefault();document.body.style.cursor="col-resize";resizeDragRef.current={side:"right",startX:e.clientX,startWidth:rightWidth};}}
+            style={{width:4,flexShrink:0,cursor:"col-resize",background:"transparent",alignSelf:"stretch",zIndex:5}}
+            onMouseEnter={e=>e.currentTarget.style.background=T.borderFaint}
+            onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+          />}
+
           {!isStatusChan&&activeChanName&&(isMobile?showUsersMobile:showUsers)&&(
             <div style={isMobile?{
                 position:"absolute",top:0,right:0,bottom:0,width:200,zIndex:50,
                 background:T.bgSide,borderLeft:`1px solid ${T.borderFaint}`,
                 overflowY:"auto",boxShadow:"-4px 0 12px #00000040"
               }:{
-                width:190,flexShrink:0,borderLeft:`1px solid ${T.borderFaint}`,
+                width:rightWidth,flexShrink:0,borderLeft:`1px solid ${T.borderFaint}`,
                 background:T.bgSide,overflowY:"auto"
               }}>
               {[
