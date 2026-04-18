@@ -4738,7 +4738,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                     <span title={net.status==="error"?"Connection error — will retry":"Disconnected"} style={{fontSize:10,color:T.red+"99",flexShrink:0}}>●</span>
                   )}
                   <span title="Settings" onClick={e=>{e.stopPropagation();setNetSettings(net);}}
-                    style={{fontSize:12,opacity:0.4,cursor:"pointer",flexShrink:0,lineHeight:1,
+                    style={{fontSize:16,opacity:0.4,cursor:"pointer",flexShrink:0,lineHeight:1,
                       padding:"1px 2px",borderRadius:3}}
                     onMouseEnter={e=>e.currentTarget.style.opacity="1"}
                     onMouseLeave={e=>e.currentTarget.style.opacity="0.4"}>⚙</span>
