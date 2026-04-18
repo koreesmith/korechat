@@ -4696,11 +4696,13 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             const allNames=allKeys.map(k=>k.split("::")[1]);
 
             const serverTab = allNames.includes(STATUS_CHAN) ? STATUS_CHAN : null;
+            const starredNames = (starred[netId] || []).filter(n => allNames.includes(n)).sort((a,b)=>a.localeCompare(b));
+            const starredSet = new Set(starredNames);
             const chans = allNames
-              .filter(n=>n!==STATUS_CHAN && n.startsWith("#"))
+              .filter(n=>n!==STATUS_CHAN && n.startsWith("#") && !starredSet.has(n))
               .sort((a,b)=>a.localeCompare(b));
             const dms = allNames
-              .filter(n=>n!==STATUS_CHAN && !n.startsWith("#"))
+              .filter(n=>n!==STATUS_CHAN && !n.startsWith("#") && !starredSet.has(n))
               .sort((a,b)=>a.localeCompare(b));
 
             const chansKey = netId+"::channels";
@@ -4710,8 +4712,6 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             const dmsOpen   = collapsed[dmsKey]   !== false;
             const starredOpen = collapsed[starredKey] !== false;
             const toggle = key => setCollapsed(c=>({...c,[key]:c[key]===false?true:false}));
-
-            const starredNames = (starred[netId] || []).filter(n => allNames.includes(n)).sort((a,b)=>a.localeCompare(b));
 
             const goTo = (chan) => {
               dispatch({type:"SET_ACTIVE_NET",id:netId});
