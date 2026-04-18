@@ -2161,7 +2161,7 @@ function CtxItem({ icon, label, onClick, color, danger }) {
 
 // ─── Sidebar item (channel, DM, or server tab) ───────────────────────────────
 // kind: "channel" | "dm" | "server"
-function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, left }) {
+function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, left, muted }) {
   const T=useTheme();
   const [hov, setHov] = useState(false);
 
@@ -2182,7 +2182,7 @@ function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, l
 
   const textColor = left
     ? T.textFaint
-    : active ? T.text : unread>0 ? T.accent : T.textDim;
+    : active ? T.text : (!muted && unread>0) ? T.accent : T.textDim;
 
   return (
     <div onClick={onClick}
@@ -2192,14 +2192,14 @@ function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, l
         padding:"4px 10px 4px 24px",margin:"1px 6px",borderRadius:4,cursor:"pointer",
         background:active?T.accentBg2:hov?T.border:"transparent",
         color:textColor,
-        fontWeight:active||unread>0?600:400,fontSize:15,gap:6,
-        opacity:left?0.55:1}}>
+        fontWeight:active||(unread>0&&!muted)?600:400,fontSize:15,gap:6,
+        opacity:left?0.55:muted?0.45:1}}>
       <span style={{display:"flex",alignItems:"center",gap:5,overflow:"hidden",minWidth:0}}>
         {icon}
         <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
           fontStyle:left?"italic":"normal"}}>{label}</span>
       </span>
-      {unread>0&&!active&&(
+      {unread>0&&!active&&!muted&&(
         <span style={{background:T.accent,color:T.bg,fontSize:11,fontWeight:800,
           borderRadius:10,padding:"1px 5px",minWidth:16,textAlign:"center",
           fontFamily:"'Inter var','Inter',sans-serif",flexShrink:0,lineHeight:"14px"}}>{unread>99?"99+":unread}</span>
@@ -3061,6 +3061,16 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
     return {...prev, [netId]: next};
   });
   const isStarred = (netId, name) => (starred[netId] || []).includes(name);
+  const [muted, setMuted] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("kc_muted") || "{}"); } catch { return {}; }
+  }); // { [netId]: string[] }
+  React.useEffect(() => { localStorage.setItem("kc_muted", JSON.stringify(muted)); }, [muted]);
+  const toggleMute = (netId, name) => setMuted(prev => {
+    const cur = prev[netId] || [];
+    const next = cur.includes(name) ? cur.filter(n => n !== name) : [...cur, name];
+    return {...prev, [netId]: next};
+  });
+  const isMuted = (netId, name) => (muted[netId] || []).includes(name);
   const [userMenu,     setUserMenu]     = useState(null); // {nick, pfx, x, y, chan, netId}
   const [ignoredNicks, setIgnoredNicks] = useState(new Set()); // client-side ignore list
   const [showProfile,  setShowProfile]  = useState(false);
@@ -4532,6 +4542,9 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             <CtxItem icon={isStarred(chanCtxMenu.netId,chanCtxMenu.chan)?"★":"☆"}
               label={isStarred(chanCtxMenu.netId,chanCtxMenu.chan)?"Unstar":"Star"}
               onClick={()=>{toggleStar(chanCtxMenu.netId,chanCtxMenu.chan);setChanCtxMenu(null);}}/>
+            <CtxItem icon={isMuted(chanCtxMenu.netId,chanCtxMenu.chan)?"🔔":"🔕"}
+              label={isMuted(chanCtxMenu.netId,chanCtxMenu.chan)?"Unmute":"Mute"}
+              onClick={()=>{toggleMute(chanCtxMenu.netId,chanCtxMenu.chan);setChanCtxMenu(null);}}/>
             {chanCtxMenu.left ? (
               <CtxItem color={T.green} icon="↩" label="Rejoin Channel" onClick={()=>{
                 const c=connections.current[chanCtxMenu.netId];
@@ -4569,6 +4582,9 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             <CtxItem icon={isStarred(dmCtxMenu.netId,dmCtxMenu.nick)?"★":"☆"}
               label={isStarred(dmCtxMenu.netId,dmCtxMenu.nick)?"Unstar":"Star"}
               onClick={()=>{toggleStar(dmCtxMenu.netId,dmCtxMenu.nick);setDmCtxMenu(null);}}/>
+            <CtxItem icon={isMuted(dmCtxMenu.netId,dmCtxMenu.nick)?"🔔":"🔕"}
+              label={isMuted(dmCtxMenu.netId,dmCtxMenu.nick)?"Unmute":"Mute"}
+              onClick={()=>{toggleMute(dmCtxMenu.netId,dmCtxMenu.nick);setDmCtxMenu(null);}}/>
             <CtxItem icon="✉" label="Send Message" onClick={()=>{
               dispatch({type:"SET_ACTIVE_NET",id:dmCtxMenu.netId});
               dispatch({type:"SET_ACTIVE_CHAN",netId:dmCtxMenu.netId,chan:dmCtxMenu.nick});
@@ -4782,6 +4798,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                           active={isActiveNet&&name===activeChanName2}
                           unread={unread[CHAN_KEY(netId,name)]||0}
                           left={!!chanLeft}
+                          muted={isMuted(netId,name)}
                           onClick={()=>goTo(name)}
                           onContextMenu={e=>{
                             e.preventDefault();
@@ -4805,6 +4822,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                             active={isActiveNet&&chanName===activeChanName2}
                             unread={unread[CHAN_KEY(netId,chanName)]||0}
                             left={!!chanLeft}
+                            muted={isMuted(netId,chanName)}
                             onClick={()=>goTo(chanName)}
                             onContextMenu={e=>{e.preventDefault();setChanCtxMenu({x:e.clientX,y:e.clientY,netId,chan:chanName,left:!!chanLeft});}}/>
                         );
@@ -4821,6 +4839,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                       <SidebarItem key={chanName} chanName={chanName} kind="dm"
                         active={isActiveNet&&chanName===activeChanName2}
                         unread={unread[CHAN_KEY(netId,chanName)]||0}
+                        muted={isMuted(netId,chanName)}
                         onClick={()=>goTo(chanName)}
                         onContextMenu={e=>{e.preventDefault();setDmCtxMenu({x:e.clientX,y:e.clientY,netId,nick:chanName});}}/>
                     ))}
