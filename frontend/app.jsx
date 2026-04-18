@@ -4855,10 +4855,13 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             const chansKey = netId+"::channels";
             const dmsKey   = netId+"::dms";
             const starredKey = netId+"::starred";
+            const serverKey = netId+"::server";
             const chansOpen = collapsed[chansKey] !== false; // default open
             const dmsOpen   = collapsed[dmsKey]   !== false;
             const starredOpen = collapsed[starredKey] !== false;
+            const serverOpen = collapsed[serverKey] !== false;
             const toggle = key => setCollapsed(c=>({...c,[key]:c[key]===false?true:false}));
+            const totalServerUnread = allNames.reduce((sum,n)=>n===STATUS_CHAN?sum:sum+(unread[CHAN_KEY(netId,n)]||0),0);
 
             const goTo = (chan) => {
               dispatch({type:"SET_ACTIVE_NET",id:netId});
@@ -4878,18 +4881,34 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                   onContextMenu={e=>{e.preventDefault();setCtxMenu({x:e.clientX,y:e.clientY,net});}}
                   onMouseEnter={e=>e.currentTarget.style.background=T.border}
                   onMouseLeave={e=>e.currentTarget.style.background=isActiveNet&&activeChanName2===STATUS_CHAN?T.accentBg2:"transparent"}>
+                  <span onClick={e=>{e.stopPropagation();toggle(serverKey);}}
+                    style={{fontSize:9,color:T.textDim,cursor:"pointer",flexShrink:0,userSelect:"none",
+                      display:"inline-block",transform:serverOpen?"rotate(90deg)":"rotate(0deg)",
+                      transition:"transform 0.15s",lineHeight:1,padding:"1px 2px"}}
+                    onMouseEnter={e=>e.currentTarget.style.color=T.text}
+                    onMouseLeave={e=>e.currentTarget.style.color=T.textDim}>▶</span>
                   <StatusDot status={net.status||"disconnected"}/>
                   <span style={{...MONO,fontSize:12,fontWeight:700,color:isActiveNet?T.textBright:T.textDim,
                     flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
                     textTransform:"uppercase",letterSpacing:"0.04em"}}>
                     {net.name}
                   </span>
-                  {(unread[CHAN_KEY(netId,STATUS_CHAN)]||0)>0&&!(isActiveNet&&activeChanName2===STATUS_CHAN)&&(
-                    <span style={{background:T.accent,color:T.bg,fontSize:11,fontWeight:800,
-                      borderRadius:10,padding:"1px 5px",minWidth:17,textAlign:"center",flexShrink:0,
-                      fontFamily:"'Inter var','Inter',sans-serif"}}>
-                      {unread[CHAN_KEY(netId,STATUS_CHAN)]>99?"99+":unread[CHAN_KEY(netId,STATUS_CHAN)]}
-                    </span>
+                  {serverOpen?(
+                    (unread[CHAN_KEY(netId,STATUS_CHAN)]||0)>0&&!(isActiveNet&&activeChanName2===STATUS_CHAN)&&(
+                      <span style={{background:T.accent,color:T.bg,fontSize:11,fontWeight:800,
+                        borderRadius:10,padding:"1px 5px",minWidth:17,textAlign:"center",flexShrink:0,
+                        fontFamily:"'Inter var','Inter',sans-serif"}}>
+                        {unread[CHAN_KEY(netId,STATUS_CHAN)]>99?"99+":unread[CHAN_KEY(netId,STATUS_CHAN)]}
+                      </span>
+                    )
+                  ):(
+                    totalServerUnread>0&&(
+                      <span style={{background:T.accent,color:T.bg,fontSize:11,fontWeight:800,
+                        borderRadius:10,padding:"1px 5px",minWidth:17,textAlign:"center",flexShrink:0,
+                        fontFamily:"'Inter var','Inter',sans-serif"}}>
+                        {totalServerUnread>99?"99+":totalServerUnread}
+                      </span>
+                    )
                   )}
                   {net.tls&&(
                     <span title="TLS encrypted" style={{fontSize:11,opacity:0.7,flexShrink:0}}>🔒</span>
@@ -4914,7 +4933,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                 </div>
 
                 {/* Indented content under this network */}
-                <div style={{borderLeft:`1px solid ${T.borderFaint}`,marginLeft:14,paddingLeft:2}}>
+                {serverOpen&&<div style={{borderLeft:`1px solid ${T.borderFaint}`,marginLeft:14,paddingLeft:2}}>
 
                 {/* Starred section */}
                 {starredNames.length>0&&(
@@ -5001,7 +5020,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                   </div>
                 )}
 
-                </div>{/* end indent wrapper */}
+                </div>}{/* end indent wrapper */}
               </div>
             );
           })}
