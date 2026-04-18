@@ -2931,6 +2931,112 @@ function ThemePicker({ T, theme, onSelect }) {
   );
 }
 
+function QuickSwitcherModal({ channels, networks, networkOrder, onClose, onSelect }) {
+  const T = useTheme();
+  const [query, setQuery] = useState("");
+  const [cursor, setCursor] = useState(0);
+  const inputRef = useRef(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  // Build flat list of all channels/DMs across all servers
+  const items = React.useMemo(() => {
+    const list = [];
+    for (const netId of networkOrder) {
+      const net = networks[netId];
+      if (!net) continue;
+      for (const key of Object.keys(channels)) {
+        if (!key.startsWith(netId + "::")) continue;
+        const chan = key.slice(netId.length + 2);
+        if (chan === STATUS_CHAN) continue;
+        list.push({ netId, chan, netName: net.name || net.host || netId });
+      }
+    }
+    return list;
+  }, [channels, networks, networkOrder]);
+
+  const filtered = React.useMemo(() => {
+    if (!query.trim()) return items;
+    const q = query.toLowerCase();
+    return items.filter(item =>
+      item.chan.toLowerCase().includes(q) ||
+      item.netName.toLowerCase().includes(q)
+    );
+  }, [items, query]);
+
+  // Clamp cursor when filtered list changes
+  useEffect(() => { setCursor(0); }, [query]);
+
+  const select = (item) => { onSelect(item.netId, item.chan); };
+
+  const onKeyDown = (e) => {
+    if (e.key === "Escape") { onClose(); return; }
+    if (e.key === "ArrowDown") { e.preventDefault(); setCursor(c => Math.min(c + 1, filtered.length - 1)); }
+    if (e.key === "ArrowUp")   { e.preventDefault(); setCursor(c => Math.max(c - 1, 0)); }
+    if (e.key === "Enter" && filtered[cursor]) { select(filtered[cursor]); }
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:400,
+      display:"flex",alignItems:"flex-start",justifyContent:"center",paddingTop:80}}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{width:520,maxWidth:"90vw",background:T.bgPanel,borderRadius:10,
+        boxShadow:"0 8px 32px rgba(0,0,0,0.45)",border:`1px solid ${T.border}`,overflow:"hidden"}}>
+        {/* Search input */}
+        <div style={{display:"flex",alignItems:"center",padding:"10px 14px",
+          borderBottom:`1px solid ${T.border}`,gap:8}}>
+          <span style={{color:T.textDim,fontSize:16}}>⌘</span>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder="Jump to channel or DM…"
+            style={{flex:1,background:"transparent",border:"none",outline:"none",
+              color:T.text,fontSize:15,fontFamily:"'Inter var','Inter',sans-serif"}}
+          />
+          <kbd style={{fontSize:11,color:T.textFaint,background:T.bg,border:`1px solid ${T.border}`,
+            borderRadius:4,padding:"2px 5px"}}>esc</kbd>
+        </div>
+        {/* Results */}
+        <div style={{maxHeight:360,overflowY:"auto"}}>
+          {filtered.length === 0 ? (
+            <div style={{padding:"20px 16px",color:T.textFaint,fontSize:13,textAlign:"center"}}>
+              No channels found
+            </div>
+          ) : filtered.map((item, i) => {
+            const isDM = !item.chan.startsWith("#");
+            const active = i === cursor;
+            return (
+              <div key={item.netId + "::" + item.chan}
+                onMouseEnter={() => setCursor(i)}
+                onClick={() => select(item)}
+                style={{display:"flex",alignItems:"center",gap:10,padding:"8px 14px",cursor:"pointer",
+                  background: active ? T.accentBg2 : "transparent",
+                  borderLeft: active ? `2px solid ${T.accent}` : "2px solid transparent"}}>
+                <span style={{fontSize:14,color:isDM ? T.accent : T.textDim, width:16, textAlign:"center"}}>
+                  {isDM ? "@" : "#"}
+                </span>
+                <span style={{flex:1,fontSize:14,color:T.text,
+                  fontFamily:"'Inter var','Inter',sans-serif",
+                  overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                  {item.chan.replace(/^[#@]/, "")}
+                </span>
+                <span style={{fontSize:11,color:T.textFaint,flexShrink:0}}>{item.netName}</span>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{padding:"6px 14px",borderTop:`1px solid ${T.borderFaint}`,
+          display:"flex",gap:12,color:T.textFaint,fontSize:11}}>
+          <span><kbd style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:3,padding:"1px 4px"}}>↑↓</kbd> navigate</span>
+          <span><kbd style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:3,padding:"1px 4px"}}>↵</kbd> jump</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appToggleTheme, appSetTheme }) {
   const [isMobile, setIsMobile] = useState(()=>window.innerWidth<=768);
   useEffect(()=>{
@@ -2954,6 +3060,7 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
 const [chanCtxMenu, setChanCtxMenu] = useState(null); // {x,y,netId,chan,left} channel right-click
 const [dmCtxMenu, setDmCtxMenu] = useState(null);     // {x,y,netId,nick} DM right-click
 const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick click in messages
+  const [showQuickSwitch, setShowQuickSwitch] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
   const [leftWidth,  setLeftWidth]  = useState(224);
   const [rightWidth, setRightWidth] = useState(190);
@@ -3008,6 +3115,18 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
     window.addEventListener("irc-ignore", handler);
     return () => window.removeEventListener("irc-ignore", handler);
   }, []);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setShowQuickSwitch(s => !s);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   const connections  = useRef({});  // networkId → WS handle
   const networksRef  = useRef({});  // always-current mirror of state.networks
   const myNickRef    = useRef({});  // always-current mirror of state.myNick
@@ -4265,6 +4384,22 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
     <div style={{display:"flex",height:"100%",width:"100%",background:T.bg,
       overflow:"hidden",color:T.text,fontFamily:"'Inter var','Inter',sans-serif"}}>
 
+
+      {showQuickSwitch&&(
+        <QuickSwitcherModal
+          channels={channels}
+          networks={networks}
+          networkOrder={networkOrder}
+          onClose={()=>setShowQuickSwitch(false)}
+          onSelect={(netId, chan)=>{
+            dispatch({type:"SET_ACTIVE_NET",id:netId});
+            dispatch({type:"SET_ACTIVE_CHAN",netId,chan});
+            dispatch({type:"CLEAR_UNREAD",netId,chan});
+            setShowQuickSwitch(false);
+            setTimeout(()=>loadChannelHistory(netId,chan),100);
+          }}
+        />
+      )}
 
       {showProfile&&(
         <ProfileModal
