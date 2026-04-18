@@ -2164,6 +2164,27 @@ function CtxItem({ icon, label, onClick, color, danger }) {
 function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, left, muted }) {
   const T=useTheme();
   const [hov, setHov] = useState(false);
+  const longPressTimer = useRef(null);
+  const touchPos = useRef(null);
+  const didLongPress = useRef(false);
+
+  const handleTouchStart = (e) => {
+    didLongPress.current = false;
+    const t = e.touches[0];
+    touchPos.current = {x: t.clientX, y: t.clientY};
+    longPressTimer.current = setTimeout(() => {
+      didLongPress.current = true;
+      onContextMenu && onContextMenu({preventDefault:()=>{}, clientX:touchPos.current.x, clientY:touchPos.current.y});
+    }, 500);
+  };
+  const handleTouchMove = (e) => {
+    if (!touchPos.current) return;
+    const t = e.touches[0];
+    if (Math.hypot(t.clientX - touchPos.current.x, t.clientY - touchPos.current.y) > 10)
+      clearTimeout(longPressTimer.current);
+  };
+  const handleTouchEnd = () => clearTimeout(longPressTimer.current);
+  const handleClick = (e) => { if (!didLongPress.current) onClick && onClick(e); };
 
   let icon, label;
   if (kind==="server") {
@@ -2185,9 +2206,10 @@ function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, l
     : active ? T.text : (!muted && unread>0) ? T.accent : T.textDim;
 
   return (
-    <div onClick={onClick}
+    <div onClick={handleClick}
       onContextMenu={onContextMenu}
       onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
+      onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
       style={{display:"flex",alignItems:"center",justifyContent:"space-between",
         padding:"4px 10px 4px 24px",margin:"1px 6px",borderRadius:4,cursor:"pointer",
         background:active?T.accentBg2:hov?T.border:"transparent",
