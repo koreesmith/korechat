@@ -3488,11 +3488,13 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           if (text.startsWith("status:")) {
             const status=text.slice(7);
             dispatch({ type:"NET_STATUS", id:netId, status });
-            // In BNC mode the client never receives a 001 (IRC is already registered),
-            // so REPLAY_START is never dispatched from the 001 handler. Dispatch it
-            // here instead so unread counts are suppressed during the ring buffer
-            // replay that immediately follows status:connected on every subscribe.
-            if (status === "connected") dispatch({ type:"REPLAY_START", netId });
+            // The BNC always replays the ring buffer immediately after sending the
+            // initial status message, regardless of whether the status is "connected"
+            // or "connecting". Dispatch REPLAY_START on any status so unread counts
+            // are suppressed during the ring buffer replay in all cases.
+            // REPLAY_DONE fires later on "replay-done" (sent by Subscribe when IRC
+            // is already up, or fanOut'd by the 001 handler when IRC connects).
+            dispatch({ type:"REPLAY_START", netId });
             break;
           }
           // replay-done nick:<nick> — BNC ring buffer replay complete, update our nick.
