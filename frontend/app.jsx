@@ -2169,7 +2169,7 @@ function CtxItem({ icon, label, onClick, color, danger }) {
 
 // ─── Sidebar item (channel, DM, or server tab) ───────────────────────────────
 // kind: "channel" | "dm" | "server"
-function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, left, muted, online }) {
+function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, left, muted, online, compact }) {
   const T=useTheme();
   const [hov, setHov] = useState(false);
   const longPressTimer = useRef(null);
@@ -2227,10 +2227,10 @@ function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, l
       onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
       onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
       style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-        padding:"4px 10px 4px 24px",margin:"1px 6px",borderRadius:4,cursor:"pointer",
+        padding:compact?"2px 8px 2px 20px":"4px 10px 4px 24px",margin:compact?"0px 4px":"1px 6px",borderRadius:4,cursor:"pointer",
         background:active?T.accentBg2:hov?T.border:"transparent",
         color:textColor,
-        fontWeight:active||(unread>0&&!muted)?600:400,fontSize:15,gap:6,
+        fontWeight:active||(unread>0&&!muted)?600:400,fontSize:compact?13:15,gap:compact?4:6,
         opacity:left?0.55:muted?0.45:1}}>
       <span style={{display:"flex",alignItems:"center",gap:5,overflow:"hidden",minWidth:0}}>
         {icon}
@@ -2247,11 +2247,11 @@ function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, l
 }
 
 // ─── Collapsible section header ───────────────────────────────────────────────
-function SectionHeader({ label, count, open, onToggle }) {
+function SectionHeader({ label, count, open, onToggle, compact }) {
   const T=useTheme();
   return (
     <div onClick={onToggle}
-      style={{display:"flex",alignItems:"center",gap:4,padding:"5px 10px 2px 12px",
+      style={{display:"flex",alignItems:"center",gap:4,padding:compact?"3px 8px 1px 10px":"5px 10px 2px 12px",
         cursor:"pointer",userSelect:"none"}}
       onMouseEnter={e=>e.currentTarget.style.background=T.border}
       onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
@@ -2266,7 +2266,7 @@ function SectionHeader({ label, count, open, onToggle }) {
 }
 
 // ─── Logs Modal ───────────────────────────────────────────────────────────────
-function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, saveNotifPrefs }) {
+function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, saveNotifPrefs, compactMode, setCompactMode }) {
   const T = useTheme();
   const MONO = { fontFamily:"'Inter var','Inter',sans-serif" };
   const IS = {
@@ -2412,7 +2412,7 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
               border:"none",color:T.textFaint,fontSize:19,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>
           </div>
           <div style={{display:"flex",gap:0}}>
-            {[["browse","Browse"],["logs","Logs"],["notifications","Notifications"]].map(([id,label])=>(
+            {[["browse","Browse"],["logs","Logs"],["notifications","Notifications"],["appearance","Appearance"]].map(([id,label])=>(
               <button key={id} onClick={()=>setTab(id)}
                 style={{...MONO,fontSize:13,padding:"7px 16px",border:"none",cursor:"pointer",
                   borderBottom: tab===id ? `2px solid ${T.accent||T.blue||"#58a6ff"}` : "2px solid transparent",
@@ -2745,6 +2745,40 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── Appearance tab ── */}
+          {tab==="appearance"&&(
+            <div style={{flex:1,overflowY:"auto",padding:"24px 28px"}}>
+              <div style={{maxWidth:440,display:"flex",flexDirection:"column",gap:20}}>
+                <div style={{background:T.bg,borderRadius:8,border:`1px solid ${T.border}`,padding:"16px 18px"}}>
+                  <div style={{...MONO,fontSize:14,fontWeight:700,color:T.textBright,marginBottom:4}}>
+                    Sidebar Display
+                  </div>
+                  <div style={{fontSize:13,color:T.textFaint,lineHeight:1.5,marginBottom:14}}>
+                    Adjust how sidebar items are displayed.
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                    padding:"8px 0",borderTop:`1px solid ${T.borderFaint}`}}>
+                    <div>
+                      <div style={{fontSize:14,color:T.text,fontWeight:500}}>Compact Mode</div>
+                      <div style={{fontSize:12,color:T.textFaint,marginTop:2}}>
+                        Reduce font size and padding to fit more items without scrolling
+                      </div>
+                    </div>
+                    <button
+                      onClick={()=>setCompactMode(m=>!m)}
+                      style={{...MONO,flexShrink:0,marginLeft:16,padding:"4px 14px",
+                        borderRadius:20,border:"none",cursor:"pointer",
+                        fontSize:12,fontWeight:700,
+                        background:compactMode?T.green:T.border,
+                        color:compactMode?"#fff":T.textFaint}}>
+                      {compactMode?"ON":"OFF"}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -3126,6 +3160,8 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
   const isMuted = (netId, name) => (muted[netId] || []).includes(name);
   const [unreadOnly, setUnreadOnly] = useState(() => localStorage.getItem("kc_unread_only")==="1");
   React.useEffect(() => { localStorage.setItem("kc_unread_only", unreadOnly?"1":"0"); }, [unreadOnly]);
+  const [compactMode, setCompactMode] = useState(() => localStorage.getItem("kc_compact_mode")==="1");
+  React.useEffect(() => { localStorage.setItem("kc_compact_mode", compactMode?"1":"0"); }, [compactMode]);
   const [userMenu,     setUserMenu]     = useState(null); // {nick, pfx, x, y, chan, netId}
   const [ignoredNicks, setIgnoredNicks] = useState(new Set()); // client-side ignore list
   const [showProfile,  setShowProfile]  = useState(false);
@@ -4521,7 +4557,8 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       {showLogs&&(
         <UserSettingsModal onClose={()=>setShowLogs(false)}
           notifPerms={notifPerms} setNotifPerms={setNotifPerms}
-          notifPrefs={notifPrefs} saveNotifPrefs={saveNotifPrefs} />
+          notifPrefs={notifPrefs} saveNotifPrefs={saveNotifPrefs}
+          compactMode={compactMode} setCompactMode={setCompactMode} />
       )}
 
       {showAddNet&&(
@@ -4883,7 +4920,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                 {starredNames.length>0&&(
                   <>
                     <SectionHeader label="Starred" count={starredNames.length}
-                      open={starredOpen} onToggle={()=>toggle(starredKey)}/>
+                      open={starredOpen} onToggle={()=>toggle(starredKey)} compact={compactMode}/>
                     {starredOpen&&starredNames.map(name=>{
                       const isChannel = name.startsWith("#");
                       const chanLeft = isChannel && channels[CHAN_KEY(netId,name)]?.left;
@@ -4895,6 +4932,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                           left={!!chanLeft}
                           muted={isMuted(netId,name)}
                           online={pres==="online"?true:pres==="offline"?false:undefined}
+                          compact={compactMode}
                           onClick={()=>goTo(name)}
                           onContextMenu={e=>{
                             e.preventDefault();
@@ -4910,7 +4948,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                 {chans.length>0&&(
                   <>
                     <SectionHeader label="Channels" count={chans.length}
-                      open={chansOpen} onToggle={()=>toggle(chansKey)}/>
+                      open={chansOpen} onToggle={()=>toggle(chansKey)} compact={compactMode}/>
                     {chansOpen&&chans.map(chanName=>{
                         const chanLeft = channels[CHAN_KEY(netId,chanName)]?.left;
                         return (
@@ -4919,6 +4957,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                             unread={unread[CHAN_KEY(netId,chanName)]||0}
                             left={!!chanLeft}
                             muted={isMuted(netId,chanName)}
+                            compact={compactMode}
                             onClick={()=>goTo(chanName)}
                             onContextMenu={e=>{e.preventDefault();setChanCtxMenu({x:e.clientX,y:e.clientY,netId,chan:chanName,left:!!chanLeft});}}/>
                         );
@@ -4930,7 +4969,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                 {dms.length>0&&(
                   <>
                     <SectionHeader label="Messages" count={dms.length}
-                      open={dmsOpen} onToggle={()=>toggle(dmsKey)}/>
+                      open={dmsOpen} onToggle={()=>toggle(dmsKey)} compact={compactMode}/>
                     {dmsOpen&&dms.map(chanName=>{
                       const pres=presence[netId]?.[chanName];
                       return (
@@ -4939,6 +4978,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                           unread={unread[CHAN_KEY(netId,chanName)]||0}
                           muted={isMuted(netId,chanName)}
                           online={pres==="online"?true:pres==="offline"?false:undefined}
+                          compact={compactMode}
                           onClick={()=>goTo(chanName)}
                           onContextMenu={e=>{e.preventDefault();setDmCtxMenu({x:e.clientX,y:e.clientY,netId,nick:chanName});}}/>
                       );
