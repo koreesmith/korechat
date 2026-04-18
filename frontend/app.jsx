@@ -549,6 +549,7 @@ const INIT = {
   activeNet:null, activeChan:{}, myNick:{},
   seenMsgIds:{}, // msgid→true for dedup of server history replay
   replaying:new Set(), // netIds currently in BNC ring buffer replay — suppress unread
+  presence:{}, // { [netId]: { [nick]: "online"|"offline" } }
 };
 
 function reducer(s, a) {
@@ -568,8 +569,9 @@ function reducer(s, a) {
       const msgs2=Object.fromEntries(Object.entries(s.messages).filter(([k])=>!k.startsWith(a.id+"::")));
       const unr2=Object.fromEntries(Object.entries(s.unread).filter(([k])=>!k.startsWith(a.id+"::")));
       const ac2={...s.activeChan}; delete ac2[a.id];
+      const pres2={...s.presence}; delete pres2[a.id];
       return { ...s, networks:nets2, networkOrder:order2, channels:chans2, messages:msgs2, unread:unr2, activeChan:ac2,
-        activeNet: s.activeNet===a.id?(order2[0]||null):s.activeNet };
+        presence:pres2, activeNet: s.activeNet===a.id?(order2[0]||null):s.activeNet };
     }
     case "NET_STATUS": {
       if (!s.networks[a.id]) return s;
@@ -582,7 +584,8 @@ function reducer(s, a) {
       const messages=Object.fromEntries(Object.entries(s.messages).filter(([k])=>!k.startsWith(a.id+"::")));
       const unread  =Object.fromEntries(Object.entries(s.unread  ).filter(([k])=>!k.startsWith(a.id+"::")));
       const activeChan={...s.activeChan}; delete activeChan[a.id];
-      return { ...s, networks:nets, networkOrder:order, channels, messages, unread, activeChan,
+      const presence={...s.presence}; delete presence[a.id];
+      return { ...s, networks:nets, networkOrder:order, channels, messages, unread, activeChan, presence,
         activeNet: s.activeNet===a.id?(order[0]||null):s.activeNet };
     }
     case "SET_NICK":        return { ...s, myNick:{...s.myNick,[a.netId]:a.nick} };
@@ -742,6 +745,11 @@ function reducer(s, a) {
     case "CLEAR_UNREAD": {
       const k=CHAN_KEY(a.netId,a.chan);
       return { ...s, unread:{...s.unread,[k]:0} };
+    }
+    case "SET_PRESENCE": {
+      const netPres={...(s.presence[a.netId]||{})};
+      netPres[a.nick]=a.status;
+      return { ...s, presence:{...s.presence,[a.netId]:netPres} };
     }
     default: return s;
   }
@@ -2161,7 +2169,7 @@ function CtxItem({ icon, label, onClick, color, danger }) {
 
 // ─── Sidebar item (channel, DM, or server tab) ───────────────────────────────
 // kind: "channel" | "dm" | "server"
-function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, left, muted }) {
+function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, left, muted, online }) {
   const T=useTheme();
   const [hov, setHov] = useState(false);
   const longPressTimer = useRef(null);
@@ -2191,7 +2199,15 @@ function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, l
     icon = <span style={{fontSize:12,opacity:0.6,flexShrink:0}}>⚡</span>;
     label = "server";
   } else if (kind==="dm") {
-    icon = <Avatar nick={chanName} size={16}/>;
+    icon = (
+      <span style={{position:"relative",display:"inline-flex",flexShrink:0}}>
+        <Avatar nick={chanName} size={16}/>
+        {online!==undefined&&(
+          <span style={{position:"absolute",bottom:-1,right:-1,width:6,height:6,borderRadius:"50%",
+            background:online?"#4af7a0":"#555",border:`1.5px solid ${T.bg}`}}/>
+        )}
+      </span>
+    );
     label = chanName;
   } else {
     // channel — show dimmed lock icon if left
@@ -3199,7 +3215,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   const msgsRef      = useRef(null);
 
   const { networks, networkOrder, channels, messages, unread,
-          activeNet, activeChan, myNick } = state;
+          activeNet, activeChan, myNick, presence } = state;
 
   // Keep refs in sync with state so callbacks never close over stale values
   useEffect(() => { networksRef.current = networks; },  [networks]);
@@ -3217,6 +3233,10 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
 
   const ensureChan = useCallback((netId, chan) => {
     dispatch({ type:"CHAN_JOIN", netId, chan });
+    if (chan !== STATUS_CHAN && !chan.startsWith("#")) {
+      const conn = connections.current[netId];
+      if (conn?.ready) conn.send(`MONITOR + ${chan}`);
+    }
   }, []);
 
   // ── History loading ─────────────────────────────────────────────────────────
@@ -3408,6 +3428,17 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         dispatch({ type:"REPLAY_START", netId }); // suppress unread during BNC ring buffer replay
         ensureChan(netId, STATUS_CHAN);
         // History loaded by replay-done after ring buffer replay completes
+        // Re-subscribe MONITOR for any DM channels from a previous session
+        {
+          const existingDMs = Object.keys(channelsRef.current)
+            .filter(k=>k.startsWith(netId+"::"))
+            .map(k=>k.split("::")[1])
+            .filter(n=>n!==STATUS_CHAN&&!n.startsWith("#"));
+          if (existingDMs.length) {
+            const conn=connections.current[netId];
+            if (conn?.ready) conn.send(`MONITOR + ${existingDMs.join(",")}`);
+          }
+        }
         break;
       }
 
@@ -3773,6 +3804,17 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       case "305": case "306": ensureChan(netId,STATUS_CHAN); sys(STATUS_CHAN,params[params.length-1]); break;
       case "381": ensureChan(netId,STATUS_CHAN); sys(STATUS_CHAN,`★ ${params[params.length-1]}`); break;
       case "491": case "464": ensureChan(netId,STATUS_CHAN); sys(STATUS_CHAN,`⚠ OPER failed: ${params[params.length-1]}`); break;
+      case "730": { // RPL_MONONLINE — nicks are now online
+        const nicks=(params[1]||"").split(",").map(n=>n.split("!")[0]).filter(Boolean);
+        nicks.forEach(nick=>dispatch({type:"SET_PRESENCE",netId,nick,status:"online"}));
+        break;
+      }
+      case "731": { // RPL_MONOFFLINE — nicks are offline
+        const nicks=(params[1]||"").split(",").map(n=>n.split("!")[0]).filter(Boolean);
+        nicks.forEach(nick=>dispatch({type:"SET_PRESENCE",netId,nick,status:"offline"}));
+        break;
+      }
+      case "732": case "733": break; // MONITOR list / list-full — ignore
       case "ERROR":
         dispatch({ type:"NET_STATUS", id:netId, status:"error", msg:params[0]||"" });
         ensureChan(netId,STATUS_CHAN); sys(STATUS_CHAN,`ERROR: ${params[0]||""}`);
@@ -3783,7 +3825,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           const text=params[params.length-1]||"";
           // Suppress uninteresting numerics; show everything else as plain text
           // (no [NNN] prefix — the number is IRC protocol noise, not useful to users).
-          if (!["333","005","004","002","003","001"].includes(command)&&text&&text!==me) {
+          if (!["333","005","004","002","003","001","730","731","732","733"].includes(command)&&text&&text!==me) {
             ensureChan(netId,STATUS_CHAN); sys(STATUS_CHAN, text);
           }
         }
@@ -4639,6 +4681,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
               setDmCtxMenu(null);
             }}/>
             <CtxItem icon="🗑" label="Close" color={T.textDim} onClick={()=>{
+              connections.current[dmCtxMenu.netId]?.send(`MONITOR - ${dmCtxMenu.nick}`);
               dispatch({type:"CHAN_PART_REMOVE",netId:dmCtxMenu.netId,chan:dmCtxMenu.nick});
               setDmCtxMenu(null);
             }}/>
@@ -4844,12 +4887,14 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                     {starredOpen&&starredNames.map(name=>{
                       const isChannel = name.startsWith("#");
                       const chanLeft = isChannel && channels[CHAN_KEY(netId,name)]?.left;
+                      const pres = !isChannel ? presence[netId]?.[name] : undefined;
                       return (
                         <SidebarItem key={name} chanName={name} kind={isChannel?"channel":"dm"}
                           active={isActiveNet&&name===activeChanName2}
                           unread={unread[CHAN_KEY(netId,name)]||0}
                           left={!!chanLeft}
                           muted={isMuted(netId,name)}
+                          online={pres==="online"?true:pres==="offline"?false:undefined}
                           onClick={()=>goTo(name)}
                           onContextMenu={e=>{
                             e.preventDefault();
@@ -4886,14 +4931,18 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                   <>
                     <SectionHeader label="Messages" count={dms.length}
                       open={dmsOpen} onToggle={()=>toggle(dmsKey)}/>
-                    {dmsOpen&&dms.map(chanName=>(
-                      <SidebarItem key={chanName} chanName={chanName} kind="dm"
-                        active={isActiveNet&&chanName===activeChanName2}
-                        unread={unread[CHAN_KEY(netId,chanName)]||0}
-                        muted={isMuted(netId,chanName)}
-                        onClick={()=>goTo(chanName)}
-                        onContextMenu={e=>{e.preventDefault();setDmCtxMenu({x:e.clientX,y:e.clientY,netId,nick:chanName});}}/>
-                    ))}
+                    {dmsOpen&&dms.map(chanName=>{
+                      const pres=presence[netId]?.[chanName];
+                      return (
+                        <SidebarItem key={chanName} chanName={chanName} kind="dm"
+                          active={isActiveNet&&chanName===activeChanName2}
+                          unread={unread[CHAN_KEY(netId,chanName)]||0}
+                          muted={isMuted(netId,chanName)}
+                          online={pres==="online"?true:pres==="offline"?false:undefined}
+                          onClick={()=>goTo(chanName)}
+                          onContextMenu={e=>{e.preventDefault();setDmCtxMenu({x:e.clientX,y:e.clientY,netId,nick:chanName});}}/>
+                      );
+                    })}
                   </>
                 )}
 
