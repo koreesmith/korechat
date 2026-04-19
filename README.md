@@ -33,6 +33,18 @@ browser (frontend/app.jsx)
               └── pkg/ircv3/          — IRCv3 parser, formatter, tag escaping
 ```
 
+## Getting the Code
+
+**Stable (v1.0.0)**
+```bash
+git clone --branch v1.0.0 https://github.com/koreesmith/korechat.git
+```
+
+**Latest development (main)**
+```bash
+git clone https://github.com/koreesmith/korechat.git
+```
+
 ## Quick Start
 
 ```bash
