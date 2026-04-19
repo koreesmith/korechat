@@ -24,7 +24,8 @@ type User struct {
 	DisplayName      string    `json:"display_name"`
 	AvatarURL        string    `json:"avatar_url"`
 	Theme            string    `json:"theme"`
-	SidebarCollapsed string    `json:"sidebar_collapsed"` // JSON-encoded map[string]bool
+	SidebarCollapsed     string    `json:"sidebar_collapsed"`      // JSON-encoded map[string]bool
+	SidebarNetworkOrder  string    `json:"sidebar_network_order"`  // JSON-encoded []string of net IDs
 	Role             Role      `json:"role"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`

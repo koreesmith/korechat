@@ -588,6 +588,7 @@ function reducer(s, a) {
       return { ...s, networks:nets, networkOrder:order, channels, messages, unread, activeChan, presence,
         activeNet: s.activeNet===a.id?(order[0]||null):s.activeNet };
     }
+    case "NET_REORDER":     return { ...s, networkOrder: a.order };
     case "SET_NICK":        return { ...s, myNick:{...s.myNick,[a.netId]:a.nick} };
     case "SET_ACTIVE_NET":  return { ...s, activeNet:a.id };
     case "SET_ACTIVE_CHAN": return { ...s, activeChan:{...s.activeChan,[a.netId]:a.chan} };
@@ -3168,6 +3169,21 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
   const [unreadOnly, setUnreadOnly] = useState(() => localStorage.getItem("kc_unread_only")==="1");
   React.useEffect(() => { localStorage.setItem("kc_unread_only", unreadOnly?"1":"0"); }, [unreadOnly]);
   const [compactMode, setCompactMode] = useState(() => localStorage.getItem("kc_compact_mode")==="1");
+  const _netOrderReady = React.useRef(false);
+  React.useEffect(() => {
+    if (!_netOrderReady.current) return;
+    const t = setTimeout(() => {
+      fetch("/api/v1/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sidebar_network_order: JSON.stringify(networkOrder) }),
+        credentials: "include",
+      }).catch(() => {});
+    }, 800);
+    return () => clearTimeout(t);
+  }, [networkOrder]);
+  const [draggingNetId, setDraggingNetId] = useState(null);
+  const [dragOverNetId, setDragOverNetId] = useState(null);
   React.useEffect(() => { localStorage.setItem("kc_compact_mode", compactMode?"1":"0"); }, [compactMode]);
   const [userMenu,     setUserMenu]     = useState(null); // {nick, pfx, x, y, chan, netId}
   const [ignoredNicks, setIgnoredNicks] = useState(new Set()); // client-side ignore list
@@ -3944,6 +3960,19 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
           // connectNetwork reads net directly (not from state), so safe to call immediately
           connectNetwork(net);
         });
+        // Apply saved network order if present, placing any new networks at the end
+        try {
+          const saved = JSON.parse(_currentUser?.sidebar_network_order || "[]");
+          if (Array.isArray(saved) && saved.length > 0) {
+            const netIds = nets.map(n => n.id);
+            const reordered = [
+              ...saved.filter(id => netIds.includes(id)),
+              ...netIds.filter(id => !saved.includes(id)),
+            ];
+            dispatch({ type:"NET_REORDER", order: reordered });
+          }
+        } catch {}
+        _netOrderReady.current = true;
       })
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4881,8 +4910,36 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
               setTimeout(() => loadChannelHistory(netId, chan), 100); // let messagesRef sync first
             };
 
+            const isDraggingThis = draggingNetId === netId;
+            const isDragTarget   = dragOverNetId === netId && draggingNetId !== netId;
             return (
-              <div key={netId} style={{marginBottom:6}}>
+              <div key={netId} style={{marginBottom:6, opacity:isDraggingThis?0.45:1,
+                outline: isDragTarget?`2px solid ${T.accent}`:"none", borderRadius:6,
+                transition:"opacity 0.1s"}}
+                onDragOver={e=>{
+                  if (draggingNetId && draggingNetId!==netId) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect="move";
+                    setDragOverNetId(netId);
+                  }
+                }}
+                onDragLeave={e=>{
+                  if (!e.relatedTarget||!e.currentTarget.contains(e.relatedTarget)) setDragOverNetId(null);
+                }}
+                onDrop={e=>{
+                  e.preventDefault();
+                  setDragOverNetId(null);
+                  const fromId=draggingNetId;
+                  setDraggingNetId(null);
+                  if (!fromId||fromId===netId) return;
+                  const order=[...networkOrder];
+                  const fromIdx=order.indexOf(fromId);
+                  const toIdx=order.indexOf(netId);
+                  if (fromIdx<0||toIdx<0) return;
+                  order.splice(fromIdx,1);
+                  order.splice(toIdx,0,fromId);
+                  dispatch({type:"NET_REORDER",order});
+                }}>
                 {/* Network header */}
                 <div style={{padding:"5px 10px 3px",display:"flex",alignItems:"center",gap:6,
                   cursor:"pointer",borderRadius:4,margin:"0 4px",
@@ -4891,6 +4948,20 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                   onContextMenu={e=>{e.preventDefault();setCtxMenu({x:e.clientX,y:e.clientY,net});}}
                   onMouseEnter={e=>e.currentTarget.style.background=T.border}
                   onMouseLeave={e=>e.currentTarget.style.background=isActiveNet&&activeChanName2===STATUS_CHAN?T.accentBg2:"transparent"}>
+                  <span
+                    draggable={true}
+                    title="Drag to reorder"
+                    onDragStart={e=>{
+                      e.stopPropagation();
+                      setDraggingNetId(netId);
+                      e.dataTransfer.effectAllowed="move";
+                      e.dataTransfer.setData("text/plain",netId);
+                    }}
+                    onDragEnd={()=>{ setDraggingNetId(null); setDragOverNetId(null); }}
+                    style={{fontSize:11,color:T.textFaint,cursor:"grab",flexShrink:0,userSelect:"none",
+                      lineHeight:1,padding:"1px 1px",letterSpacing:"-1px"}}
+                    onMouseEnter={e=>e.currentTarget.style.color=T.textDim}
+                    onMouseLeave={e=>e.currentTarget.style.color=T.textFaint}>⠿</span>
                   <span onClick={e=>{e.stopPropagation();toggle(serverKey);}}
                     style={{fontSize:9,color:T.textDim,cursor:"pointer",flexShrink:0,userSelect:"none",
                       display:"inline-block",transform:serverOpen?"rotate(90deg)":"rotate(0deg)",
