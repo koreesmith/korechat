@@ -50,7 +50,8 @@ git clone https://github.com/koreesmith/korechat.git
 ```bash
 # 1. Copy and configure environment
 cp .env.example .env
-#    Edit .env — set JWT_SECRET and DATABASE_URL password
+#    Edit .env — at minimum set JWT_SECRET, POSTGRES_PASSWORD, and the
+#    matching password in DATABASE_URL (all three must agree)
 
 # 2. Start the stack
 docker compose up -d --build
@@ -105,7 +106,10 @@ korechat/
 | `SERVER_VERSION` | `KoreChat/1.0` | Version string in 002 numeric |
 | `MOTD` | `Welcome…` | Message of the Day |
 | `JWT_SECRET` | — | JWT signing secret — **required in production** (`openssl rand -hex 32`) |
-| `DATABASE_URL` | — | Postgres connection string |
+| `POSTGRES_DB` | `korechat` | Database name (used by postgres container on first init only) |
+| `POSTGRES_USER` | `korechat` | Database user (used by postgres container on first init only) |
+| `POSTGRES_PASSWORD` | — | Database password (used by postgres container on first init only) |
+| `DATABASE_URL` | — | Full Postgres connection string — **this is what the backend uses**; the password here must match `POSTGRES_PASSWORD` |
 | `IRC_DEBUG` | `false` | Log raw IRC lines to stdout |
 | `FRONTEND_PORT` | `80` | Host port for the nginx frontend |
 
