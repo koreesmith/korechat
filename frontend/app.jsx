@@ -3169,22 +3169,10 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
   const [unreadOnly, setUnreadOnly] = useState(() => localStorage.getItem("kc_unread_only")==="1");
   React.useEffect(() => { localStorage.setItem("kc_unread_only", unreadOnly?"1":"0"); }, [unreadOnly]);
   const [compactMode, setCompactMode] = useState(() => localStorage.getItem("kc_compact_mode")==="1");
+  React.useEffect(() => { localStorage.setItem("kc_compact_mode", compactMode?"1":"0"); }, [compactMode]);
   const _netOrderReady = React.useRef(false);
-  React.useEffect(() => {
-    if (!_netOrderReady.current) return;
-    const t = setTimeout(() => {
-      fetch("/api/v1/profile", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sidebar_network_order: JSON.stringify(networkOrder) }),
-        credentials: "include",
-      }).catch(() => {});
-    }, 800);
-    return () => clearTimeout(t);
-  }, [networkOrder]);
   const [draggingNetId, setDraggingNetId] = useState(null);
   const [dragOverNetId, setDragOverNetId] = useState(null);
-  React.useEffect(() => { localStorage.setItem("kc_compact_mode", compactMode?"1":"0"); }, [compactMode]);
   const [userMenu,     setUserMenu]     = useState(null); // {nick, pfx, x, y, chan, netId}
   const [ignoredNicks, setIgnoredNicks] = useState(new Set()); // client-side ignore list
   const [showProfile,  setShowProfile]  = useState(false);
@@ -3281,6 +3269,19 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   useEffect(() => { myNickRef.current   = myNick; },    [myNick]);
   useEffect(() => { channelsRef.current = channels; },  [channels]);
   useEffect(() => { messagesRef.current  = messages; },  [messages]);
+  // Persist network order to profile after initial load (gated by _netOrderReady)
+  useEffect(() => {
+    if (!_netOrderReady.current) return;
+    const t = setTimeout(() => {
+      fetch("/api/v1/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sidebar_network_order: JSON.stringify(networkOrder) }),
+        credentials: "include",
+      }).catch(() => {});
+    }, 800);
+    return () => clearTimeout(t);
+  }, [networkOrder]);
 
   const MONO = { fontFamily:"'Inter var','Inter',sans-serif" };
 
