@@ -3130,6 +3130,7 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
   const [netSettings,  setNetSettings]  = useState(null); // network object being edited
   const [showUsers,    setShowUsers]    = useState(true);
   const [showUsersMobile, setShowUsersMobile] = useState(false);
+  const [showLeftSidebar, setShowLeftSidebar] = useState(true);
   const [collapsed,    setCollapsed]    = useState(() => {
     try { return JSON.parse(_currentUser?.sidebar_collapsed || '{}'); } catch { return {}; }
   }); // key: netId+"::channels" | netId+"::dms" | netId+"::starred"
@@ -4805,7 +4806,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       )}
 
       {/* ── Sidebar ── */}
-      {(!isMobile||sidebarOpen)&&<div style={{
+      {(!isMobile&&showLeftSidebar||sidebarOpen)&&<div style={{
           width:isMobile?224:leftWidth,flexShrink:0,background:T.bgSide,borderRight:`1px solid ${T.border}`,
           display:"flex",flexDirection:"column",overflow:"hidden",
           ...(isMobile?{position:"fixed",top:0,left:0,height:"100dvh",zIndex:210,
@@ -5154,7 +5155,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         </div>
       </div>}
 
-      {!isMobile&&<div
+      {!isMobile&&showLeftSidebar&&<div
         onMouseDown={e=>{e.preventDefault();document.body.style.cursor="col-resize";resizeDragRef.current={side:"left",startX:e.clientX,startWidth:leftWidth};}}
         style={{width:4,flexShrink:0,cursor:"col-resize",background:"transparent",alignSelf:"stretch",zIndex:5}}
         onMouseEnter={e=>e.currentTarget.style.background=T.border}
@@ -5173,6 +5174,14 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             <button onClick={()=>setSidebarOpen(true)}
               style={{background:"transparent",border:"none",color:T.textDim,
                 fontSize:21,cursor:"pointer",padding:"2px 6px",lineHeight:1,flexShrink:0}}>
+              ☰
+            </button>
+          )}
+          {!isMobile&&(
+            <button onClick={()=>setShowLeftSidebar(s=>!s)}
+              style={{background:showLeftSidebar?T.accentBg3:"transparent",border:`1px solid ${T.borderFaint}`,
+                borderRadius:4,color:T.textDim,fontSize:16,cursor:"pointer",
+                padding:"2px 8px",lineHeight:1,flexShrink:0}}>
               ☰
             </button>
           )}
