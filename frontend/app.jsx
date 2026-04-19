@@ -2170,7 +2170,8 @@ function CtxItem({ icon, label, onClick, color, danger }) {
 
 // ─── Sidebar item (channel, DM, or server tab) ───────────────────────────────
 // kind: "channel" | "dm" | "server"
-function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, left, muted, online, compact }) {
+function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, left, muted, online, compact,
+    showDragHandle, isDragging, isDragTarget, onDragStart, onDragEnd, onDragOver, onDrop }) {
   const T=useTheme();
   const [hov, setHov] = useState(false);
   const longPressTimer = useRef(null);
@@ -2227,13 +2228,25 @@ function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, l
       onContextMenu={onContextMenu}
       onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
       onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
+      draggable={showDragHandle||undefined}
+      onDragStart={showDragHandle?onDragStart:undefined}
+      onDragEnd={showDragHandle?onDragEnd:undefined}
+      onDragOver={showDragHandle?onDragOver:undefined}
+      onDrop={showDragHandle?onDrop:undefined}
       style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-        padding:compact?"2px 8px 2px 20px":"4px 10px 4px 24px",margin:compact?"0px 4px":"1px 6px",borderRadius:4,cursor:"pointer",
+        padding:compact?(showDragHandle?"2px 8px 2px 8px":"2px 8px 2px 20px"):(showDragHandle?"4px 10px 4px 10px":"4px 10px 4px 24px"),margin:compact?"0px 4px":"1px 6px",borderRadius:4,cursor:"pointer",
         background:active?T.accentBg2:hov?T.border:"transparent",
         color:textColor,
         fontWeight:active||(unread>0&&!muted)?600:400,fontSize:compact?13:15,gap:compact?4:6,
-        opacity:left?0.55:muted?0.45:1}}>
+        opacity:isDragging?0.45:left?0.55:muted?0.45:1,
+        outline:isDragTarget?`2px solid ${T.accent}`:"none",transition:"opacity 0.1s"}}>
       <span style={{display:"flex",alignItems:"center",gap:5,overflow:"hidden",minWidth:0}}>
+        {showDragHandle&&(
+          <span style={{fontSize:10,color:T.textFaint,cursor:"grab",flexShrink:0,userSelect:"none",
+            lineHeight:1,letterSpacing:"-1px",opacity:hov?1:0.3,transition:"opacity 0.1s"}}
+            onMouseEnter={e=>e.currentTarget.style.color=T.textDim}
+            onMouseLeave={e=>e.currentTarget.style.color=T.textFaint}>⠿</span>
+        )}
         {icon}
         <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
           fontStyle:left?"italic":"normal"}}>{label}</span>
@@ -3171,6 +3184,16 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
   React.useEffect(() => { localStorage.setItem("kc_unread_only", unreadOnly?"1":"0"); }, [unreadOnly]);
   const [compactMode, setCompactMode] = useState(() => localStorage.getItem("kc_compact_mode")==="1");
   React.useEffect(() => { localStorage.setItem("kc_compact_mode", compactMode?"1":"0"); }, [compactMode]);
+  const [chanSortMode, setChanSortMode] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("kc_chan_sort") || "{}"); } catch { return {}; }
+  }); // { [netId]: "alpha" | "recent" | "manual" }
+  React.useEffect(() => { localStorage.setItem("kc_chan_sort", JSON.stringify(chanSortMode)); }, [chanSortMode]);
+  const [chanManualOrder, setChanManualOrder] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("kc_chan_order") || "{}"); } catch { return {}; }
+  }); // { [netId]: string[] }
+  React.useEffect(() => { localStorage.setItem("kc_chan_order", JSON.stringify(chanManualOrder)); }, [chanManualOrder]);
+  const [draggingChan, setDraggingChan] = useState(null); // {netId, name}
+  const [dragOverChan, setDragOverChan] = useState(null); // {netId, name}
   const _netOrderReady = React.useRef(false);
   const [draggingNetId, setDraggingNetId] = useState(null);
   const [dragOverNetId, setDragOverNetId] = useState(null);
@@ -4679,6 +4702,14 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             {ctxMenu.net.status==="connected"&&(
               <CtxItem icon="✕" label="Disconnect from IRC" color={T.red} onClick={()=>{disconnectNetwork(ctxMenu.net.id);setCtxMenu(null);}}/>
             )}
+            <div style={{borderTop:`1px solid ${T.borderFaint}`,margin:"4px 0 2px",padding:"4px 12px 2px"}}>
+              <span style={{fontSize:11,color:T.textFaint,fontFamily:"'Inter var','Inter',sans-serif",userSelect:"none"}}>Sort Channels</span>
+            </div>
+            {[["alpha","⇅","Alphabetical"],["recent","🕐","Recent Activity"],["manual","⠿","Manual Order"]].map(([mode,icon,label])=>(
+              <CtxItem key={mode} icon={(chanSortMode[ctxMenu.net.id]||"alpha")===mode?"✓":icon} label={label}
+                color={(chanSortMode[ctxMenu.net.id]||"alpha")===mode?T.accent:undefined}
+                onClick={()=>{setChanSortMode(prev=>({...prev,[ctxMenu.net.id]:mode}));setCtxMenu(null);}}/>
+            ))}
           </div>
         </div>
       )}
@@ -4881,14 +4912,36 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             const serverTab = allNames.includes(STATUS_CHAN) ? STATUS_CHAN : null;
             const hasUnread = n => (unread[CHAN_KEY(netId,n)]||0)>0;
             const keepWhenFiltered = n => !unreadOnly || hasUnread(n) || (isActiveNet&&n===activeChanName2);
+            const sortMode = chanSortMode[netId] || "alpha";
+            const sortChannelNames = (names) => {
+              if (sortMode === "recent") {
+                return [...names].sort((a,b) => {
+                  const msgsA = messages[CHAN_KEY(netId,a)] || [];
+                  const msgsB = messages[CHAN_KEY(netId,b)] || [];
+                  const tA = msgsA.length ? (new Date(msgsA[msgsA.length-1].time||0).getTime()||0) : 0;
+                  const tB = msgsB.length ? (new Date(msgsB[msgsB.length-1].time||0).getTime()||0) : 0;
+                  return tB - tA;
+                });
+              }
+              if (sortMode === "manual") {
+                const order = chanManualOrder[netId] || [];
+                return [...names].sort((a,b) => {
+                  const ia = order.indexOf(a); const ib = order.indexOf(b);
+                  if (ia===-1&&ib===-1) return a.localeCompare(b);
+                  if (ia===-1) return 1; if (ib===-1) return -1;
+                  return ia - ib;
+                });
+              }
+              return [...names].sort((a,b) => a.localeCompare(b));
+            };
             const starredNames = (starred[netId] || []).filter(n => allNames.includes(n) && keepWhenFiltered(n)).sort((a,b)=>a.localeCompare(b));
             const starredSet = new Set((starred[netId] || []).filter(n => allNames.includes(n)));
-            const chans = allNames
-              .filter(n=>n!==STATUS_CHAN && n.startsWith("#") && !starredSet.has(n) && keepWhenFiltered(n))
-              .sort((a,b)=>a.localeCompare(b));
-            const dms = allNames
-              .filter(n=>n!==STATUS_CHAN && !n.startsWith("#") && !starredSet.has(n) && keepWhenFiltered(n))
-              .sort((a,b)=>a.localeCompare(b));
+            const chans = sortChannelNames(
+              allNames.filter(n=>n!==STATUS_CHAN && n.startsWith("#") && !starredSet.has(n) && keepWhenFiltered(n))
+            );
+            const dms = sortChannelNames(
+              allNames.filter(n=>n!==STATUS_CHAN && !n.startsWith("#") && !starredSet.has(n) && keepWhenFiltered(n))
+            );
 
             const chansKey = netId+"::channels";
             const dmsKey   = netId+"::dms";
@@ -5053,6 +5106,9 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                       open={chansOpen} onToggle={()=>toggle(chansKey)} compact={compactMode} unread={chansUnread}/>
                     {chansOpen&&chans.map(chanName=>{
                         const chanLeft = channels[CHAN_KEY(netId,chanName)]?.left;
+                        const isManual = sortMode==="manual";
+                        const isChanDragging = isManual&&draggingChan?.netId===netId&&draggingChan?.name===chanName;
+                        const isChanTarget = isManual&&dragOverChan?.netId===netId&&dragOverChan?.name===chanName&&draggingChan?.name!==chanName;
                         return (
                           <SidebarItem key={chanName} chanName={chanName} kind="channel"
                             active={isActiveNet&&chanName===activeChanName2}
@@ -5060,8 +5116,30 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                             left={!!chanLeft}
                             muted={isMuted(netId,chanName)}
                             compact={compactMode}
+                            showDragHandle={isManual}
+                            isDragging={isChanDragging}
+                            isDragTarget={isChanTarget}
                             onClick={()=>goTo(chanName)}
-                            onContextMenu={e=>{e.preventDefault();setChanCtxMenu({x:e.clientX,y:e.clientY,netId,chan:chanName,left:!!chanLeft});}}/>
+                            onContextMenu={e=>{e.preventDefault();setChanCtxMenu({x:e.clientX,y:e.clientY,netId,chan:chanName,left:!!chanLeft});}}
+                            onDragStart={e=>{e.stopPropagation();setDraggingChan({netId,name:chanName});e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",chanName);}}
+                            onDragEnd={()=>{setDraggingChan(null);setDragOverChan(null);}}
+                            onDragOver={e=>{e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect="move";setDragOverChan({netId,name:chanName});}}
+                            onDrop={e=>{
+                              e.preventDefault();e.stopPropagation();
+                              const src=draggingChan?.name;
+                              setDraggingChan(null);setDragOverChan(null);
+                              if (!src||src===chanName) return;
+                              setChanManualOrder(prev=>{
+                                const allN=Object.keys(channels).filter(k=>k.startsWith(netId+"::")).map(k=>k.split("::")[1]).filter(n=>n!==STATUS_CHAN);
+                                const base=prev[netId]||[...allN].sort((a,b)=>a.localeCompare(b));
+                                const order=[...base];
+                                allN.forEach(n=>{if(!order.includes(n))order.push(n);});
+                                const fi=order.indexOf(src),ti=order.indexOf(chanName);
+                                if(fi<0||ti<0) return prev;
+                                order.splice(fi,1);order.splice(ti,0,src);
+                                return {...prev,[netId]:order};
+                              });
+                            }}/>
                         );
                       })}
                   </>
@@ -5074,6 +5152,9 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                       open={dmsOpen} onToggle={()=>toggle(dmsKey)} compact={compactMode} unread={dmsUnread}/>
                     {dmsOpen&&dms.map(chanName=>{
                       const pres=presence[netId]?.[chanName];
+                      const isManual = sortMode==="manual";
+                      const isDmDragging = isManual&&draggingChan?.netId===netId&&draggingChan?.name===chanName;
+                      const isDmTarget = isManual&&dragOverChan?.netId===netId&&dragOverChan?.name===chanName&&draggingChan?.name!==chanName;
                       return (
                         <SidebarItem key={chanName} chanName={chanName} kind="dm"
                           active={isActiveNet&&chanName===activeChanName2}
@@ -5081,8 +5162,30 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                           muted={isMuted(netId,chanName)}
                           online={pres==="online"?true:pres==="offline"?false:undefined}
                           compact={compactMode}
+                          showDragHandle={isManual}
+                          isDragging={isDmDragging}
+                          isDragTarget={isDmTarget}
                           onClick={()=>goTo(chanName)}
-                          onContextMenu={e=>{e.preventDefault();setDmCtxMenu({x:e.clientX,y:e.clientY,netId,nick:chanName});}}/>
+                          onContextMenu={e=>{e.preventDefault();setDmCtxMenu({x:e.clientX,y:e.clientY,netId,nick:chanName});}}
+                          onDragStart={e=>{e.stopPropagation();setDraggingChan({netId,name:chanName});e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",chanName);}}
+                          onDragEnd={()=>{setDraggingChan(null);setDragOverChan(null);}}
+                          onDragOver={e=>{e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect="move";setDragOverChan({netId,name:chanName});}}
+                          onDrop={e=>{
+                            e.preventDefault();e.stopPropagation();
+                            const src=draggingChan?.name;
+                            setDraggingChan(null);setDragOverChan(null);
+                            if (!src||src===chanName) return;
+                            setChanManualOrder(prev=>{
+                              const allN=Object.keys(channels).filter(k=>k.startsWith(netId+"::")).map(k=>k.split("::")[1]).filter(n=>n!==STATUS_CHAN);
+                              const base=prev[netId]||[...allN].sort((a,b)=>a.localeCompare(b));
+                              const order=[...base];
+                              allN.forEach(n=>{if(!order.includes(n))order.push(n);});
+                              const fi=order.indexOf(src),ti=order.indexOf(chanName);
+                              if(fi<0||ti<0) return prev;
+                              order.splice(fi,1);order.splice(ti,0,src);
+                              return {...prev,[netId]:order};
+                            });
+                          }}/>
                       );
                     })}
                   </>
