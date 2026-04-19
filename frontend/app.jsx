@@ -4929,6 +4929,64 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
               No networks yet.<br/>Click ⊕ Add Network<br/>to connect to IRC.
             </div>
           )}
+          {/* ── All Unreads ── */}
+          {(() => {
+            const allUnreadItems = [];
+            for (const netId of networkOrder) {
+              const net = networks[netId];
+              if (!net) continue;
+              const allKeys = Object.keys(channels).filter(k => k.startsWith(netId + "::"));
+              for (const k of allKeys) {
+                const chanName = k.split("::")[1];
+                if (chanName === STATUS_CHAN) continue;
+                const count = unread[k] || 0;
+                if (count > 0 && !isMuted(netId, chanName)) {
+                  allUnreadItems.push({ netId, net, chanName, count });
+                }
+              }
+            }
+            if (allUnreadItems.length === 0) return null;
+            allUnreadItems.sort((a, b) => b.count - a.count);
+            const totalUnread = allUnreadItems.reduce((s, x) => s + x.count, 0);
+            const sectionOpen = collapsed["all_unreads"] !== false;
+            const toggleSection = () => setCollapsed(c => ({ ...c, all_unreads: c.all_unreads === false ? true : false }));
+            return (
+              <div style={{ marginBottom: 6 }}>
+                <SectionHeader label="All Unreads" open={sectionOpen} onToggle={toggleSection} compact={compact} unread={totalUnread} />
+                {sectionOpen && allUnreadItems.map(({ netId, net, chanName, count }) => {
+                  const isActive = netId === activeNet && activeChan[netId] === chanName;
+                  return (
+                    <div key={CHAN_KEY(netId, chanName)}
+                      onClick={() => {
+                        dispatch({ type: "SET_ACTIVE_NET", id: netId });
+                        dispatch({ type: "SET_ACTIVE_CHAN", netId, chan: chanName });
+                        dispatch({ type: "CLEAR_UNREAD", netId, chan: chanName });
+                        setSidebarOpen(false);
+                        setTimeout(() => loadChannelHistory(netId, chanName), 100);
+                      }}
+                      style={{ display: "flex", alignItems: "center", padding: compact ? "2px 10px 2px 22px" : "3px 10px 3px 22px",
+                        cursor: "pointer", borderRadius: 4, margin: "0 4px",
+                        background: isActive ? T.accentBg2 : "transparent" }}
+                      onMouseEnter={e => e.currentTarget.style.background = isActive ? T.accentBg2 : T.border}
+                      onMouseLeave={e => e.currentTarget.style.background = isActive ? T.accentBg2 : "transparent"}>
+                      <span style={{ ...MONO, fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis",
+                        whiteSpace: "nowrap", color: isActive ? T.accent : T.textBright }}>
+                        <span style={{ color: T.textFaint, fontSize: 10, marginRight: 5 }}>{net.name}</span>
+                        {chanName}
+                      </span>
+                      {!isActive && (
+                        <span style={{ background: T.accent, color: T.bg, fontSize: 11, fontWeight: 800,
+                          borderRadius: 10, padding: "1px 5px", minWidth: 17, textAlign: "center", flexShrink: 0,
+                          fontFamily: "'Inter var','Inter',sans-serif" }}>
+                          {count > 99 ? "99+" : count}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
           {networkOrder.map(netId => {
             const net=networks[netId];
             if (!net) return null;
