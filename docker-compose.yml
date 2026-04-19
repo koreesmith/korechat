@@ -8,10 +8,8 @@ services:
     container_name: korechat-postgres
     restart: unless-stopped
     user: "500:500"
-    environment:
-      POSTGRES_DB:       korechat
-      POSTGRES_USER:     korechat
-      POSTGRES_PASSWORD: CHANGEME
+    env_file:
+      - .env
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     networks:
@@ -33,12 +31,6 @@ services:
       - "8080"
     env_file:
       - .env
-    environment:
-      - HTTP_ADDR=:8080
-      - SERVER_NAME=korechat.net
-      - SERVER_VERSION=KoreChat/1.0
-      - MOTD=Welcome to KoreChat · IRCv3 · Built for teams
-      - DATABASE_URL=postgres://korechat:CHANGEME@postgres:5432/korechat?sslmode=disable
     volumes:
       - ./data/avatars:/data/avatars
       - ./data/uploads:/data/uploads

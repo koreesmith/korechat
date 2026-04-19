@@ -4952,7 +4952,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             const toggleSection = () => setCollapsed(c => ({ ...c, all_unreads: c.all_unreads === false ? true : false }));
             return (
               <div style={{ marginBottom: 6 }}>
-                <SectionHeader label="All Unreads" open={sectionOpen} onToggle={toggleSection} compact={compact} unread={totalUnread} />
+                <SectionHeader label="All Unreads" open={sectionOpen} onToggle={toggleSection} compact={compactMode} unread={totalUnread} />
                 {sectionOpen && allUnreadItems.map(({ netId, net, chanName, count }) => {
                   const isActive = netId === activeNet && activeChan[netId] === chanName;
                   return (
@@ -4964,7 +4964,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                         setSidebarOpen(false);
                         setTimeout(() => loadChannelHistory(netId, chanName), 100);
                       }}
-                      style={{ display: "flex", alignItems: "center", padding: compact ? "2px 10px 2px 22px" : "3px 10px 3px 22px",
+                      style={{ display: "flex", alignItems: "center", padding: compactMode ? "2px 10px 2px 22px" : "3px 10px 3px 22px",
                         cursor: "pointer", borderRadius: 4, margin: "0 4px",
                         background: isActive ? T.accentBg2 : "transparent" }}
                       onMouseEnter={e => e.currentTarget.style.background = isActive ? T.accentBg2 : T.border}
