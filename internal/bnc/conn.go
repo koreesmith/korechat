@@ -352,6 +352,22 @@ func (c *Conn) Send(line string) {
 		c.notice("Not connected — your message was not sent.")
 		return
 	}
+
+	// Drop CHATHISTORY commands when the server hasn't negotiated the cap.
+	// Servers like Libera.chat (ircd-seven) return 421 "Unknown command" for
+	// any CHATHISTORY request, which pollutes the server message buffer.
+	bare := line
+	if strings.HasPrefix(bare, "@") {
+		if sp := strings.Index(bare, " "); sp >= 0 {
+			bare = strings.TrimLeft(bare[sp+1:], " ")
+		}
+	}
+	if strings.HasPrefix(strings.ToUpper(bare), "CHATHISTORY") {
+		if !c.hasAckedCap("chathistory") && !c.hasAckedCap("draft/chathistory") {
+			return
+		}
+	}
+
 	c.sendRaw(line)
 }
 
