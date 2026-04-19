@@ -142,6 +142,11 @@ type Conn struct {
 	// channel list survives restarts. Set by Manager.startConn; may be nil.
 	persistChansFn func([]string)
 
+	// recentNicks deduplicates NICK events that some IRCds (e.g. ircd-seven on
+	// Libera.chat) broadcast once per shared channel rather than once globally.
+	// Key: "fromNick\x00toNick", value: time the event was first seen.
+	recentNicks map[string]time.Time
+
 	// Developer options
 	ircDebug bool // log raw ← recv and → send lines
 
@@ -178,6 +183,7 @@ func newConn(n *networks.Network, store *networks.Store, mgr *Manager, logFn Log
 		lastPong:    time.Now(),
 		serverCaps:  make(map[string]bool),
 		ackedCaps:   make(map[string]bool),
+		recentNicks: make(map[string]time.Time),
 	}
 }
 
@@ -268,10 +274,16 @@ func (c *Conn) Subscribe(id string, send SendFunc) {
 				replay = append(replay, line)
 			}
 		}
-		if c.replayFn != nil && buf.n == buf.cap {
-			if t := parseTimeTag(buf.OldestLine()); !t.IsZero() {
-				pgQueries = append(pgQueries, pgQuery{chanName, t})
+		if c.replayFn != nil {
+			// Always prepend older history from Postgres — not only when the ring
+			// buffer is full. On servers that don't support CHATHISTORY (e.g.
+			// Libera.chat's ircd-seven), the ring buffer may be sparse or empty
+			// while Postgres still holds messages logged in prior sessions.
+			before := parseTimeTag(buf.OldestLine())
+			if before.IsZero() {
+				before = time.Now()
 			}
+			pgQueries = append(pgQueries, pgQuery{chanName, before})
 		}
 	}
 
@@ -522,6 +534,9 @@ func (c *Conn) readLoop(tc net.Conn) {
 		c.lastPong = time.Now()
 		c.mu.Unlock()
 		c.intercept(line)
+		if c.isDuplicateNick(line) {
+			continue
+		}
 		c.buffer(line)
 		c.fanOut(line)
 		// Persist loggable events for the network owner.
@@ -1152,6 +1167,50 @@ func isMembershipReplayLine(line string) bool {
 	switch cmd {
 	case "JOIN", "PART", "QUIT", "KICK", "MODE":
 		return true // membership event without accurate timestamp — suppress
+	}
+	return false
+}
+
+// isDuplicateNick returns true if this NICK event is a duplicate of one
+// seen within the last 5 seconds — ircd-seven (Libera.chat) broadcasts NICK
+// once per shared channel rather than once globally, so we suppress extras.
+func (c *Conn) isDuplicateNick(line string) bool {
+	// Strip tags
+	bare := line
+	if strings.HasPrefix(bare, "@") {
+		if sp := strings.Index(bare, " "); sp >= 0 {
+			bare = strings.TrimLeft(bare[sp+1:], " ")
+		} else {
+			return false
+		}
+	}
+	parts := strings.SplitN(bare, " ", 4)
+	idx := 0
+	if len(parts) > 0 && strings.HasPrefix(parts[0], ":") {
+		idx = 1
+	}
+	if idx >= len(parts) || strings.ToUpper(parts[idx]) != "NICK" {
+		return false
+	}
+	from := nickFrom(parts[0])
+	if from == "" || idx+1 >= len(parts) {
+		return false
+	}
+	to := strings.TrimPrefix(parts[idx+1], ":")
+	key := from + "\x00" + to
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := time.Now()
+	if t, ok := c.recentNicks[key]; ok && now.Sub(t) < 5*time.Second {
+		return true
+	}
+	c.recentNicks[key] = now
+	// Evict stale entries to keep the map small
+	for k, t := range c.recentNicks {
+		if now.Sub(t) >= 5*time.Second {
+			delete(c.recentNicks, k)
+		}
 	}
 	return false
 }
