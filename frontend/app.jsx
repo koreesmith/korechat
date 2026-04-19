@@ -2189,7 +2189,8 @@ function CtxItem({ icon, label, onClick, color, danger }) {
         fontSize:14,cursor:"pointer",borderRadius:4,margin:"1px 4px",
         background:hov?T.border:"transparent",
         color:color||(danger?T.red:T.text),
-        fontFamily:"'Inter var','Inter',sans-serif"}}>
+        fontFamily:"'Inter var','Inter',sans-serif",
+        userSelect:"none",WebkitUserSelect:"none"}}>
       <span style={{width:16,textAlign:"center",fontSize:14,flexShrink:0}}>{icon}</span>
       <span>{label}</span>
     </div>
@@ -2267,7 +2268,8 @@ function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, l
         color:textColor,
         fontWeight:active||(unread>0&&!muted)?600:400,fontSize:compact?13:15,gap:compact?4:6,
         opacity:isDragging?0.45:left?0.55:muted?0.45:1,
-        outline:isDragTarget?`2px solid ${T.accent}`:"none",transition:"opacity 0.1s"}}>
+        outline:isDragTarget?`2px solid ${T.accent}`:"none",transition:"opacity 0.1s",
+        userSelect:"none",WebkitUserSelect:"none"}}>
       <span style={{display:"flex",alignItems:"center",gap:5,overflow:"hidden",minWidth:0}}>
         {showDragHandle&&(
           <span style={{fontSize:10,color:T.textFaint,cursor:"grab",flexShrink:0,userSelect:"none",
