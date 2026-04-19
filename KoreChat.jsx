@@ -490,6 +490,13 @@ function NetworkSection({ network, channels, activeChannel, unread, onSelectChan
         </span>
         <span style={{ fontSize:10, color:"#ffffff30", transform: collapsed?"rotate(-90deg)":"rotate(0deg)", transition:"transform 0.15s" }}>▾</span>
       </div>
+      {!collapsed && (
+        <div onClick={() => { const ch = prompt("Join channel (e.g. #linux):"); if (ch) onAddChan(ch.startsWith("#") ? ch : "#" + ch); }}
+          style={{ padding:"3px 12px 3px 12px", cursor:"pointer", fontSize:12, color:"#ffffff20", fontFamily:"'JetBrains Mono',monospace" }}
+          onMouseEnter={e=>e.currentTarget.style.color="#7eb8f7"}
+          onMouseLeave={e=>e.currentTarget.style.color="#ffffff20"}
+        >+ join channel</div>
+      )}
       {!collapsed && netChans.map(([chanName]) => {
         const k = `${network.id}::${chanName}`;
         const isActive = chanName === activeChannel;
@@ -514,13 +521,6 @@ function NetworkSection({ network, channels, activeChannel, unread, onSelectChan
           </div>
         );
       })}
-      {!collapsed && (
-        <div onClick={() => { const ch = prompt("Join channel (e.g. #linux):"); if (ch) onAddChan(ch.startsWith("#") ? ch : "#" + ch); }}
-          style={{ padding:"3px 12px 3px 28px", cursor:"pointer", fontSize:12, color:"#ffffff20", fontFamily:"'JetBrains Mono',monospace" }}
-          onMouseEnter={e=>e.currentTarget.style.color="#7eb8f7"}
-          onMouseLeave={e=>e.currentTarget.style.color="#ffffff20"}
-        >+ join channel</div>
-      )}
     </div>
   );
 }
