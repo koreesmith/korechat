@@ -444,7 +444,7 @@ function nickColor(nick) {
   for (let i = 0; i < nick.length; i++) h = (h * 31 + nick.charCodeAt(i)) & 0x7fffffff;
   return p[h % p.length];
 }
-function renderText(text, myNick, T, onLinkClick, onImgLoad) {
+function renderText(text, myNick, T, onLinkClick, onImgLoad, onImgClick) {
   if (!text) return "";
   const accent  = T?.accent || "#7eb8f7";
   const red     = T?.red    || "#f7a07e";
@@ -471,11 +471,10 @@ function renderText(text, myNick, T, onLinkClick, onImgLoad) {
       // Image URL: show only the inline photo (clickable), suppress the raw URL text
       parts.push(
         <div key={key++} style={{marginTop:6}}>
-          <a href={url} target="_blank" rel="noopener noreferrer">
-            <img src={url} alt="" loading="lazy" onLoad={onImgLoad}
-              style={{maxWidth:400,maxHeight:300,borderRadius:6,display:"block",cursor:"pointer",
-                border:`1px solid ${T?.border||"#ffffff18"}`}}/>
-          </a>
+          <img src={url} alt="" loading="lazy" onLoad={onImgLoad}
+            onClick={()=>onImgClick?.(url)}
+            style={{maxWidth:400,maxHeight:300,borderRadius:6,display:"block",cursor:"pointer",
+              border:`1px solid ${T?.border||"#ffffff18"}`}}/>
         </div>
       );
     } else {
@@ -499,6 +498,33 @@ function renderText(text, myNick, T, onLinkClick, onImgLoad) {
     parts.push(...mp);
   }
   return parts.length ? parts : text;
+}
+
+// ─── Image Lightbox Modal ─────────────────────────────────────────────────────
+function ImageModal({ url, onClose }) {
+  const T = useTheme();
+  React.useEffect(() => {
+    const onKey = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div onClick={onClose}
+      style={{position:"fixed",inset:0,background:"#000000cc",zIndex:400,
+        display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <button onClick={onClose}
+        style={{position:"fixed",top:16,left:16,zIndex:401,background:"#00000099",
+          border:"2px solid #ffffff44",borderRadius:"50%",color:"#fff",
+          fontSize:22,lineHeight:1,width:44,height:44,cursor:"pointer",
+          display:"flex",alignItems:"center",justifyContent:"center",
+          backdropFilter:"blur(4px)",WebkitBackdropFilter:"blur(4px)"}}>
+        ✕
+      </button>
+      <img src={url} alt="" onClick={e=>e.stopPropagation()}
+        style={{maxWidth:"95vw",maxHeight:"90dvh",borderRadius:8,
+          boxShadow:"0 8px 60px #000c",objectFit:"contain"}}/>
+    </div>
+  );
 }
 
 // ─── Link Safety Modal ────────────────────────────────────────────────────────
@@ -959,6 +985,7 @@ function SnippetBlock({ url, lang }) {
 function MsgRow({ msg, prev, myNick, onNickClick, onImgLoad }) {
   const T=useTheme();
   const [pendingLink, setPendingLink] = useState(null);
+  const [imgModal, setImgModal] = useState(null);
   if (msg.type==="system") return (
     <div style={{padding:"2px 16px 2px 58px",userSelect:"text"}}>
       <span style={{fontSize:14,color:T.textDim,fontStyle:"italic",fontFamily:"'Inter var','Inter',sans-serif",whiteSpace:"pre-line"}}>{msg.text}</span>
@@ -990,13 +1017,14 @@ function MsgRow({ msg, prev, myNick, onNickClick, onImgLoad }) {
             </div>
           )}
           <div style={{fontSize:16,color:T.text,lineHeight:1.6,wordBreak:"break-word"}}>
-            {renderText(msg.text,myNick,T,setPendingLink,onImgLoad)}
+            {renderText(msg.text,myNick,T,setPendingLink,onImgLoad,setImgModal)}
           </div>
         </div>
       </div>
       {pendingLink&&<LinkSafetyModal url={pendingLink} T={T}
         onConfirm={()=>{window.open(pendingLink,"_blank","noopener,noreferrer");setPendingLink(null);}}
         onCancel={()=>setPendingLink(null)}/>}
+      {imgModal&&<ImageModal url={imgModal} onClose={()=>setImgModal(null)}/>}
     </React.Fragment>
   );
 }
