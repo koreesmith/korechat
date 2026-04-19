@@ -2247,7 +2247,7 @@ function SidebarItem({ chanName, kind, active, unread, onClick, onContextMenu, l
 }
 
 // ─── Collapsible section header ───────────────────────────────────────────────
-function SectionHeader({ label, count, open, onToggle, compact }) {
+function SectionHeader({ label, count, open, onToggle, compact, unread=0 }) {
   const T=useTheme();
   return (
     <div onClick={onToggle}
@@ -2261,6 +2261,13 @@ function SectionHeader({ label, count, open, onToggle, compact }) {
         color:T.textDim,textTransform:"uppercase",letterSpacing:"0.08em",flex:1}}>
         {label}
       </span>
+      {!open&&unread>0&&(
+        <span style={{background:T.accent,color:T.bg,fontSize:11,fontWeight:800,
+          borderRadius:10,padding:"1px 5px",minWidth:17,textAlign:"center",flexShrink:0,
+          fontFamily:"'Inter var','Inter',sans-serif"}}>
+          {unread>99?"99+":unread}
+        </span>
+      )}
     </div>
   );
 }
@@ -4862,6 +4869,9 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             const serverOpen = collapsed[serverKey] !== false;
             const toggle = key => setCollapsed(c=>({...c,[key]:c[key]===false?true:false}));
             const totalServerUnread = allNames.reduce((sum,n)=>n===STATUS_CHAN?sum:sum+(unread[CHAN_KEY(netId,n)]||0),0);
+            const starredUnread = starredNames.reduce((sum,n)=>isMuted(netId,n)?sum:sum+(unread[CHAN_KEY(netId,n)]||0),0);
+            const chansUnread   = chans.reduce((sum,n)=>isMuted(netId,n)?sum:sum+(unread[CHAN_KEY(netId,n)]||0),0);
+            const dmsUnread     = dms.reduce((sum,n)=>isMuted(netId,n)?sum:sum+(unread[CHAN_KEY(netId,n)]||0),0);
 
             const goTo = (chan) => {
               dispatch({type:"SET_ACTIVE_NET",id:netId});
@@ -4939,7 +4949,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                 {starredNames.length>0&&(
                   <>
                     <SectionHeader label="Starred" count={starredNames.length}
-                      open={starredOpen} onToggle={()=>toggle(starredKey)} compact={compactMode}/>
+                      open={starredOpen} onToggle={()=>toggle(starredKey)} compact={compactMode} unread={starredUnread}/>
                     {starredOpen&&starredNames.map(name=>{
                       const isChannel = name.startsWith("#");
                       const chanLeft = isChannel && channels[CHAN_KEY(netId,name)]?.left;
@@ -4967,7 +4977,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                 {chans.length>0&&(
                   <>
                     <SectionHeader label="Channels" count={chans.length}
-                      open={chansOpen} onToggle={()=>toggle(chansKey)} compact={compactMode}/>
+                      open={chansOpen} onToggle={()=>toggle(chansKey)} compact={compactMode} unread={chansUnread}/>
                     {chansOpen&&chans.map(chanName=>{
                         const chanLeft = channels[CHAN_KEY(netId,chanName)]?.left;
                         return (
@@ -4988,7 +4998,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                 {dms.length>0&&(
                   <>
                     <SectionHeader label="Messages" count={dms.length}
-                      open={dmsOpen} onToggle={()=>toggle(dmsKey)} compact={compactMode}/>
+                      open={dmsOpen} onToggle={()=>toggle(dmsKey)} compact={compactMode} unread={dmsUnread}/>
                     {dmsOpen&&dms.map(chanName=>{
                       const pres=presence[netId]?.[chanName];
                       return (
