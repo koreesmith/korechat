@@ -302,11 +302,12 @@ func (a *API) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.ClaimsFromCtx(r.Context())
 
 	var body struct {
-		CurrentPassword  string `json:"current_password"`
-		NewPassword      string `json:"new_password"`
-		DisplayName      string `json:"display_name"`
-		Theme            string `json:"theme"`
-		SidebarCollapsed string `json:"sidebar_collapsed"`
+		CurrentPassword     string `json:"current_password"`
+		NewPassword         string `json:"new_password"`
+		DisplayName         string `json:"display_name"`
+		Theme               string `json:"theme"`
+		SidebarCollapsed    string `json:"sidebar_collapsed"`
+		SidebarNetworkOrder string `json:"sidebar_network_order"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid JSON")
@@ -331,6 +332,10 @@ func (a *API) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 	if body.SidebarCollapsed != "" {
 		patch.SidebarCollapsed = body.SidebarCollapsed
+	}
+
+	if body.SidebarNetworkOrder != "" {
+		patch.SidebarNetworkOrder = body.SidebarNetworkOrder
 	}
 
 	if body.NewPassword != "" {
