@@ -11,7 +11,7 @@ services:
     environment:
       POSTGRES_DB:       korechat
       POSTGRES_USER:     korechat
-      POSTGRES_PASSWORD: korechat
+      POSTGRES_PASSWORD: CHANGEME
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     networks:
@@ -38,7 +38,7 @@ services:
       - SERVER_NAME=korechat.net
       - SERVER_VERSION=KoreChat/1.0
       - MOTD=Welcome to KoreChat · IRCv3 · Built for teams
-      - DATABASE_URL=postgres://korechat:korechat@postgres:5432/korechat?sslmode=disable
+      - DATABASE_URL=postgres://korechat:CHANGEME@postgres:5432/korechat?sslmode=disable
     volumes:
       - ./data/avatars:/data/avatars
       - ./data/uploads:/data/uploads
