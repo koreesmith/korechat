@@ -308,6 +308,8 @@ func (a *API) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		Theme               string `json:"theme"`
 		SidebarCollapsed    string `json:"sidebar_collapsed"`
 		SidebarNetworkOrder string `json:"sidebar_network_order"`
+		SidebarStarred      string `json:"sidebar_starred"`
+		SidebarMuted        string `json:"sidebar_muted"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid JSON")
@@ -336,6 +338,14 @@ func (a *API) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 	if body.SidebarNetworkOrder != "" {
 		patch.SidebarNetworkOrder = body.SidebarNetworkOrder
+	}
+
+	if body.SidebarStarred != "" {
+		patch.SidebarStarred = body.SidebarStarred
+	}
+
+	if body.SidebarMuted != "" {
+		patch.SidebarMuted = body.SidebarMuted
 	}
 
 	if body.NewPassword != "" {
