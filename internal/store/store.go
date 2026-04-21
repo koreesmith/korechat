@@ -202,6 +202,13 @@ func (s *DB) migrate() error {
 		}
 	}
 
+	// v12: default channel per network (idempotent)
+	if _, err := s.db.Exec(
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS default_channels TEXT NOT NULL DEFAULT '{}'`,
+	); err != nil {
+		return fmt.Errorf("migrate v12 (default_channels): %w", err)
+	}
+
 	log.Printf("store: migrations OK")
 	return nil
 }
@@ -324,10 +331,13 @@ func (s *DB) UpdateUser(id string, patch *users.User) (*users.User, error) {
 	if patch.SidebarMuted != "" {
 		u.SidebarMuted = patch.SidebarMuted
 	}
+	if patch.DefaultChannels != "" {
+		u.DefaultChannels = patch.DefaultChannels
+	}
 	u.UpdatedAt = time.Now()
 	_, err = s.db.Exec(
-		`UPDATE users SET display_name=$1, role=$2, password_hash=$3, theme=$4, sidebar_collapsed=$5, sidebar_network_order=$6, sidebar_starred=$7, sidebar_muted=$8, updated_at=$9 WHERE id=$10`,
-		u.DisplayName, u.Role, u.PasswordHash, u.Theme, u.SidebarCollapsed, u.SidebarNetworkOrder, u.SidebarStarred, u.SidebarMuted, u.UpdatedAt, u.ID,
+		`UPDATE users SET display_name=$1, role=$2, password_hash=$3, theme=$4, sidebar_collapsed=$5, sidebar_network_order=$6, sidebar_starred=$7, sidebar_muted=$8, default_channels=$9, updated_at=$10 WHERE id=$11`,
+		u.DisplayName, u.Role, u.PasswordHash, u.Theme, u.SidebarCollapsed, u.SidebarNetworkOrder, u.SidebarStarred, u.SidebarMuted, u.DefaultChannels, u.UpdatedAt, u.ID,
 	)
 	if err != nil {
 		return nil, err

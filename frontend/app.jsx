@@ -3236,6 +3236,42 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
     return {...prev, [netId]: next};
   });
   const isMuted = (netId, name) => (muted[netId] || []).includes(name);
+  const [defaultChans, setDefaultChans] = useState(() => {
+    try { return JSON.parse(_currentUser?.default_channels || "{}"); } catch { return {}; }
+  }); // { [netId]: chanName }
+  const _defaultChansMounted = React.useRef(false);
+  React.useEffect(() => {
+    if (!_defaultChansMounted.current) { _defaultChansMounted.current = true; return; }
+    const t = setTimeout(() => {
+      fetch("/api/v1/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ default_channels: JSON.stringify(defaultChans) }),
+        credentials: "include",
+      }).catch(() => {});
+    }, 800);
+    return () => clearTimeout(t);
+  }, [defaultChans]);
+  const toggleDefault = (netId, chan) => setDefaultChans(prev => {
+    const copy = {...prev};
+    if (copy[netId] === chan) delete copy[netId];
+    else copy[netId] = chan;
+    return copy;
+  });
+  const isDefault = (netId, chan) => defaultChans[netId] === chan;
+  // Apply default channel once per network per session as soon as it's available
+  const _defaultApplied = React.useRef({});
+  React.useEffect(() => {
+    Object.entries(defaultChans).forEach(([netId, chanName]) => {
+      if (_defaultApplied.current[netId]) return;
+      const key = CHAN_KEY(netId, chanName);
+      if (state.channels[key] && !state.channels[key].left) {
+        dispatch({ type: "SET_ACTIVE_CHAN", netId, chan: chanName });
+        dispatch({ type: "SET_ACTIVE_NET", id: netId });
+        _defaultApplied.current[netId] = true;
+      }
+    });
+  }, [state.channels, defaultChans]);
   const [unreadOnly, setUnreadOnly] = useState(() => localStorage.getItem("kc_unread_only")==="1");
   React.useEffect(() => { localStorage.setItem("kc_unread_only", unreadOnly?"1":"0"); }, [unreadOnly]);
   const [compactMode, setCompactMode] = useState(() => localStorage.getItem("kc_compact_mode")==="1");
@@ -4788,6 +4824,9 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             <CtxItem icon={isMuted(chanCtxMenu.netId,chanCtxMenu.chan)?"🔔":"🔕"}
               label={isMuted(chanCtxMenu.netId,chanCtxMenu.chan)?"Unmute":"Mute"}
               onClick={()=>{toggleMute(chanCtxMenu.netId,chanCtxMenu.chan);setChanCtxMenu(null);}}/>
+            <CtxItem icon="⚑"
+              label={isDefault(chanCtxMenu.netId,chanCtxMenu.chan)?"Remove Default":"Set as Default"}
+              onClick={()=>{toggleDefault(chanCtxMenu.netId,chanCtxMenu.chan);setChanCtxMenu(null);}}/>
             {chanCtxMenu.left ? (
               <CtxItem color={T.green} icon="↩" label="Rejoin Channel" onClick={()=>{
                 const c=connections.current[chanCtxMenu.netId];
