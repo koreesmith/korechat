@@ -193,6 +193,15 @@ func (s *DB) migrate() error {
 		return fmt.Errorf("migrate v10 (sidebar_network_order): %w", err)
 	}
 
+	// v11: starred and muted channels (idempotent)
+	for _, col := range []string{"sidebar_starred", "sidebar_muted"} {
+		if _, err := s.db.Exec(fmt.Sprintf(
+			`ALTER TABLE users ADD COLUMN IF NOT EXISTS %s TEXT NOT NULL DEFAULT '{}'`, col,
+		)); err != nil {
+			return fmt.Errorf("migrate v11 (%s): %w", col, err)
+		}
+	}
+
 	log.Printf("store: migrations OK")
 	return nil
 }
@@ -225,9 +234,9 @@ func (s *DB) CreateUser(u *users.User) (*users.User, error) {
 	}
 
 	_, err := s.db.Exec(
-		`INSERT INTO users (id, username, password_hash, display_name, theme, sidebar_collapsed, sidebar_network_order, role, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-		u.ID, u.Username, u.PasswordHash, u.DisplayName, u.Theme, u.SidebarCollapsed, u.SidebarNetworkOrder, u.Role, u.CreatedAt, u.UpdatedAt,
+		`INSERT INTO users (id, username, password_hash, display_name, theme, sidebar_collapsed, sidebar_network_order, sidebar_starred, sidebar_muted, role, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+		u.ID, u.Username, u.PasswordHash, u.DisplayName, u.Theme, u.SidebarCollapsed, u.SidebarNetworkOrder, u.SidebarStarred, u.SidebarMuted, u.Role, u.CreatedAt, u.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
@@ -238,7 +247,7 @@ func (s *DB) CreateUser(u *users.User) (*users.User, error) {
 // GetUserByID fetches a user by primary key.
 func (s *DB) GetUserByID(id string) (*users.User, error) {
 	return s.scanUser(s.db.QueryRow(
-		`SELECT id, username, password_hash, display_name, avatar_url, theme, sidebar_collapsed, sidebar_network_order, role, created_at, updated_at
+		`SELECT id, username, password_hash, display_name, avatar_url, theme, sidebar_collapsed, sidebar_network_order, sidebar_starred, sidebar_muted, role, created_at, updated_at
 		 FROM users WHERE id = $1`, id,
 	))
 }
@@ -246,7 +255,7 @@ func (s *DB) GetUserByID(id string) (*users.User, error) {
 // GetUserByUsername fetches a user by username (case-insensitive).
 func (s *DB) GetUserByUsername(username string) (*users.User, error) {
 	return s.scanUser(s.db.QueryRow(
-		`SELECT id, username, password_hash, display_name, avatar_url, theme, sidebar_collapsed, sidebar_network_order, role, created_at, updated_at
+		`SELECT id, username, password_hash, display_name, avatar_url, theme, sidebar_collapsed, sidebar_network_order, sidebar_starred, sidebar_muted, role, created_at, updated_at
 		 FROM users WHERE LOWER(username) = LOWER($1)`, username,
 	))
 }
@@ -255,7 +264,7 @@ func (s *DB) GetUserByUsername(username string) (*users.User, error) {
 // (case-insensitive). This resolves IRC nicks → KoreChat user avatars.
 func (s *DB) GetUserByIRCNick(ircNick string) (*users.User, error) {
 	return s.scanUser(s.db.QueryRow(
-		`SELECT u.id, u.username, u.password_hash, u.display_name, u.avatar_url, u.theme, u.sidebar_collapsed, u.sidebar_network_order, u.role, u.created_at, u.updated_at
+		`SELECT u.id, u.username, u.password_hash, u.display_name, u.avatar_url, u.theme, u.sidebar_collapsed, u.sidebar_network_order, u.sidebar_starred, u.sidebar_muted, u.role, u.created_at, u.updated_at
 		 FROM users u
 		 JOIN networks n ON n.user_id = u.id
 		 WHERE LOWER(n.nick) = LOWER($1)
@@ -266,7 +275,7 @@ func (s *DB) GetUserByIRCNick(ircNick string) (*users.User, error) {
 // ListUsers returns all users, ordered by created_at.
 func (s *DB) ListUsers() ([]*users.User, error) {
 	rows, err := s.db.Query(
-		`SELECT id, username, password_hash, display_name, avatar_url, theme, sidebar_collapsed, sidebar_network_order, role, created_at, updated_at
+		`SELECT id, username, password_hash, display_name, avatar_url, theme, sidebar_collapsed, sidebar_network_order, sidebar_starred, sidebar_muted, role, created_at, updated_at
 		 FROM users ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -309,10 +318,16 @@ func (s *DB) UpdateUser(id string, patch *users.User) (*users.User, error) {
 	if patch.SidebarNetworkOrder != "" {
 		u.SidebarNetworkOrder = patch.SidebarNetworkOrder
 	}
+	if patch.SidebarStarred != "" {
+		u.SidebarStarred = patch.SidebarStarred
+	}
+	if patch.SidebarMuted != "" {
+		u.SidebarMuted = patch.SidebarMuted
+	}
 	u.UpdatedAt = time.Now()
 	_, err = s.db.Exec(
-		`UPDATE users SET display_name=$1, role=$2, password_hash=$3, theme=$4, sidebar_collapsed=$5, sidebar_network_order=$6, updated_at=$7 WHERE id=$8`,
-		u.DisplayName, u.Role, u.PasswordHash, u.Theme, u.SidebarCollapsed, u.SidebarNetworkOrder, u.UpdatedAt, u.ID,
+		`UPDATE users SET display_name=$1, role=$2, password_hash=$3, theme=$4, sidebar_collapsed=$5, sidebar_network_order=$6, sidebar_starred=$7, sidebar_muted=$8, updated_at=$9 WHERE id=$10`,
+		u.DisplayName, u.Role, u.PasswordHash, u.Theme, u.SidebarCollapsed, u.SidebarNetworkOrder, u.SidebarStarred, u.SidebarMuted, u.UpdatedAt, u.ID,
 	)
 	if err != nil {
 		return nil, err
@@ -529,7 +544,7 @@ type scannable interface {
 
 func (s *DB) scanUser(row scannable) (*users.User, error) {
 	u := &users.User{}
-	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.AvatarURL, &u.Theme, &u.SidebarCollapsed, &u.SidebarNetworkOrder, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.AvatarURL, &u.Theme, &u.SidebarCollapsed, &u.SidebarNetworkOrder, &u.SidebarStarred, &u.SidebarMuted, &u.Role, &u.CreatedAt, &u.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errors.New("user not found")
 	}
@@ -538,7 +553,7 @@ func (s *DB) scanUser(row scannable) (*users.User, error) {
 
 func (s *DB) scanUserRow(rows *sql.Rows) (*users.User, error) {
 	u := &users.User{}
-	err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.AvatarURL, &u.Theme, &u.SidebarCollapsed, &u.SidebarNetworkOrder, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+	err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.AvatarURL, &u.Theme, &u.SidebarCollapsed, &u.SidebarNetworkOrder, &u.SidebarStarred, &u.SidebarMuted, &u.Role, &u.CreatedAt, &u.UpdatedAt)
 	return u, err
 }
 

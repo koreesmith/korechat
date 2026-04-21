@@ -3191,9 +3191,22 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
     return () => clearTimeout(t);
   }, [collapsed]);
   const [starred, setStarred] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("kc_starred") || "{}"); } catch { return {}; }
+    try { return JSON.parse(_currentUser?.sidebar_starred || localStorage.getItem("kc_starred") || "{}"); } catch { return {}; }
   }); // { [netId]: string[] }
-  React.useEffect(() => { localStorage.setItem("kc_starred", JSON.stringify(starred)); }, [starred]);
+  const _starredMounted = React.useRef(false);
+  React.useEffect(() => {
+    if (!_starredMounted.current) { _starredMounted.current = true; return; }
+    localStorage.setItem("kc_starred", JSON.stringify(starred));
+    const t = setTimeout(() => {
+      fetch("/api/v1/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sidebar_starred: JSON.stringify(starred) }),
+        credentials: "include",
+      }).catch(() => {});
+    }, 800);
+    return () => clearTimeout(t);
+  }, [starred]);
   const toggleStar = (netId, name) => setStarred(prev => {
     const cur = prev[netId] || [];
     const next = cur.includes(name) ? cur.filter(n => n !== name) : [...cur, name];
@@ -3201,9 +3214,22 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
   });
   const isStarred = (netId, name) => (starred[netId] || []).includes(name);
   const [muted, setMuted] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("kc_muted") || "{}"); } catch { return {}; }
+    try { return JSON.parse(_currentUser?.sidebar_muted || localStorage.getItem("kc_muted") || "{}"); } catch { return {}; }
   }); // { [netId]: string[] }
-  React.useEffect(() => { localStorage.setItem("kc_muted", JSON.stringify(muted)); }, [muted]);
+  const _mutedMounted = React.useRef(false);
+  React.useEffect(() => {
+    if (!_mutedMounted.current) { _mutedMounted.current = true; return; }
+    localStorage.setItem("kc_muted", JSON.stringify(muted));
+    const t = setTimeout(() => {
+      fetch("/api/v1/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sidebar_muted: JSON.stringify(muted) }),
+        credentials: "include",
+      }).catch(() => {});
+    }, 800);
+    return () => clearTimeout(t);
+  }, [muted]);
   const toggleMute = (netId, name) => setMuted(prev => {
     const cur = prev[netId] || [];
     const next = cur.includes(name) ? cur.filter(n => n !== name) : [...cur, name];
