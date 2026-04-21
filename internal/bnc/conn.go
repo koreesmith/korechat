@@ -547,6 +547,12 @@ func (c *Conn) readLoop(tc net.Conn) {
 	scanner := bufio.NewScanner(tc)
 	scanner.Buffer(make([]byte, 8192), 8192)
 
+	// Track active chathistory BATCH IDs so we can suppress re-logging of
+	// messages the server sends in response to our CHATHISTORY request.
+	// Those messages are already in the DB from when they were first received;
+	// logging them again on every reconnect/rejoin multiplies DB entries.
+	chathistoryBatches := make(map[string]bool)
+
 	for scanner.Scan() {
 		select {
 		case <-c.stopCh:
@@ -569,6 +575,19 @@ func (c *Conn) readLoop(tc net.Conn) {
 		c.mu.Lock()
 		c.lastPong = time.Now()
 		c.mu.Unlock()
+
+		// Maintain chathistory batch membership before any other processing.
+		inHistoryBatch := false
+		if sign, id, btype := parseBatchLine(line); sign == "+" {
+			if strings.EqualFold(btype, "chathistory") {
+				chathistoryBatches[id] = true
+			}
+		} else if sign == "-" {
+			delete(chathistoryBatches, id)
+		} else if bid := parseBatchTag(line); bid != "" {
+			inHistoryBatch = chathistoryBatches[bid]
+		}
+
 		c.intercept(line)
 		if c.isDuplicateNick(line) {
 			continue
@@ -576,7 +595,9 @@ func (c *Conn) readLoop(tc net.Conn) {
 		c.buffer(line)
 		c.fanOut(line)
 		// Persist loggable events for the network owner.
-		if c.logFn != nil && c.net.UserID != "" {
+		// Skip chathistory batch messages — they are already in the DB from
+		// when they were originally received; re-logging them creates duplicates.
+		if c.logFn != nil && c.net.UserID != "" && !inHistoryBatch {
 			c.logFn(c.net.UserID, c.net.ID, c.net.Name, line)
 		}
 	}
@@ -1159,6 +1180,53 @@ func (c *Conn) saveJoinedChans() {
 	}
 	c.mu.Unlock()
 	go c.persistChansFn(chans)
+}
+
+// parseBatchLine detects IRCv3 BATCH +/- lines and returns (sign, id, type).
+// sign is "+" (open) or "-" (close); returns ("","","") for non-BATCH lines.
+func parseBatchLine(line string) (sign, id, batchType string) {
+	s := line
+	if strings.HasPrefix(s, "@") {
+		if sp := strings.Index(s, " "); sp >= 0 {
+			s = s[sp+1:]
+		}
+	}
+	if strings.HasPrefix(s, ":") {
+		if sp := strings.Index(s, " "); sp >= 0 {
+			s = s[sp+1:]
+		}
+	}
+	parts := strings.Fields(s)
+	if len(parts) < 2 || !strings.EqualFold(parts[0], "BATCH") {
+		return
+	}
+	ref := parts[1]
+	if ref[0] != '+' && ref[0] != '-' {
+		return
+	}
+	sign = string(ref[0])
+	id = ref[1:]
+	if len(parts) >= 3 {
+		batchType = parts[2]
+	}
+	return
+}
+
+// parseBatchTag returns the value of the @batch= tag, or "".
+func parseBatchTag(line string) string {
+	if !strings.HasPrefix(line, "@") {
+		return ""
+	}
+	sp := strings.Index(line, " ")
+	if sp < 0 {
+		return ""
+	}
+	for _, tag := range strings.Split(line[1:sp], ";") {
+		if strings.HasPrefix(tag, "batch=") {
+			return tag[6:]
+		}
+	}
+	return ""
 }
 
 func (c *Conn) notice(text string) {
