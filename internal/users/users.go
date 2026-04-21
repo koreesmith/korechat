@@ -28,6 +28,7 @@ type User struct {
 	SidebarNetworkOrder  string    `json:"sidebar_network_order"`  // JSON-encoded []string of net IDs
 	SidebarStarred       string    `json:"sidebar_starred"`        // JSON-encoded map[netId][]string
 	SidebarMuted         string    `json:"sidebar_muted"`          // JSON-encoded map[netId][]string
+	DefaultChannels      string    `json:"default_channels"`       // JSON-encoded map[netId]chanName
 	Role             Role      `json:"role"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
