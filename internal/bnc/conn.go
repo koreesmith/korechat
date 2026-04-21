@@ -269,32 +269,37 @@ func (c *Conn) Subscribe(id string, send SendFunc) {
 		if chanName == "__server__" || buf == nil {
 			continue
 		}
+		// Find the oldest tagged line in the buffer to use as the Postgres
+		// boundary. Using -1ns makes the boundary strictly exclusive so that
+		// boundary message isn't fetched from both sources.
+		bufCutoff := time.Time{}
 		for _, line := range buf.Lines() {
-			if !isMembershipReplayLine(line) {
-				replay = append(replay, line)
+			if t := parseTimeTag(line); !t.IsZero() {
+				bufCutoff = t.Add(-time.Nanosecond)
+				break
 			}
 		}
+
+		// Only replay ring buffer lines that carry a @time= tag. Untagged lines
+		// have no reliable client-side timestamp and are always covered by the
+		// Postgres query below (logged with the receive time), so including them
+		// here would produce duplicates. When no tagged lines exist at all
+		// (e.g. a server that doesn't support server-time), skip the ring buffer
+		// entirely — Postgres covers the full history in that case.
+		if !bufCutoff.IsZero() {
+			for _, line := range buf.Lines() {
+				if !parseTimeTag(line).IsZero() && !isMembershipReplayLine(line) {
+					replay = append(replay, line)
+				}
+			}
+		}
+
 		if c.replayFn != nil {
 			// Always prepend older history from Postgres — not only when the ring
 			// buffer is full. On servers that don't support CHATHISTORY (e.g.
 			// Libera.chat's ircd-seven), the ring buffer may be sparse or empty
 			// while Postgres still holds messages logged in prior sessions.
-			//
-			// Use the oldest *timestamped* line rather than the raw oldest line:
-			// untagged lines (e.g. membership events from servers without
-			// server-time) don't carry a reliable timestamp, and falling back to
-			// time.Now() would make the Postgres query overlap with messages
-			// already in the ring buffer, causing duplicate replay.
-			before := time.Time{}
-			for _, line := range buf.Lines() {
-				if t := parseTimeTag(line); !t.IsZero() {
-					// Subtract 1ns so the query is strictly-before this
-					// timestamp, preventing the boundary message from appearing
-					// in both the Postgres result and the ring buffer replay.
-					before = t.Add(-time.Nanosecond)
-					break
-				}
-			}
+			before := bufCutoff
 			if before.IsZero() {
 				before = time.Now()
 			}
