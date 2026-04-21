@@ -286,19 +286,21 @@ func (l *Logger) ReplayLines(userID, networkID, channel string, before time.Time
 	if limit <= 0 || limit > 2000 {
 		limit = 2000
 	}
+	// Fetch most-recent-first so LIMIT selects the newest messages, then
+	// reverse to return them in chronological order.
 	result, err := l.Query(userID, QueryParams{
 		NetworkID: networkID,
 		Channel:   channel,
 		DateTo:    before,
 		Limit:     limit,
-		Ascending: true,
+		Ascending: false,
 	})
 	if err != nil {
 		return nil, err
 	}
 	lines := make([]string, 0, len(result.Entries))
-	for _, e := range result.Entries {
-		if line := e.ToRawLine(); line != "" {
+	for i := len(result.Entries) - 1; i >= 0; i-- {
+		if line := result.Entries[i].ToRawLine(); line != "" {
 			lines = append(lines, line)
 		}
 	}
