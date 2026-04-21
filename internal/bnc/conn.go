@@ -279,7 +279,22 @@ func (c *Conn) Subscribe(id string, send SendFunc) {
 			// buffer is full. On servers that don't support CHATHISTORY (e.g.
 			// Libera.chat's ircd-seven), the ring buffer may be sparse or empty
 			// while Postgres still holds messages logged in prior sessions.
-			before := parseTimeTag(buf.OldestLine())
+			//
+			// Use the oldest *timestamped* line rather than the raw oldest line:
+			// untagged lines (e.g. membership events from servers without
+			// server-time) don't carry a reliable timestamp, and falling back to
+			// time.Now() would make the Postgres query overlap with messages
+			// already in the ring buffer, causing duplicate replay.
+			before := time.Time{}
+			for _, line := range buf.Lines() {
+				if t := parseTimeTag(line); !t.IsZero() {
+					// Subtract 1ns so the query is strictly-before this
+					// timestamp, preventing the boundary message from appearing
+					// in both the Postgres result and the ring buffer replay.
+					before = t.Add(-time.Nanosecond)
+					break
+				}
+			}
 			if before.IsZero() {
 				before = time.Now()
 			}
