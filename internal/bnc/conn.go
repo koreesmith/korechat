@@ -592,7 +592,15 @@ func (c *Conn) readLoop(tc net.Conn) {
 		if c.isDuplicateNick(line) {
 			continue
 		}
-		c.buffer(line)
+		// Chathistory batch messages are already in Postgres from when they
+		// were first received. Skip buffering them so the ring buffer only
+		// holds live messages — otherwise the same message ends up in the
+		// buffer twice (once live, once via the next chathistory replay) and
+		// shows as a duplicate on reconnect. Still fanOut so currently-open
+		// sessions see the history delivered by the server on join.
+		if !inHistoryBatch {
+			c.buffer(line)
+		}
 		c.fanOut(line)
 		// Persist loggable events for the network owner.
 		// Skip chathistory batch messages — they are already in the DB from
