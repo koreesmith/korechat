@@ -3259,19 +3259,9 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
     return copy;
   });
   const isDefault = (netId, chan) => defaultChans[netId] === chan;
-  // Apply default channel once per network per session as soon as it's available
-  const _defaultApplied = React.useRef({});
-  React.useEffect(() => {
-    Object.entries(defaultChans).forEach(([netId, chanName]) => {
-      if (_defaultApplied.current[netId]) return;
-      const key = CHAN_KEY(netId, chanName);
-      if (state.channels[key] && !state.channels[key].left) {
-        dispatch({ type: "SET_ACTIVE_CHAN", netId, chan: chanName });
-        dispatch({ type: "SET_ACTIVE_NET", id: netId });
-        _defaultApplied.current[netId] = true;
-      }
-    });
-  }, [state.channels, defaultChans]);
+  // Ref so the WebSocket JOIN handler can read the current default without stale closure issues
+  const defaultChansRef = React.useRef(defaultChans);
+  React.useEffect(() => { defaultChansRef.current = defaultChans; }, [defaultChans]);
   const [unreadOnly, setUnreadOnly] = useState(() => localStorage.getItem("kc_unread_only")==="1");
   React.useEffect(() => { localStorage.setItem("kc_unread_only", unreadOnly?"1":"0"); }, [unreadOnly]);
   const [compactMode, setCompactMode] = useState(() => localStorage.getItem("kc_compact_mode")==="1");
@@ -3660,7 +3650,10 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         if (!chan) break;
         dispatch({ type:"CHAN_JOIN", netId, chan });
         if (from===me) {
-          dispatch({ type:"SET_ACTIVE_CHAN", netId, chan });
+          const netDefault = defaultChansRef.current[netId];
+          if (!netDefault || chan === netDefault) {
+            dispatch({ type:"SET_ACTIVE_CHAN", netId, chan });
+          }
           // After the initial BNC replay, load history automatically on each
           // new JOIN so the user doesn't need to refresh.  We skip this during
           // replay because the batch loader in replay-done handles it.
