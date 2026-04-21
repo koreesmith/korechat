@@ -254,7 +254,7 @@ func (s *DB) CreateUser(u *users.User) (*users.User, error) {
 // GetUserByID fetches a user by primary key.
 func (s *DB) GetUserByID(id string) (*users.User, error) {
 	return s.scanUser(s.db.QueryRow(
-		`SELECT id, username, password_hash, display_name, avatar_url, theme, sidebar_collapsed, sidebar_network_order, sidebar_starred, sidebar_muted, role, created_at, updated_at
+		`SELECT id, username, password_hash, display_name, avatar_url, theme, sidebar_collapsed, sidebar_network_order, sidebar_starred, sidebar_muted, default_channels, role, created_at, updated_at
 		 FROM users WHERE id = $1`, id,
 	))
 }
@@ -262,7 +262,7 @@ func (s *DB) GetUserByID(id string) (*users.User, error) {
 // GetUserByUsername fetches a user by username (case-insensitive).
 func (s *DB) GetUserByUsername(username string) (*users.User, error) {
 	return s.scanUser(s.db.QueryRow(
-		`SELECT id, username, password_hash, display_name, avatar_url, theme, sidebar_collapsed, sidebar_network_order, sidebar_starred, sidebar_muted, role, created_at, updated_at
+		`SELECT id, username, password_hash, display_name, avatar_url, theme, sidebar_collapsed, sidebar_network_order, sidebar_starred, sidebar_muted, default_channels, role, created_at, updated_at
 		 FROM users WHERE LOWER(username) = LOWER($1)`, username,
 	))
 }
@@ -271,7 +271,7 @@ func (s *DB) GetUserByUsername(username string) (*users.User, error) {
 // (case-insensitive). This resolves IRC nicks → KoreChat user avatars.
 func (s *DB) GetUserByIRCNick(ircNick string) (*users.User, error) {
 	return s.scanUser(s.db.QueryRow(
-		`SELECT u.id, u.username, u.password_hash, u.display_name, u.avatar_url, u.theme, u.sidebar_collapsed, u.sidebar_network_order, u.sidebar_starred, u.sidebar_muted, u.role, u.created_at, u.updated_at
+		`SELECT u.id, u.username, u.password_hash, u.display_name, u.avatar_url, u.theme, u.sidebar_collapsed, u.sidebar_network_order, u.sidebar_starred, u.sidebar_muted, u.default_channels, u.role, u.created_at, u.updated_at
 		 FROM users u
 		 JOIN networks n ON n.user_id = u.id
 		 WHERE LOWER(n.nick) = LOWER($1)
@@ -282,7 +282,7 @@ func (s *DB) GetUserByIRCNick(ircNick string) (*users.User, error) {
 // ListUsers returns all users, ordered by created_at.
 func (s *DB) ListUsers() ([]*users.User, error) {
 	rows, err := s.db.Query(
-		`SELECT id, username, password_hash, display_name, avatar_url, theme, sidebar_collapsed, sidebar_network_order, sidebar_starred, sidebar_muted, role, created_at, updated_at
+		`SELECT id, username, password_hash, display_name, avatar_url, theme, sidebar_collapsed, sidebar_network_order, sidebar_starred, sidebar_muted, default_channels, role, created_at, updated_at
 		 FROM users ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -554,7 +554,7 @@ type scannable interface {
 
 func (s *DB) scanUser(row scannable) (*users.User, error) {
 	u := &users.User{}
-	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.AvatarURL, &u.Theme, &u.SidebarCollapsed, &u.SidebarNetworkOrder, &u.SidebarStarred, &u.SidebarMuted, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.AvatarURL, &u.Theme, &u.SidebarCollapsed, &u.SidebarNetworkOrder, &u.SidebarStarred, &u.SidebarMuted, &u.DefaultChannels, &u.Role, &u.CreatedAt, &u.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errors.New("user not found")
 	}
@@ -563,7 +563,7 @@ func (s *DB) scanUser(row scannable) (*users.User, error) {
 
 func (s *DB) scanUserRow(rows *sql.Rows) (*users.User, error) {
 	u := &users.User{}
-	err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.AvatarURL, &u.Theme, &u.SidebarCollapsed, &u.SidebarNetworkOrder, &u.SidebarStarred, &u.SidebarMuted, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+	err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.AvatarURL, &u.Theme, &u.SidebarCollapsed, &u.SidebarNetworkOrder, &u.SidebarStarred, &u.SidebarMuted, &u.DefaultChannels, &u.Role, &u.CreatedAt, &u.UpdatedAt)
 	return u, err
 }
 
