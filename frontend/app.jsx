@@ -3788,6 +3788,14 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                 const chan = k.slice(chanPrefix.length);
                 loadChannelHistory(netId, chan);
               });
+              // During BNC replay the nick is unknown until replay-done arrives, so
+              // the JOIN handler's from===me guard never fires and SET_ACTIVE_CHAN is
+              // never dispatched for the default channel.  Enforce it here once the
+              // replay is fully settled.
+              const defaultChan = defaultChansRef.current[netId];
+              if (defaultChan && openKeys.includes(chanPrefix + defaultChan)) {
+                dispatch({ type: "SET_ACTIVE_CHAN", netId, chan: defaultChan });
+              }
             }, 500);
             break;
           }
