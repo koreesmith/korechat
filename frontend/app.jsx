@@ -5088,8 +5088,8 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
               }
               return [...names].sort((a,b) => a.localeCompare(b));
             };
-            const starredNames = (starred[netId] || []).filter(n => allNames.includes(n) && keepWhenFiltered(n)).sort((a,b)=>a.localeCompare(b));
-            const starredSet = new Set((starred[netId] || []).filter(n => allNames.includes(n)));
+            const starredNames = (starred[netId] || []).filter(n => keepWhenFiltered(n)).sort((a,b)=>a.localeCompare(b));
+            const starredSet = new Set(starred[netId] || []);
             const chans = sortChannelNames(
               allNames.filter(n=>n!==STATUS_CHAN && n.startsWith("#") && !starredSet.has(n) && keepWhenFiltered(n))
             );
@@ -5112,6 +5112,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             const dmsUnread     = dms.reduce((sum,n)=>isMuted(netId,n)?sum:sum+(unread[CHAN_KEY(netId,n)]||0),0);
 
             const goTo = (chan) => {
+              if (!channels[CHAN_KEY(netId, chan)]) ensureChan(netId, chan);
               dispatch({type:"SET_ACTIVE_NET",id:netId});
               dispatch({type:"SET_ACTIVE_CHAN",netId,chan});
               dispatch({type:"CLEAR_UNREAD",netId,chan});
