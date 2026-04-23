@@ -421,9 +421,9 @@ function NetworkModal({ networks, onClose, onAdd, onDelete }) {
 // ─── Input Bar ───────────────────────────────────────────────────────────────
 const COMMANDS = ["/join","/part","/topic","/nick","/away","/back","/me","/msg","/names","/quit","/list"];
 
-function InputBar({ onSend, channel, nick }) {
+function InputBar({ onSend, channel, nick, initialHist = [], onHistChange }) {
   const [val, setVal]       = useState("");
-  const [hist, setHist]     = useState([]);
+  const [hist, setHist]     = useState(initialHist);
   const [histIdx, setHistIdx] = useState(-1);
   const [showCmds, setShowCmds] = useState(false);
 
@@ -433,7 +433,11 @@ function InputBar({ onSend, channel, nick }) {
     const v = val.trim();
     if (!v) return;
     onSend(v);
-    setHist(h => [v, ...h.slice(0,49)]);
+    setHist(h => {
+      const next = [v, ...h.slice(0, 49)];
+      onHistChange?.(next);
+      return next;
+    });
     setHistIdx(-1);
     setVal("");
     setShowCmds(false);
@@ -535,6 +539,7 @@ export default function KoreChat() {
   // WS connections: { [networkId]: { send, close } }
   const connections = useRef({});
   const messagesEndRef = useRef(null);
+  const inputHistRef = useRef({});
 
   const { networks, activeNetwork, channels, messages, unread, activeChannel, myNick, ackedCaps, connected } = state;
 
@@ -950,7 +955,7 @@ export default function KoreChat() {
           )}
         </div>
 
-        {activeChan && <InputBar key={activeChanKey} onSend={handleSend} channel={activeChan} nick={currentNick} />}
+        {activeChan && <InputBar key={activeChanKey} onSend={handleSend} channel={activeChan} nick={currentNick} initialHist={inputHistRef.current[activeChanKey] || []} onHistChange={h => { inputHistRef.current[activeChanKey] = h; }} />}
       </div>
     </div>
   );
