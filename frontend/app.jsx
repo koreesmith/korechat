@@ -3458,7 +3458,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
     const params = new URLSearchParams({
       network_id: netId,
       limit: String(limit),
-      order: "asc",
+      order: "desc",
     });
     if (isChannel) params.set("channel", chan);
     else if (isDM)  params.set("nick", chan);
@@ -3493,8 +3493,9 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         // IRCv3 CHATHISTORY gap-fill: ask the server for any messages newer
         // than our most-recent log entry.  This covers the window between the
         // last persisted message and the start of the live ring buffer.
+        // With desc ordering the newest entry is first in the array.
         if (!isChannel) return;
-        const newestLogTs = data.entries[data.entries.length - 1]?.timestamp;
+        const newestLogTs = data.entries[0]?.timestamp;
         if (!newestLogTs) return;
         const conn = connections.current?.[netId];
         if (!conn?.ready) return;
@@ -3551,7 +3552,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       network_id: netId,
       server_only: "true",
       limit: String(limit),
-      order: "asc",
+      order: "desc",
     });
     if (oldestExisting !== null) {
       params.set("date_to_iso", new Date(oldestExisting).toISOString());
