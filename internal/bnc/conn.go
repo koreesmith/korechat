@@ -389,6 +389,62 @@ func (c *Conn) Send(line string) {
 	}
 
 	c.sendRaw(line)
+
+	// When the server has not negotiated echo-message, outgoing PRIVMSGs and
+	// NOTICEs are never echoed back through the read loop, so they are never
+	// buffered or persisted. Synthesise a received-style line and feed it
+	// through the normal buffer/fanOut/log pipeline so the message survives a
+	// page refresh and appears in other open browser tabs.
+	if !c.hasAckedCap("echo-message") {
+		c.selfEcho(bare)
+	}
+}
+
+// selfEcho synthesises an incoming IRC line for an outgoing channel PRIVMSG or
+// NOTICE and feeds it through the buffer/fanOut/log pipeline. Only called when
+// the server has not negotiated echo-message, to ensure sent messages are
+// persisted and replayed on reconnect.
+func (c *Conn) selfEcho(bare string) {
+	upper := strings.ToUpper(bare)
+	var cmd string
+	switch {
+	case strings.HasPrefix(upper, "PRIVMSG "):
+		cmd = "PRIVMSG"
+	case strings.HasPrefix(upper, "NOTICE "):
+		cmd = "NOTICE"
+	default:
+		return
+	}
+
+	// bare is "PRIVMSG #chan :text" — skip past the command word.
+	rest := bare[len(cmd)+1:]
+	sp := strings.Index(rest, " ")
+	if sp < 0 {
+		return
+	}
+	target := rest[:sp]
+
+	// Only handle channel messages; DM persistence is tracked separately.
+	if !strings.HasPrefix(target, "#") && !strings.HasPrefix(target, "&") {
+		return
+	}
+
+	c.mu.Lock()
+	nick := c.currentNick
+	username := c.net.Username
+	c.mu.Unlock()
+	if username == "" {
+		username = nick
+	}
+
+	ts := time.Now().UTC().Format(time.RFC3339Nano)
+	synthetic := fmt.Sprintf("@time=%s :%s!%s@korechat %s %s", ts, nick, username, cmd, rest)
+
+	c.buffer(synthetic)
+	c.fanOut(synthetic)
+	if c.logFn != nil && c.net.UserID != "" {
+		c.logFn(c.net.UserID, c.net.ID, c.net.Name, synthetic)
+	}
 }
 
 // ─── Internal ─────────────────────────────────────────────────────────────────
