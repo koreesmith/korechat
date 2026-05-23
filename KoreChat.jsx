@@ -621,8 +621,16 @@ export default function KoreChat() {
       const m = { type:"system", text, time };
       const buf = replayBufRef.current[netId];
       if (buf) {
-        if (!buf.messages[chan]) buf.messages[chan] = [];
-        buf.messages[chan].push(m);
+        // Deduplicate system messages by content + minute-bucket during replay.
+        // Prevents duplicate "→ alice joined" entries when a ring-buffer replayed
+        // JOIN and a live fanOut JOIN for the same event both land in the buffer.
+        const bucket = time ? time.slice(0, 16) : ""; // "2025-05-23T15:04"
+        const key = `sys:${chan}:${text}:${bucket}`;
+        if (!buf.seenIds.has(key)) {
+          buf.seenIds.add(key);
+          if (!buf.messages[chan]) buf.messages[chan] = [];
+          buf.messages[chan].push(m);
+        }
       } else {
         dispatch({ type:"ADD_MESSAGE", netId, chan, msg: m });
       }
