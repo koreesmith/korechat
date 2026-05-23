@@ -373,16 +373,29 @@ func (c *Conn) Send(line string) {
 		return
 	}
 
-	// Drop CHATHISTORY commands when the server hasn't negotiated the cap.
-	// Servers like Libera.chat (ircd-seven) return 421 "Unknown command" for
-	// any CHATHISTORY request, which pollutes the server message buffer.
+	// Strip message tags to get the bare command for filtering.
 	bare := line
 	if strings.HasPrefix(bare, "@") {
 		if sp := strings.Index(bare, " "); sp >= 0 {
 			bare = strings.TrimLeft(bare[sp+1:], " ")
 		}
 	}
-	if strings.HasPrefix(strings.ToUpper(bare), "CHATHISTORY") {
+	upperBare := strings.ToUpper(bare)
+
+	// Drop IRC registration commands — the BNC already registered on behalf of
+	// the client. Forwarding CAP LS, USER, or PASS to an already-registered
+	// upstream connection triggers unexpected server responses and can cause
+	// excess-flood kicks when the client reconnects (page reload / wake from sleep).
+	if strings.HasPrefix(upperBare, "CAP LS") ||
+		strings.HasPrefix(upperBare, "USER ") ||
+		strings.HasPrefix(upperBare, "PASS ") {
+		return
+	}
+
+	// Drop CHATHISTORY commands when the server hasn't negotiated the cap.
+	// Servers like Libera.chat (ircd-seven) return 421 "Unknown command" for
+	// any CHATHISTORY request, which pollutes the server message buffer.
+	if strings.HasPrefix(upperBare, "CHATHISTORY") {
 		if !c.hasAckedCap("chathistory") && !c.hasAckedCap("draft/chathistory") {
 			return
 		}

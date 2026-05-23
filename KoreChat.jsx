@@ -55,7 +55,7 @@ function nickFromPrefix(prefix) {
 // ─── WebSocket IRC Connection ─────────────────────────────────────────────────
 // Each "connection" is one WS socket to the backend.
 // url = WS_URL for hub mode, WS_URL + "?network=<id>" for proxy mode.
-function createIRCConnection({ url, nick, onLine, onOpen, onClose }) {
+function createIRCConnection({ url, nick, onLine, onOpen, onClose, isBNC = false }) {
   let ws = null;
   let closed = false;
 
@@ -63,12 +63,14 @@ function createIRCConnection({ url, nick, onLine, onOpen, onClose }) {
     ws = new WebSocket(url);
     ws.onopen = () => {
       onOpen?.();
-      // IRC registration
-      ws.send(`CAP LS 302\r\n`);
-      ws.send(`NICK ${nick}\r\n`);
-      ws.send(`USER ${nick} 0 * :${nick}\r\n`);
-      ws.send(`CAP REQ :${IRC_CAPS.join(" ")}\r\n`);
-      ws.send(`CAP END\r\n`);
+      if (!isBNC) {
+        // IRC registration (hub/proxy mode only — BNC handles this server-side)
+        ws.send(`CAP LS 302\r\n`);
+        ws.send(`NICK ${nick}\r\n`);
+        ws.send(`USER ${nick} 0 * :${nick}\r\n`);
+        ws.send(`CAP REQ :${IRC_CAPS.join(" ")}\r\n`);
+        ws.send(`CAP END\r\n`);
+      }
     };
     ws.onmessage = e => {
       e.data.split("\n").forEach(line => {
@@ -715,6 +717,7 @@ export default function KoreChat() {
     const conn = createIRCConnection({
       url,
       nick: net.nick,
+      isBNC: true,
       onLine: (line) => handleLine(net.id, line),
       onOpen: () => {
         // Mark as "connecting" immediately so the status dot turns yellow
