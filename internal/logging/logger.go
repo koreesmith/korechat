@@ -265,7 +265,11 @@ func (l *Logger) Channels(userID, networkID string) ([]string, error) {
 }
 
 // ToRawLine reconstructs a synthetic raw IRC line suitable for BNC replay.
-// Includes an @time= tag so the client can sort by timestamp.
+// Includes @msgid and @time tags so the client can deduplicate and sort.
+// The msgid is "log-<db_id>" — a stable, unique identifier derived from the
+// database row ID. This lets the frontend skip a message it has already seen
+// from the ring buffer (which carries a server-provided msgid) and vice versa
+// if the same message ever arrives from two sources.
 // Returns "" for event types that cannot be meaningfully reconstructed.
 func (e *Entry) ToRawLine() string {
 	ts := e.Timestamp.UTC().Format(time.RFC3339Nano)
@@ -274,7 +278,8 @@ func (e *Entry) ToRawLine() string {
 		if e.Channel == "" {
 			return "" // DM with no channel target — skip
 		}
-		return fmt.Sprintf("@time=%s :%s!*@* %s %s :%s", ts, e.Nick, e.Type, e.Channel, e.Text)
+		return fmt.Sprintf("@msgid=log-%d @time=%s :%s!*@* %s %s :%s",
+			e.ID, ts, e.Nick, e.Type, e.Channel, e.Text)
 	}
 	return ""
 }

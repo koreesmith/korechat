@@ -1337,19 +1337,21 @@ func (c *Conn) notice(text string) {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 // isMembershipReplayLine returns true for JOIN/PART/QUIT/KICK/MODE lines that
-// lack a server-supplied @time tag. These are suppressed during ring buffer
-// replay because they reflect channel state at BNC startup time and will show
-// with a misleading "now" timestamp rather than when they actually occurred.
-// PRIVMSG/NOTICE lines are always kept — message history is valuable.
-// Lines WITH a server @time tag are also kept — they have accurate timestamps.
+// should be suppressed during ring buffer replay.
+//
+// All membership events are suppressed unconditionally — even those that carry
+// a @time tag. The @time tag in a buffered line is stamped by buffer() itself
+// (not necessarily by the server), so its presence does NOT mean the timestamp
+// is server-supplied or accurate enough to trust for replay ordering.
+//
+// Replaying membership events causes duplicate "→ alice joined" / "you joined"
+// system messages on reconnect: the replayed JOIN from the ring buffer races
+// with the live JOIN that fires when the BNC re-joins the channel after an
+// IRC reconnect. PRIVMSG/NOTICE lines are always kept — message history is the
+// reason the ring buffer exists.
 func isMembershipReplayLine(line string) bool {
-	// If the line has a server-supplied @time tag, keep it — timestamp is accurate
+	// Strip IRCv3 message tags (present on all ring-buffer lines after buffer() stamps them)
 	if strings.HasPrefix(line, "@") {
-		tagBlock := strings.SplitN(line, " ", 2)[0]
-		if strings.Contains(tagBlock, "time=") {
-			return false // has real timestamp, safe to replay
-		}
-		// Has tags but no time — strip tags to parse command
 		sp := strings.Index(line, " ")
 		if sp < 0 {
 			return false
@@ -1367,7 +1369,7 @@ func isMembershipReplayLine(line string) bool {
 	cmd := strings.ToUpper(parts[idx])
 	switch cmd {
 	case "JOIN", "PART", "QUIT", "KICK", "MODE":
-		return true // membership event without accurate timestamp — suppress
+		return true
 	}
 	return false
 }
