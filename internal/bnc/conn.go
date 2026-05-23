@@ -248,8 +248,17 @@ func (c *Conn) Subscribe(id string, send SendFunc) {
 	// the upstream readLoop is not blocked during the (potentially large) send
 	// phase below. After Unlock() the subscriber is already in c.subs, so it
 	// will receive live fanOut messages concurrently with the replay; the client
-	// sorts messages by timestamp after replay-done, so interleaving is fine.
+	// buffers all incoming lines until replay-done then sorts by timestamp, so
+	// interleaving with live messages is safe.
 	status := string(c.store.StatusOf(c.net.ID))
+
+	// Snapshot joined channels for pre-announcement. Sent before any replay so
+	// the client can render all channel tabs immediately rather than discovering
+	// them one by one as PRIVMSG history trickles in.
+	joinedChans := make([]string, 0, len(c.joinedChans))
+	for ch := range c.joinedChans {
+		joinedChans = append(joinedChans, ch)
+	}
 
 	// Collect replay lines: server messages first, then per-channel.
 	var replay []string
@@ -320,6 +329,12 @@ func (c *Conn) Subscribe(id string, send SendFunc) {
 	// so we follow up with a fresh authoritative status after the replay.
 	send(fmt.Sprintf(":*bnc* NOTICE * :status:%s", status))
 
+	// Pre-announce joined channels so the client creates all tabs immediately,
+	// before any replay messages arrive.
+	if len(joinedChans) > 0 {
+		send(fmt.Sprintf(":*bnc* NOTICE * :channels:%s", strings.Join(joinedChans, " ")))
+	}
+
 	// Postgres fallback: send older history (before ring buffer) first so the
 	// client receives messages in roughly chronological order.
 	for _, q := range pgQueries {
@@ -350,8 +365,13 @@ func (c *Conn) Subscribe(id string, send SendFunc) {
 	finalStatus := string(c.store.StatusOf(c.net.ID))
 
 	send(fmt.Sprintf(":*bnc* NOTICE * :status:%s", finalStatus))
+	// Always send replay-done so the client flushes its replay buffer even when
+	// the upstream IRC connection is not yet established (e.g. BNC reconnecting).
+	// The nick suffix is only included when we are actually connected.
 	if finalConnected {
 		send(fmt.Sprintf(":*bnc* NOTICE * :replay-done nick:%s", finalNick))
+	} else {
+		send(":*bnc* NOTICE * :replay-done")
 	}
 }
 

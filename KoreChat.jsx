@@ -109,6 +109,7 @@ const initState = {
   myNick: {},            // networkId → current nick
   ackedCaps: {},         // networkId → [cap]
   connected: {},         // networkId → bool
+  replaying: {},         // networkId → bool (true while BNC replay is in flight)
 };
 
 function chanKey(netId, chan) { return `${netId}::${chan}`; }
@@ -177,6 +178,25 @@ function reducer(state, action) {
     case "CLEAR_UNREAD": {
       const k = chanKey(action.netId, action.chan);
       return { ...state, unread: { ...state.unread, [k]: 0 } };
+    }
+    case "SET_REPLAYING":
+      return { ...state, replaying: { ...state.replaying, [action.netId]: action.val } };
+    // REPLAY_FLUSH: atomically replace each channel's message list with the
+    // sorted, deduplicated replay buffer. Clears the replaying flag.
+    case "REPLAY_FLUSH": {
+      const newMessages = { ...state.messages };
+      const newChannels = { ...state.channels };
+      action.channelData.forEach(({ chan, msgs }) => {
+        const k = chanKey(action.netId, chan);
+        newMessages[k] = msgs.slice(-500);
+        if (!newChannels[k]) newChannels[k] = { members: {}, topic: "" };
+      });
+      return {
+        ...state,
+        messages: newMessages,
+        channels: newChannels,
+        replaying: { ...state.replaying, [action.netId]: false },
+      };
     }
     default: return state;
   }
@@ -538,7 +558,29 @@ export default function KoreChat() {
   const connections = useRef({});
   const messagesEndRef = useRef(null);
 
-  const { networks, activeNetwork, channels, messages, unread, activeChannel, myNick, ackedCaps, connected } = state;
+  // Per-network replay buffer. Holds incoming messages while BNC replay is in
+  // flight; flushed atomically (sorted by timestamp) on replay-done. Using a
+  // ref (not state) avoids re-renders for every buffered line.
+  // Shape: { [netId]: { messages: { [chan]: [msg] }, seenIds: Set<string> } }
+  const replayBufRef = useRef({});
+
+  const { networks, activeNetwork, channels, messages, unread, activeChannel, myNick, ackedCaps, connected, replaying } = state;
+
+  // Flush the replay buffer for a network: sort each channel's messages by
+  // timestamp and dispatch REPLAY_FLUSH to replace state atomically.
+  const flushReplayBuffer = useCallback((netId) => {
+    const buf = replayBufRef.current[netId];
+    delete replayBufRef.current[netId];
+    const channelData = Object.entries(buf?.messages || {}).map(([chan, msgs]) => {
+      const sorted = [...msgs].sort((a, b) => {
+        const ta = a.time ? new Date(a.time).getTime() : 0;
+        const tb = b.time ? new Date(b.time).getTime() : 0;
+        return ta - tb || 0;
+      });
+      return { chan, msgs: sorted };
+    });
+    dispatch({ type: "REPLAY_FLUSH", netId, channelData });
+  }, []);
 
   // ─── Load saved networks from API on mount ──────────────────────────────
   useEffect(() => {
@@ -558,8 +600,33 @@ export default function KoreChat() {
     const fromNick = nickFromPrefix(prefix);
     const nick = myNick[netId] || "me";
 
-    const addMsg = (chan, m) => dispatch({ type:"ADD_MESSAGE", netId, chan, msg: m });
-    const addSys = (chan, text) => dispatch({ type:"ADD_MESSAGE", netId, chan, msg: { type:"system", text, time } });
+    // Buffer-aware message helpers. During BNC replay (replayBufRef.current[netId]
+    // exists) all messages are held in the buffer. On replay-done they are sorted
+    // by timestamp and flushed atomically, eliminating the jank of messages
+    // appearing out of order as live fanOut interleaves with historical replay.
+    const addMsg = (chan, m) => {
+      const buf = replayBufRef.current[netId];
+      if (buf) {
+        const id = m.id;
+        if (!id || !buf.seenIds.has(id)) {
+          if (id) buf.seenIds.add(id);
+          if (!buf.messages[chan]) buf.messages[chan] = [];
+          buf.messages[chan].push(m);
+        }
+      } else {
+        dispatch({ type:"ADD_MESSAGE", netId, chan, msg: m });
+      }
+    };
+    const addSys = (chan, text) => {
+      const m = { type:"system", text, time };
+      const buf = replayBufRef.current[netId];
+      if (buf) {
+        if (!buf.messages[chan]) buf.messages[chan] = [];
+        buf.messages[chan].push(m);
+      } else {
+        dispatch({ type:"ADD_MESSAGE", netId, chan, msg: m });
+      }
+    };
 
     switch (command) {
       case "001":
@@ -580,8 +647,12 @@ export default function KoreChat() {
         if (!chan) break;
         dispatch({ type:"JOIN_CHANNEL", netId, chan });
         if (fromNick === nick) {
-          dispatch({ type:"SET_ACTIVE_CHAN", netId, chan });
-          if (!activeNetwork) dispatch({ type:"SET_ACTIVE_NET", netId });
+          // Don't switch active channel during replay — historical JOINs from
+          // Postgres would otherwise jump the user's channel selection on every reload.
+          if (!replayBufRef.current[netId]) {
+            dispatch({ type:"SET_ACTIVE_CHAN", netId, chan });
+            if (!activeNetwork) dispatch({ type:"SET_ACTIVE_NET", netId });
+          }
           addSys(chan, `You joined ${chan}`);
         } else {
           dispatch({ type:"SET_MEMBERS", netId, chan, members: { [fromNick]: "" } });
@@ -643,10 +714,13 @@ export default function KoreChat() {
           addSys(statusChan, text);
           break;
         }
-        // BNC status messages — update connection state and nick on every subscribe/reconnect.
-        // The BNC sends these two lines at the start of every WebSocket session:
-        //   :*bnc* NOTICE * :status:<connected|disconnected|reconnecting|error>
-        //   :*bnc* NOTICE * :replay-done nick:<currentNick>   (only when connected)
+        // BNC control messages — replay lifecycle, channel pre-announcement, status.
+        // Sequence per WebSocket session:
+        //   :*bnc* NOTICE * :status:<state>          ← early (possibly stale)
+        //   :*bnc* NOTICE * :channels:#c1 #c2 …      ← channel pre-announcement
+        //   … replay lines (Postgres + ring buffer) …
+        //   :*bnc* NOTICE * :status:<state>          ← final authoritative
+        //   :*bnc* NOTICE * :replay-done [nick:<n>]  ← always sent; flush buffer
         if (prefix === "*bnc*" || fromNick === "*bnc*") {
           if (text.startsWith("status:")) {
             const bncStatus = text.slice("status:".length).trim();
@@ -655,13 +729,31 @@ export default function KoreChat() {
             dispatch({ type:"SET_NETWORKS", networks: networks.map(n =>
               n.id === netId ? { ...n, status: bncStatus } : n
             )});
-          } else if (text.startsWith("replay-done nick:")) {
-            const replayNick = text.slice("replay-done nick:".length).trim();
+            // First status: initialise the replay buffer so subsequent messages
+            // are held until replay-done rather than rendered as they arrive.
+            if (!replayBufRef.current[netId]) {
+              replayBufRef.current[netId] = { messages: {}, seenIds: new Set() };
+              dispatch({ type:"SET_REPLAYING", netId, val: true });
+            }
+          } else if (text.startsWith("channels:")) {
+            // Pre-announced channel list — create all tabs immediately so the
+            // sidebar doesn't build up channel by channel during replay.
+            text.slice("channels:".length).trim().split(/\s+/).filter(Boolean)
+              .forEach(chan => dispatch({ type:"JOIN_CHANNEL", netId, chan }));
+          } else if (text.startsWith("replay-done")) {
+            // Flush and sort the replay buffer. nick suffix present when connected.
+            const replayNick = text.startsWith("replay-done nick:")
+              ? text.slice("replay-done nick:".length).trim() : null;
             if (replayNick) dispatch({ type:"SET_NICK", netId, nick: replayNick });
+            flushReplayBuffer(netId); // also clears replaying flag via REPLAY_FLUSH
           }
           break;
         }
-        if (fromNick === nick && command === "PRIVMSG") break; // echo suppression (hub already handles; proxy might not)
+        // Filter server-to-user NOTICEs (e.g. "*** Looking up your hostname").
+        // These come from the IRC server itself (no "!" in the prefix) directed to
+        // our nick. They are not DMs and should not create a channel tab.
+        if (command === "NOTICE" && isDM && prefix && !prefix.includes("!")) break;
+        if (fromNick === nick && command === "PRIVMSG") break; // echo suppression
         dispatch({ type:"JOIN_CHANNEL", netId, chan });
         addMsg(chan, { type:"message", nick: fromNick, text, time, tags, id: tags?.msgid || Math.random().toString(36) });
         break;
@@ -705,7 +797,7 @@ export default function KoreChat() {
         dispatch({ type: "SET_NETWORKS", networks: networks.map(n => n.id === netId ? { ...n, status: "error", status_msg: params[0] } : n) });
         break;
     }
-  }, [myNick, activeNetwork, channels, networks]);
+  }, [myNick, activeNetwork, channels, networks, flushReplayBuffer]);
 
   // ─── Connect to a network ───────────────────────────────────────────────
   const connectNetwork = useCallback((net) => {
@@ -926,6 +1018,18 @@ export default function KoreChat() {
           </div>
         )}
 
+        {/* Replay loading bar — visible while BNC history is in flight */}
+        {replaying[activeNetwork] && (
+          <div style={{ height:2, background:"#ffffff08", flexShrink:0, position:"relative", overflow:"hidden" }}>
+            <div style={{
+              position:"absolute", top:0, left:0, height:"100%", width:"30%",
+              background:"linear-gradient(90deg,transparent,#7eb8f7,transparent)",
+              animation:"bnc-replay-slide 1.2s ease-in-out infinite",
+            }} />
+            <style>{`@keyframes bnc-replay-slide{0%{left:-30%}100%{left:100%}}`}</style>
+          </div>
+        )}
+
         {/* Messages + member list */}
         <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
           <div style={{ flex:1, overflowY:"auto", padding:"8px 0" }}>
@@ -935,9 +1039,9 @@ export default function KoreChat() {
                 : <Message key={msg.id||i} msg={msg} prev={activeMsgs[i-1]?.type==="message" ? activeMsgs[i-1] : null} myNick={currentNick} />
             )}
             {activeChan && activeMsgs.length === 0 && (
-              <div style={{ padding:"40px 52px", color:"#ffffff20", fontSize:13, fontFamily:"'JetBrains Mono',monospace" }}>
-                No messages yet in {activeChan}
-              </div>
+              replaying[activeNetwork]
+                ? <div style={{ padding:"40px 52px", color:"#ffffff20", fontSize:12, fontFamily:"'JetBrains Mono',monospace" }}>Loading history…</div>
+                : <div style={{ padding:"40px 52px", color:"#ffffff20", fontSize:13, fontFamily:"'JetBrains Mono',monospace" }}>No messages yet in {activeChan}</div>
             )}
             <div ref={messagesEndRef} />
           </div>
