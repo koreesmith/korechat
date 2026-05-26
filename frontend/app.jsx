@@ -4126,9 +4126,15 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
               const openKeys = Object.keys(channelsRef.current).filter(k =>
                 k.startsWith(chanPrefix) && !k.endsWith("::" + STATUS_CHAN)
               );
+              const conn = connections.current[netId];
               openKeys.forEach(k => {
                 const chan = k.slice(chanPrefix.length);
                 loadChannelHistory(netId, chan);
+                // Refresh the member list for every channel. The ring buffer 353
+                // may reflect a stale snapshot (e.g. before ChanServ restored
+                // modes), and the corrective MODE lines are suppressed during
+                // replay. Sending NAMES now gets the authoritative current list.
+                if (chan.startsWith("#") && conn?.ready) conn.send(`NAMES ${chan}`);
               });
               // During BNC replay the nick is unknown until replay-done arrives, so
               // the JOIN handler's from===me guard never fires and SET_ACTIVE_CHAN is
