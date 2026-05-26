@@ -209,8 +209,16 @@ func (s *DB) migrate() error {
 		return fmt.Errorf("migrate v12 (default_channels): %w", err)
 	}
 
-	// v13: dedup index for message_logs so chathistory re-inserts are safe
+	// v13: dedup index for message_logs so chathistory re-inserts are safe.
+	// First remove any duplicate rows that accumulated before this migration
+	// (keep the row with the lowest id), then create the unique index.
 	if _, err := s.db.Exec(`
+		DELETE FROM message_logs
+		WHERE id NOT IN (
+			SELECT MIN(id)
+			FROM message_logs
+			GROUP BY user_id, network_id, lower(channel), nick, timestamp
+		);
 		CREATE UNIQUE INDEX IF NOT EXISTS message_logs_dedup
 		  ON message_logs(user_id, network_id, lower(channel), nick, timestamp)
 	`); err != nil {
