@@ -209,6 +209,14 @@ func (s *DB) migrate() error {
 		return fmt.Errorf("migrate v12 (default_channels): %w", err)
 	}
 
+	// v13: dedup index for message_logs so chathistory re-inserts are safe
+	if _, err := s.db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS message_logs_dedup
+		  ON message_logs(user_id, network_id, lower(channel), nick, timestamp)
+	`); err != nil {
+		return fmt.Errorf("migrate v13 (message_logs_dedup): %w", err)
+	}
+
 	log.Printf("store: migrations OK")
 	return nil
 }
