@@ -116,7 +116,8 @@ func (l *Logger) Log(userID, networkID, networkName, rawLine string) {
 	if _, err := l.db.Exec(`
 		INSERT INTO message_logs
 		  (user_id, network_id, network_name, channel, nick, type, text, timestamp)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+		ON CONFLICT (user_id, network_id, lower(channel), nick, timestamp) DO NOTHING`,
 		e.UserID, e.NetworkID, e.NetworkName,
 		e.Channel, e.Nick, e.Type, e.Text, e.Timestamp,
 	); err != nil {

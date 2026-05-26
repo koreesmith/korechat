@@ -692,9 +692,11 @@ func (c *Conn) readLoop(tc net.Conn) {
 		}
 		c.fanOut(line)
 		// Persist loggable events for the network owner.
-		// Skip chathistory batch messages — they are already in the DB from
-		// when they were originally received; re-logging them creates duplicates.
-		if c.logFn != nil && c.net.UserID != "" && !inHistoryBatch {
+		// Log chathistory batch messages too — they may be messages the BNC
+		// missed while disconnected and this is the first time we're seeing
+		// them. The INSERT uses ON CONFLICT DO NOTHING so already-logged
+		// messages from normal live traffic are silently skipped.
+		if c.logFn != nil && c.net.UserID != "" {
 			c.logFn(c.net.UserID, c.net.ID, c.net.Name, line)
 		}
 	}
