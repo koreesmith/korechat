@@ -2317,7 +2317,7 @@ function SectionHeader({ label, count, open, onToggle, compact, unread=0 }) {
 }
 
 // ─── Logs Modal ───────────────────────────────────────────────────────────────
-function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, saveNotifPrefs, compactMode, setCompactMode }) {
+function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, saveNotifPrefs, compactMode, setCompactMode, currentUser, onUpdated, onLogout, theme, onSelectTheme, initialTab }) {
   const T = useTheme();
   const MONO = { fontFamily:"'Inter var','Inter',sans-serif" };
   const IS = {
@@ -2325,9 +2325,11 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
     border:`1px solid ${T.border}`, background:T.bgInput||T.bg, color:T.text,
     outline:"none", boxSizing:"border-box",
   };
+  const LS = { display:"block", fontSize:12, color:T.textDim, marginBottom:4,
+    ...MONO, textTransform:"uppercase", letterSpacing:"0.05em" };
 
   // ── tab state ────────────────────────────────────────────────────────────
-  const [tab, setTab] = React.useState("browse"); // "browse" | "settings"
+  const [tab, setTab] = React.useState(initialTab || "browse");
 
   // ── settings state ───────────────────────────────────────────────────────
   const [settings, setSettings]     = React.useState(null);
@@ -2346,6 +2348,85 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
   const [exporting, setExporting] = React.useState(false);
   const [deleteConfirm, setDeleteConfirm] = React.useState(false);
   const LIMIT = 50;
+
+  // ── profile tab state ────────────────────────────────────────────────────
+  const [profileTab,   setProfileTab]   = React.useState("avatar");
+  const [preview,      setPreview]      = React.useState(currentUser?.avatar_url || null);
+  const [file,         setFile]         = React.useState(null);
+  const [uploading,    setUploading]    = React.useState(false);
+  const [uploadErr,    setUploadErr]    = React.useState("");
+  const [curPw,        setCurPw]        = React.useState("");
+  const [newPw,        setNewPw]        = React.useState("");
+  const [newPw2,       setNewPw2]       = React.useState("");
+  const [pwSaving,     setPwSaving]     = React.useState(false);
+  const [pwErr,        setPwErr]        = React.useState("");
+  const [pwOk,         setPwOk]         = React.useState(false);
+  const [dataExporting, setDataExporting] = React.useState(false);
+  const [delPw,        setDelPw]        = React.useState("");
+  const [deleting,     setDeleting]     = React.useState(false);
+  const [delErr,       setDelErr]       = React.useState("");
+  const [delConfirm,   setDelConfirm]   = React.useState(false);
+  const fileRef = React.useRef();
+
+  // ── profile handlers ─────────────────────────────────────────────────────
+  const handleFileChange = e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    setFile(f); setPreview(URL.createObjectURL(f)); setUploadErr("");
+  };
+  const handleUpload = async () => {
+    if (!file) return;
+    setUploading(true); setUploadErr("");
+    try {
+      const updated = await API.uploadAvatar(file);
+      if (updated.error) { setUploadErr(updated.error); return; }
+      delete _avatarCache[currentUser.username];
+      onUpdated?.(updated);
+      setFile(null);
+    } catch(e) { setUploadErr(String(e)); }
+    finally { setUploading(false); }
+  };
+  const handlePassword = async () => {
+    setPwErr(""); setPwOk(false);
+    if (newPw !== newPw2) { setPwErr("Passwords do not match"); return; }
+    if (newPw.length < 8) { setPwErr("Password must be at least 8 characters"); return; }
+    setPwSaving(true);
+    try {
+      const updated = await API.updateProfile({ current_password: curPw, new_password: newPw });
+      if (updated.error) { setPwErr(updated.error); return; }
+      setCurPw(""); setNewPw(""); setNewPw2(""); setPwOk(true);
+      onUpdated?.(updated);
+    } catch(e) { setPwErr(String(e)); }
+    finally { setPwSaving(false); }
+  };
+  const handleExportData = () => {
+    setDataExporting(true);
+    fetch("/api/v1/export/user-data", { credentials:"include" })
+      .then(async r => {
+        const blob = await r.blob();
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `korechat-export-${new Date().toISOString().slice(0,10)}.zip`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      })
+      .catch(()=>{})
+      .finally(()=>setDataExporting(false));
+  };
+  const handleDeleteAccount = async () => {
+    setDelErr(""); setDeleting(true);
+    try {
+      const r = await fetch("/api/v1/profile", {
+        method:"DELETE", credentials:"include",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ password: delPw }),
+      });
+      if (r.status === 204) { onLogout?.(); return; }
+      const data = await r.json().catch(()=>({}));
+      setDelErr(data.error || "Failed to delete account");
+    } catch(e) { setDelErr(String(e)); }
+    finally { setDeleting(false); }
+  };
 
   // ── load settings + networks on mount ───────────────────────────────────
   React.useEffect(() => {
@@ -2463,7 +2544,7 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
               border:"none",color:T.textFaint,fontSize:19,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>
           </div>
           <div style={{display:"flex",gap:0}}>
-            {[["browse","Browse"],["logs","Logs"],["notifications","Notifications"],["appearance","Appearance"]].map(([id,label])=>(
+            {[["profile","Profile"],["themes","Themes"],["browse","Browse"],["logs","Logs"],["notifications","Notifications"],["appearance","Appearance"]].map(([id,label])=>(
               <button key={id} onClick={()=>setTab(id)}
                 style={{...MONO,fontSize:13,padding:"7px 16px",border:"none",cursor:"pointer",
                   borderBottom: tab===id ? `2px solid ${T.accent||T.blue||"#58a6ff"}` : "2px solid transparent",
@@ -2478,6 +2559,266 @@ function UserSettingsModal({ onClose, notifPerms, setNotifPerms, notifPrefs, sav
 
         {/* Body */}
         <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+
+          {/* ── Profile tab ── */}
+          {tab==="profile"&&currentUser&&(
+            <div style={{flex:1,overflowY:"auto",padding:"24px 28px"}}>
+              <div style={{maxWidth:480}}>
+
+                {/* Current user info card */}
+                <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:20,
+                  padding:14,borderRadius:8,background:T.bg,border:`1px solid ${T.borderFaint}`}}>
+                  <div style={{position:"relative"}}>
+                    {preview
+                      ? <img src={preview} alt="avatar"
+                          style={{width:52,height:52,borderRadius:"50%",objectFit:"cover",
+                            border:`2px solid ${T.accent}44`}}/>
+                      : <Avatar nick={currentUser.username} size={52}/>
+                    }
+                  </div>
+                  <div>
+                    <div style={{fontWeight:700,fontSize:16,color:T.textBright}}>{currentUser.display_name||currentUser.username}</div>
+                    <div style={{...MONO,fontSize:12,color:T.textFaint}}>@{currentUser.username}</div>
+                    <div style={{...MONO,fontSize:11,marginTop:2,
+                      background:currentUser.role==="admin"?T.amberBg:"transparent",
+                      border:`1px solid ${currentUser.role==="admin"?T.amber:T.borderFaint}`,
+                      borderRadius:3,padding:"1px 5px",display:"inline-block",
+                      color:currentUser.role==="admin"?T.amber:T.textFaint}}>
+                      {currentUser.role}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Profile sub-tabs */}
+                <div style={{display:"flex",gap:8,marginBottom:18}}>
+                  {[["avatar","Avatar"],["password","Password"],["data","Data"],["account","Account"]].map(([id,label])=>(
+                    <button key={id} style={{...MONO,padding:"7px 16px",fontSize:13,cursor:"pointer",borderRadius:5,
+                      background:profileTab===id?T.accentBg2:"transparent",
+                      border:`1px solid ${profileTab===id?T.accent:T.borderFaint}`,
+                      color:profileTab===id?T.accent:T.textDim}}
+                      onClick={()=>{ setProfileTab(id); if(id==="password") setPwOk(false); if(id==="account"){setDelConfirm(false);setDelErr("");setDelPw("");} }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Avatar sub-tab */}
+                {profileTab==="avatar"&&(
+                  <div>
+                    <input type="file" accept="image/jpeg,image/png,image/gif,image/webp"
+                      ref={fileRef} style={{display:"none"}} onChange={handleFileChange}/>
+                    <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:14}}>
+                      <div style={{width:72,height:72,borderRadius:8,overflow:"hidden",flexShrink:0,
+                        background:T.bg,border:`1px solid ${T.border}`,display:"flex",
+                        alignItems:"center",justifyContent:"center"}}>
+                        {preview
+                          ? <img src={preview} alt="preview" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                          : <span style={{fontSize:12,color:T.textFaint,...MONO}}>No avatar</span>
+                        }
+                      </div>
+                      <div style={{flex:1}}>
+                        <button onClick={()=>fileRef.current.click()}
+                          style={{...IS,cursor:"pointer",textAlign:"left",marginBottom:6,
+                            color:file?T.text:T.textDim}}>
+                          {file ? file.name : "Choose image…"}
+                        </button>
+                        <div style={{fontSize:12,color:T.textFaint,...MONO}}>JPEG, PNG, GIF, or WebP · max 4 MB</div>
+                      </div>
+                    </div>
+                    {uploadErr&&<div style={{background:T.redBg,border:`1px solid ${T.redBorder}`,
+                      borderRadius:5,padding:"7px 10px",color:T.red,fontSize:13,marginBottom:10,...MONO}}>{uploadErr}</div>}
+                    <button onClick={handleUpload} disabled={!file||uploading}
+                      style={{...MONO,width:"100%",padding:"9px 0",borderRadius:5,fontSize:14,
+                        cursor:(!file||uploading)?"default":"pointer",fontWeight:700,
+                        background:(!file||uploading)?T.bg:T.accentBg2,
+                        border:`1px solid ${(!file||uploading)?T.border:T.accent}`,
+                        color:(!file||uploading)?T.textFaint:T.accent,opacity:uploading?0.6:1}}>
+                      {uploading?"Uploading…":"Save Avatar"}
+                    </button>
+                  </div>
+                )}
+
+                {/* Password sub-tab */}
+                {profileTab==="password"&&(
+                  <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                    <div><label style={LS}>Current Password</label>
+                      <input type="password" value={curPw} onChange={e=>setCurPw(e.target.value)}
+                        style={IS} autoComplete="current-password"/></div>
+                    <div><label style={LS}>New Password</label>
+                      <input type="password" value={newPw} onChange={e=>{setNewPw(e.target.value);setPwOk(false);}}
+                        style={IS} autoComplete="new-password"/></div>
+                    <div><label style={LS}>Confirm New Password</label>
+                      <input type="password" value={newPw2} onChange={e=>{setNewPw2(e.target.value);setPwOk(false);}}
+                        style={IS} autoComplete="new-password"
+                        onKeyDown={e=>e.key==="Enter"&&handlePassword()}/></div>
+                    {pwErr&&<div style={{background:T.redBg,border:`1px solid ${T.redBorder}`,
+                      borderRadius:5,padding:"7px 10px",color:T.red,fontSize:13,...MONO}}>{pwErr}</div>}
+                    {pwOk&&<div style={{background:T.greenBg,border:`1px solid ${T.green}`,
+                      borderRadius:5,padding:"7px 10px",color:T.green,fontSize:13,...MONO}}>
+                      ✓ Password updated successfully</div>}
+                    <button onClick={handlePassword} disabled={!curPw||!newPw||!newPw2||pwSaving}
+                      style={{...MONO,width:"100%",padding:"9px 0",borderRadius:5,fontSize:14,
+                        cursor:(!curPw||!newPw||!newPw2||pwSaving)?"default":"pointer",fontWeight:700,
+                        background:(!curPw||!newPw||!newPw2||pwSaving)?T.bg:T.accentBg2,
+                        border:`1px solid ${(!curPw||!newPw||!newPw2||pwSaving)?T.border:T.accent}`,
+                        color:(!curPw||!newPw||!newPw2||pwSaving)?T.textFaint:T.accent,
+                        opacity:pwSaving?0.6:1}}>
+                      {pwSaving?"Saving…":"Change Password"}
+                    </button>
+                  </div>
+                )}
+
+                {/* Data sub-tab */}
+                {profileTab==="data"&&(
+                  <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                    <div style={{fontSize:13,color:T.textDim,...MONO,lineHeight:1.6}}>
+                      Download a zip archive of all your data: profile info, network configurations, and message logs.
+                    </div>
+                    <button onClick={handleExportData} disabled={dataExporting}
+                      style={{...MONO,width:"100%",padding:"9px 0",borderRadius:5,fontSize:14,
+                        cursor:dataExporting?"default":"pointer",fontWeight:700,
+                        background:dataExporting?T.bg:T.accentBg2,
+                        border:`1px solid ${dataExporting?T.border:T.accent}`,
+                        color:dataExporting?T.textFaint:T.accent,opacity:dataExporting?0.6:1}}>
+                      {dataExporting?"Exporting…":"⬇ Export My Data"}
+                    </button>
+                  </div>
+                )}
+
+                {/* Account sub-tab */}
+                {profileTab==="account"&&(
+                  <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                    <div style={{padding:12,borderRadius:6,background:T.redBg,border:`1px solid ${T.redBorder}`}}>
+                      <div style={{...MONO,fontWeight:700,fontSize:13,color:T.red,marginBottom:6}}>Delete Account</div>
+                      <div style={{fontSize:13,color:T.textDim,...MONO,lineHeight:1.6,marginBottom:10}}>
+                        This permanently deletes your account, all IRC network configs, and all message logs. This cannot be undone.
+                      </div>
+                      {!delConfirm ? (
+                        <button onClick={()=>setDelConfirm(true)}
+                          style={{...MONO,width:"100%",padding:"8px 0",borderRadius:5,fontSize:13,
+                            cursor:"pointer",fontWeight:700,
+                            background:"transparent",border:`1px solid ${T.redBorder}`,color:T.red}}>
+                          Delete My Account…
+                        </button>
+                      ) : (
+                        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                          <label style={LS}>Confirm your password</label>
+                          <input type="password" value={delPw} onChange={e=>{setDelPw(e.target.value);setDelErr("");}}
+                            style={IS} autoComplete="current-password"
+                            onKeyDown={e=>e.key==="Enter"&&handleDeleteAccount()}
+                            placeholder="Enter password to confirm"/>
+                          {delErr&&<div style={{background:T.redBg,border:`1px solid ${T.redBorder}`,
+                            borderRadius:5,padding:"7px 10px",color:T.red,fontSize:13,...MONO}}>{delErr}</div>}
+                          <div style={{display:"flex",gap:8}}>
+                            <button onClick={()=>{setDelConfirm(false);setDelPw("");setDelErr("");}}
+                              style={{...MONO,flex:1,padding:"8px 0",borderRadius:5,fontSize:13,cursor:"pointer",
+                                background:"transparent",border:`1px solid ${T.border}`,color:T.textDim}}>
+                              Cancel
+                            </button>
+                            <button onClick={handleDeleteAccount} disabled={!delPw||deleting}
+                              style={{...MONO,flex:1,padding:"8px 0",borderRadius:5,fontSize:13,fontWeight:700,
+                                cursor:(!delPw||deleting)?"default":"pointer",
+                                background:T.redBg,border:`1px solid ${T.redBorder}`,
+                                color:T.red,opacity:deleting?0.6:1}}>
+                              {deleting?"Deleting…":"Confirm Delete"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <button onClick={onLogout}
+                      style={{...MONO,width:"100%",padding:"8px 0",borderRadius:5,fontSize:13,
+                        cursor:"pointer",fontWeight:700,
+                        background:"transparent",border:`1px solid ${T.border}`,color:T.textDim}}
+                      onMouseEnter={e=>{e.currentTarget.style.borderColor=T.red;e.currentTarget.style.color=T.red;}}
+                      onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.color=T.textDim;}}>
+                      ⏏ Sign Out
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Themes tab ── */}
+          {tab==="themes"&&(
+            <div style={{flex:1,overflowY:"auto",padding:"24px 28px"}}>
+              <div style={{marginBottom:16}}>
+                <div style={{fontSize:15,fontWeight:700,color:T.textBright,marginBottom:4}}>Choose Theme</div>
+                <div style={{fontSize:13,color:T.textFaint}}>Select a color scheme for KoreChat</div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
+                {Object.values(THEMES).map(t => {
+                  const P = {
+                    dark:       { bg:"#080f1e", bgSide:"#090e1c", bgPanel:"#0d1629", border:"#1e2d4a", text:"#c8d8f0", textDim:"#7a9cc0", accent:"#7eb8f7", green:"#7ef7d0", amber:"#f7d07e", red:"#f7a07e", nick1:"#7eb8f7", nick2:"#7ef7d0", nick3:"#f7a07e" },
+                    light:      { bg:"#f0f4fa", bgSide:"#e4ecf7", bgPanel:"#ffffff", border:"#d0daea", text:"#1a2740", textDim:"#4a6080", accent:"#2563eb", green:"#059669", amber:"#d97706", red:"#dc2626", nick1:"#2563eb", nick2:"#059669", nick3:"#dc2626" },
+                    newmorning: { bg:"#303e4a", bgSide:"#28333d", bgPanel:"#242a33", border:"#28333d", text:"#f3f3f3", textDim:"#b7c5d1", accent:"#77abd9", green:"#97ea70", amber:"#f39c12", red:"#f92772", nick1:"#77abd9", nick2:"#97ea70", nick3:"#f39c12" },
+                    solarized:  { bg:"#002b36", bgSide:"#073642", bgPanel:"#073642", border:"#586e7520", text:"#839496", textDim:"#657b83", accent:"#268bd2", green:"#859900", amber:"#b58900", red:"#dc322f", nick1:"#268bd2", nick2:"#859900", nick3:"#b58900" },
+                    dracula:    { bg:"#282a36", bgSide:"#21222c", bgPanel:"#1e1f29", border:"#44475a40", text:"#f8f8f2", textDim:"#6272a4", accent:"#bd93f9", green:"#50fa7b", amber:"#ffb86c", red:"#ff5555", nick1:"#bd93f9", nick2:"#50fa7b", nick3:"#ff5555" },
+                  }[t.name] || { bg:"#080f1e", bgSide:"#090e1c", bgPanel:"#0d1629", border:"#1e2d4a", text:"#c8d8f0", textDim:"#7a9cc0", accent:"#7eb8f7", green:"#7ef7d0", amber:"#f7d07e", red:"#f7a07e", nick1:"#7eb8f7", nick2:"#7ef7d0", nick3:"#f7a07e" };
+                  const active = theme === t.name;
+                  return (
+                    <div key={t.name} onClick={()=>onSelectTheme?.(t.name)}
+                      style={{borderRadius:8,overflow:"hidden",cursor:"pointer",
+                        border:`2px solid ${active ? T.accent : T.borderFaint}`,
+                        boxShadow: active ? `0 0 0 1px ${T.accent}40` : "none",
+                        transition:"border-color 0.15s,box-shadow 0.15s"}}
+                      onMouseEnter={e=>{ if(!active) e.currentTarget.style.borderColor=T.borderMid; }}
+                      onMouseLeave={e=>{ e.currentTarget.style.borderColor=active?T.accent:T.borderFaint; }}>
+
+                      {/* Mini IRC preview */}
+                      <div style={{display:"flex",height:110,background:P.bg,fontSize:11,fontFamily:"'Inter var','Inter',sans-serif"}}>
+                        <div style={{width:88,background:P.bgSide,borderRight:`1px solid ${P.border}`,padding:"6px 0",flexShrink:0}}>
+                          <div style={{padding:"2px 8px",fontSize:10,color:P.textDim,marginBottom:3,letterSpacing:"0.08em"}}>NETWORKS</div>
+                          <div style={{padding:"3px 8px",background:P.accent+"22",borderLeft:`2px solid ${P.accent}`,color:P.accent,fontSize:10}}>● Ameth</div>
+                          <div style={{padding:"3px 8px",color:P.textDim,fontSize:10,marginTop:1}}>○ Libera</div>
+                          <div style={{padding:"2px 8px",fontSize:10,color:P.textDim,marginTop:4,letterSpacing:"0.08em"}}>CHANNELS</div>
+                          <div style={{padding:"3px 8px",background:P.accent+"15",color:P.text,fontSize:10}}># general</div>
+                          <div style={{padding:"3px 8px",color:P.textDim,fontSize:10}}># random</div>
+                        </div>
+                        <div style={{flex:1,padding:"6px 8px",display:"flex",flexDirection:"column",gap:4,overflow:"hidden"}}>
+                          <div style={{display:"flex",gap:4,alignItems:"baseline"}}>
+                            <span style={{color:P.textDim,fontSize:9}}>12:34</span>
+                            <span style={{color:P.nick1,fontWeight:600,fontSize:10}}>eerok</span>
+                            <span style={{color:P.text,fontSize:10,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>hey, this theme looks great</span>
+                          </div>
+                          <div style={{display:"flex",gap:4,alignItems:"baseline"}}>
+                            <span style={{color:P.textDim,fontSize:9}}>12:35</span>
+                            <span style={{color:P.nick2,fontWeight:600,fontSize:10}}>alice</span>
+                            <span style={{color:P.text,fontSize:10}}>agreed! very clean 👍</span>
+                          </div>
+                          <div style={{display:"flex",gap:4,alignItems:"baseline"}}>
+                            <span style={{color:P.textDim,fontSize:9}}>12:35</span>
+                            <span style={{color:P.nick3,fontWeight:600,fontSize:10}}>bob</span>
+                            <span style={{color:P.text,fontSize:10,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>the colors work perfectly</span>
+                          </div>
+                          <div style={{marginTop:"auto",background:P.bgPanel,borderRadius:4,
+                            border:`1px solid ${P.border}`,padding:"2px 6px",
+                            color:P.textDim,fontSize:10}}>
+                            Message #general...
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Label row */}
+                      <div style={{background:T.bgPanel,padding:"8px 10px",
+                        display:"flex",alignItems:"center",justifyContent:"space-between",
+                        borderTop:`1px solid ${T.borderFaint}`}}>
+                        <span style={{fontSize:13,fontWeight:active?700:500,
+                          color:active?T.accent:T.text,fontFamily:"'Inter',sans-serif"}}>
+                          {t.label}
+                        </span>
+                        {active
+                          ? <span style={{fontSize:11,color:T.accent,fontWeight:600}}>✓ Active</span>
+                          : <span style={{fontSize:11,color:T.textFaint}}>Click to apply</span>
+                        }
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* ── Browse tab ── */}
           {tab==="browse"&&(
@@ -3281,8 +3622,8 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
   const [dragOverNetId, setDragOverNetId] = useState(null);
   const [userMenu,     setUserMenu]     = useState(null); // {nick, pfx, x, y, chan, netId}
   const [ignoredNicks, setIgnoredNicks] = useState(new Set()); // client-side ignore list
-  const [showProfile,  setShowProfile]  = useState(false);
   const [showLogs,     setShowLogs]     = useState(false);
+  const [settingsInitTab, setSettingsInitTab] = useState("browse");
 
   const [ctxMenu, setCtxMenu] = useState(null);     // {x,y,net} network right-click
 const [chanCtxMenu, setChanCtxMenu] = useState(null); // {x,y,netId,chan,left} channel right-click
@@ -4695,25 +5036,18 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         />
       )}
 
-      {showProfile&&(
-        <ProfileModal
-          currentUser={me}
-          onClose={()=>setShowProfile(false)}
-          onUpdated={updated=>{
-            setMe(updated);
-            // Bust avatar cache so sidebar and chat update immediately
-            delete _avatarCache[updated.username];
-            setShowProfile(false);
-          }}
-          onLogout={onLogout}
-        />
-      )}
-
       {showLogs&&(
         <UserSettingsModal onClose={()=>setShowLogs(false)}
           notifPerms={notifPerms} setNotifPerms={setNotifPerms}
           notifPrefs={notifPrefs} saveNotifPrefs={saveNotifPrefs}
-          compactMode={compactMode} setCompactMode={setCompactMode} />
+          compactMode={compactMode} setCompactMode={setCompactMode}
+          currentUser={me}
+          onUpdated={updated=>{ setMe(updated); delete _avatarCache[updated.username]; }}
+          onLogout={onLogout}
+          theme={theme}
+          onSelectTheme={appSetTheme}
+          initialTab={settingsInitTab}
+        />
       )}
 
       {showAddNet&&(
@@ -4941,7 +5275,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             boxShadow:"4px 0 24px #00000060"}:{}),
         }}>
 
-        {/* Logo + theme toggle + mobile close */}
+        {/* Logo + unread filter + mobile close */}
         <div style={{padding:"13px 14px 10px",borderBottom:`1px solid ${T.border}`,flexShrink:0,
           display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div>
@@ -4950,31 +5284,28 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
               <div style={{width:22,height:22,borderRadius:6,background:"linear-gradient(135deg,#7eb8f7,#7ef7d0)",
                 display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,color:"#0a1628"}}>K</div>
               KoreChat
+              <button title={unreadOnly?"Show all channels":"Show unread only"}
+                onClick={()=>setUnreadOnly(v=>!v)}
+                style={{background:unreadOnly?T.accentBg:"transparent",border:`1px solid ${unreadOnly?T.accentDim:T.border}`,
+                  borderRadius:5,color:unreadOnly?T.accent:T.textDim,fontSize:12,cursor:"pointer",
+                  padding:"2px 7px",lineHeight:1,fontFamily:"'Inter var','Inter',sans-serif",
+                  fontWeight:unreadOnly?700:400,flexShrink:0,transition:"all 0.15s"}}
+                onMouseEnter={e=>{if(!unreadOnly)e.currentTarget.style.borderColor=T.accent;}}
+                onMouseLeave={e=>{if(!unreadOnly)e.currentTarget.style.borderColor=T.border;}}>
+                ● unread
+              </button>
             </div>
             <div style={{fontSize:10,color:T.textGhost,marginTop:2,paddingLeft:30,
               fontFamily:"'Inter var','Inter',sans-serif",letterSpacing:"0.06em"}}>IRCv3</div>
           </div>
-          <div style={{display:"flex",gap:6,alignItems:"center"}}>
-            <button title={unreadOnly?"Show all channels":"Show unread only"}
-              onClick={()=>setUnreadOnly(v=>!v)}
-              style={{background:unreadOnly?T.accentBg:"transparent",border:`1px solid ${unreadOnly?T.accentDim:T.border}`,
-                borderRadius:5,color:unreadOnly?T.accent:T.textDim,fontSize:13,cursor:"pointer",
-                padding:"3px 7px",lineHeight:1,fontFamily:"'Inter var','Inter',sans-serif",
-                fontWeight:unreadOnly?700:400,flexShrink:0,transition:"all 0.15s"}}
-              onMouseEnter={e=>{if(!unreadOnly)e.currentTarget.style.borderColor=T.accent;}}
-              onMouseLeave={e=>{if(!unreadOnly)e.currentTarget.style.borderColor=T.border;}}>
-              ● unread
+          {/* Mobile close button */}
+          {isMobile&&(
+            <button onClick={()=>setSidebarOpen(false)}
+              style={{background:"transparent",border:"none",color:T.textDim,
+                fontSize:21,cursor:"pointer",padding:"2px 4px",lineHeight:1}}>
+              ✕
             </button>
-            <ThemePicker T={T} theme={theme} onSelect={appSetTheme} />
-            {/* Mobile close button */}
-            {isMobile&&(
-              <button onClick={()=>setSidebarOpen(false)}
-                style={{background:"transparent",border:"none",color:T.textDim,
-                  fontSize:21,cursor:"pointer",padding:"2px 4px",lineHeight:1}}>
-                ✕
-              </button>
-            )}
-          </div>
+          )}
         </div>
 
         {/* Add network button */}
@@ -5371,11 +5702,11 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         {/* User footer */}
         <div style={{padding:"9px 12px",borderTop:`1px solid ${T.borderFaint}`,flexShrink:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:me?.role==="admin"?7:0}}>
-            <div style={{cursor:"pointer",flexShrink:0}} onClick={()=>setShowProfile(true)}
+            <div style={{cursor:"pointer",flexShrink:0}} onClick={()=>{ setSettingsInitTab("profile"); setShowLogs(true); }}
               title="Edit profile">
               <Avatar nick={me?.username||"?"} size={28}/>
             </div>
-            <div style={{flex:1,overflow:"hidden",cursor:"pointer"}} onClick={()=>setShowProfile(true)}>
+            <div style={{flex:1,overflow:"hidden",cursor:"pointer"}} onClick={()=>{ setSettingsInitTab("profile"); setShowLogs(true); }}>
               <div style={{...MONO,fontSize:14,fontWeight:600,color:T.text,
                 overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                 {me?.display_name||me?.username||""}
@@ -5402,7 +5733,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
               ⚙ Admin Panel
             </button>
           )}
-          <button onClick={()=>setShowLogs(true)}
+          <button onClick={()=>{ setSettingsInitTab("browse"); setShowLogs(true); }}
             style={{...MONO,width:"100%",background:"transparent",
               border:`1px solid ${T.borderFaint}`,marginTop:me?.role==="admin"?5:0,
               borderRadius:5,color:T.textFaint,fontSize:12,padding:"5px 8px",cursor:"pointer",
