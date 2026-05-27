@@ -3790,8 +3790,13 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
 
     // Find the oldest timestamp already in state for this channel so we only
     // ask the log for entries that pre-date what the ring buffer gave us.
+    // Only consider actual chat messages (type "message") — system events
+    // (type "system", e.g. membership summaries from CHATHISTORY batches)
+    // can have old historical timestamps that would incorrectly push the
+    // cutoff far into the past and cause recent messages to be skipped.
     const existingMsgs = messagesRef.current[key] || [];
     const validTimes = existingMsgs
+      .filter(m => m.type === "message")
       .map(m => (m.time ? new Date(m.time).getTime() : 0))
       .filter(t => t > 0);
     const oldestExisting = validTimes.length ? Math.min(...validTimes) : null;
@@ -3810,11 +3815,28 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
 
     const clearLoading = () => setLoadingChans(prev => { const n={...prev}; delete n[key]; return n; });
 
-    const toLogMsg = e => {
-      const MEMBERSHIP_TYPES = new Set(["JOIN","PART","QUIT","KICK","MODE"]);
+    // Main history converter — only PRIVMSG/NOTICE; skip membership events
+    // (JOIN/PART/QUIT/KICK/MODE).  Returning null lets .filter(Boolean) drop
+    // them so they never appear in the historical backfill fetch.
+    const toMsgLog = e => {
+      if (e.type !== "PRIVMSG" && e.type !== "NOTICE") return null;
       return {
-        type:    MEMBERSHIP_TYPES.has(e.type) ? "system" : "message",
-        subtype: MEMBERSHIP_TYPES.has(e.type) ? "membership" : undefined,
+        type:   "message",
+        nick:   e.nick,
+        text:   e.text,
+        time:   e.timestamp,
+        id:     `log-${e.id}`,
+      };
+    };
+
+    // Membership converter — only JOIN/PART/QUIT/KICK/MODE; used for the
+    // separate ring-buffer-window fetch that restores membership context.
+    const toMembershipMsg = e => {
+      const MEMBERSHIP_TYPES = new Set(["JOIN","PART","QUIT","KICK","MODE"]);
+      if (!MEMBERSHIP_TYPES.has(e.type)) return null;
+      return {
+        type:    "system",
+        subtype: "membership",
         nick:    e.nick,
         text:    e.text,
         time:    e.timestamp,
@@ -3827,7 +3849,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       .then(data => {
         clearLoading();
         if (!data?.entries?.length) return;
-        const msgs = data.entries.map(toLogMsg);
+        const msgs = data.entries.map(toMsgLog).filter(Boolean);
         ensureChan(netId, chan);
         dispatch({ type:"PREPEND_MSGS", netId, chan, msgs });
 
@@ -3867,8 +3889,8 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         .then(r => (r.ok ? r.json() : null))
         .then(data => {
           if (!data?.entries?.length) return;
-          const msgs = data.entries.map(toLogMsg);
-          dispatch({ type:"PREPEND_MSGS", netId, chan, msgs });
+          const msgs = data.entries.map(toMembershipMsg).filter(Boolean);
+          if (msgs.length) dispatch({ type:"PREPEND_MSGS", netId, chan, msgs });
         })
         .catch(() => {});
     }
@@ -3973,6 +3995,12 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         break;
 
       case "NICK": {
+        // Skip NICK lines that arrived inside a CHATHISTORY batch — they are
+        // historical events, not live changes.
+        if (tags.batch) {
+          const b = batchBufRef.current[netId+"::"+tags.batch];
+          if (b?.type === "chathistory" || b?.type === "draft/chathistory") break;
+        }
         const newNick = params[0];
         if (from===me) dispatch({ type:"SET_NICK", netId, nick:newNick });
         Object.keys(chans).filter(k=>k.startsWith(netId+"::")).forEach(k=>{
@@ -3988,6 +4016,12 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       }
 
       case "JOIN": {
+        // Skip JOIN lines that arrived inside a CHATHISTORY batch — they are
+        // historical events; processing them as live would corrupt member list.
+        if (tags.batch) {
+          const b = batchBufRef.current[netId+"::"+tags.batch];
+          if (b?.type === "chathistory" || b?.type === "draft/chathistory") break;
+        }
         const chan=(params[0]||"").replace(/^:/,"");
         if (!chan) break;
         dispatch({ type:"CHAN_JOIN", netId, chan });
@@ -4010,6 +4044,11 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       }
 
       case "PART": {
+        // Skip PART lines that arrived inside a CHATHISTORY batch.
+        if (tags.batch) {
+          const b = batchBufRef.current[netId+"::"+tags.batch];
+          if (b?.type === "chathistory" || b?.type === "draft/chathistory") break;
+        }
         const chan=params[0]; if (!chan) break;
         if (from===me) dispatch({ type:"CHAN_PART", netId, chan });
         else { dispatch({ type:"DEL_MEMBER", netId, chan, nick:from }); sys(chan, `← ${from} left${params[1]?": "+params[1]:""}`, "membership"); }
@@ -4017,6 +4056,11 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       }
 
       case "KICK": {
+        // Skip KICK lines that arrived inside a CHATHISTORY batch.
+        if (tags.batch) {
+          const b = batchBufRef.current[netId+"::"+tags.batch];
+          if (b?.type === "chathistory" || b?.type === "draft/chathistory") break;
+        }
         const [chan,target,,reason=""] = params;
         dispatch({ type:"DEL_MEMBER", netId, chan, nick:target });
         sys(chan, `✕ ${target} was kicked by ${from}${reason?": "+reason:""}`, "membership");
@@ -4025,6 +4069,11 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       }
 
       case "QUIT": {
+        // Skip QUIT lines that arrived inside a CHATHISTORY batch.
+        if (tags.batch) {
+          const b = batchBufRef.current[netId+"::"+tags.batch];
+          if (b?.type === "chathistory" || b?.type === "draft/chathistory") break;
+        }
         const reason=params[0]||"";
         Object.keys(chans).filter(k=>k.startsWith(netId+"::")).forEach(k=>{
           const chan=k.split("::")[1];
@@ -4065,10 +4114,16 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
 
       case "332": { const chan=params[1]; if (chan) dispatch({ type:"SET_TOPIC", netId, chan, topic:params[2]||"" }); break; }
       case "331": { const chan=params[1]; if (chan) dispatch({ type:"SET_TOPIC", netId, chan, topic:"" }); break; }
-      case "TOPIC":
+      case "TOPIC": {
+        // Skip TOPIC lines that arrived inside a CHATHISTORY batch.
+        if (tags.batch) {
+          const b = batchBufRef.current[netId+"::"+tags.batch];
+          if (b?.type === "chathistory" || b?.type === "draft/chathistory") break;
+        }
         dispatch({ type:"SET_TOPIC", netId, chan:params[0], topic:params[1]||"" });
         sys(params[0], `${from} set topic: ${params[1]||""}`);
         break;
+      }
 
       case "PRIVMSG":
       case "NOTICE": {
@@ -4296,6 +4351,12 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
       case "322": ensureChan(netId,STATUS_CHAN); sys(STATUS_CHAN,`  ${params[1]}  (${params[2]} users)  ${params[3]||""}`); break;
       case "323": sys(STATUS_CHAN,"End of /LIST"); break;
       case "MODE": {
+        // Skip MODE lines that arrived inside a CHATHISTORY batch — historical
+        // mode changes should not mutate the current member prefix state.
+        if (tags.batch) {
+          const b = batchBufRef.current[netId+"::"+tags.batch];
+          if (b?.type === "chathistory" || b?.type === "draft/chathistory") break;
+        }
         const target=params[0], modeStr=params.slice(1).join(" ");
         if (target?.startsWith("#")) {
           sys(target,`${from} sets mode ${modeStr}`,"membership");

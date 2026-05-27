@@ -225,6 +225,26 @@ func (s *DB) migrate() error {
 		return fmt.Errorf("migrate v13 (message_logs_dedup): %w", err)
 	}
 
+	// v14: widen dedup index to include type + left(text,200) so that
+	// multiple distinct messages from the same nick in the same second are
+	// not incorrectly collapsed.  The v13 index only keyed on timestamp,
+	// which caused three PRIVMSG lines sent within the same second to be
+	// deduped to one row.  Drop the old index, dedup existing rows under the
+	// new wider key, then recreate.
+	if _, err := s.db.Exec(`
+		DELETE FROM message_logs
+		WHERE id NOT IN (
+			SELECT MIN(id)
+			FROM message_logs
+			GROUP BY user_id, network_id, lower(channel), nick, timestamp, type, left(text, 200)
+		);
+		DROP INDEX IF EXISTS message_logs_dedup;
+		CREATE UNIQUE INDEX IF NOT EXISTS message_logs_dedup
+		  ON message_logs(user_id, network_id, lower(channel), nick, timestamp, type, left(text, 200))
+	`); err != nil {
+		return fmt.Errorf("migrate v14 (message_logs_dedup_v2): %w", err)
+	}
+
 	log.Printf("store: migrations OK")
 	return nil
 }
