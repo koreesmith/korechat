@@ -117,7 +117,7 @@ func (l *Logger) Log(userID, networkID, networkName, rawLine string) {
 		INSERT INTO message_logs
 		  (user_id, network_id, network_name, channel, nick, type, text, timestamp)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-		ON CONFLICT (user_id, network_id, lower(channel), nick, timestamp) DO NOTHING`,
+		ON CONFLICT (user_id, network_id, lower(channel), nick, timestamp, type, left(text, 200)) DO NOTHING`,
 		e.UserID, e.NetworkID, e.NetworkName,
 		e.Channel, e.Nick, e.Type, e.Text, e.Timestamp,
 	); err != nil {

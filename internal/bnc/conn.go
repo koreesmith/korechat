@@ -697,7 +697,14 @@ func (c *Conn) readLoop(tc net.Conn) {
 		// them. The INSERT uses ON CONFLICT DO NOTHING so already-logged
 		// messages from normal live traffic are silently skipped.
 		if c.logFn != nil && c.net.UserID != "" {
-			c.logFn(c.net.UserID, c.net.ID, c.net.Name, line)
+			// Inside a CHATHISTORY batch only log PRIVMSG/NOTICE — UnrealIRCd
+			// stores all event types (JOIN/PART/QUIT/MODE) in its history and
+			// we don't want those cluttering the Postgres log or corrupting the
+			// unique-dedup key.  Live-traffic events (outside a batch) are
+			// always logged regardless of type.
+			if !inHistoryBatch || isChatHistoryText(line) {
+				c.logFn(c.net.UserID, c.net.ID, c.net.Name, line)
+			}
 		}
 	}
 
@@ -1374,6 +1381,31 @@ func isMembershipReplayLine(line string) bool {
 		return true
 	}
 	return false
+}
+
+// isChatHistoryText returns true for PRIVMSG and NOTICE lines. Used to
+// decide whether a line inside a CHATHISTORY batch should be persisted —
+// only actual message content should be logged; membership events (JOIN,
+// PART, QUIT, KICK, MODE) should be ignored when they come from history.
+func isChatHistoryText(line string) bool {
+	// Strip IRCv3 message tags (always present when inside a BATCH)
+	if strings.HasPrefix(line, "@") {
+		sp := strings.Index(line, " ")
+		if sp < 0 {
+			return false
+		}
+		line = line[sp+1:]
+	}
+	parts := strings.SplitN(line, " ", 4)
+	idx := 0
+	if len(parts) > 0 && strings.HasPrefix(parts[0], ":") {
+		idx = 1
+	}
+	if idx >= len(parts) {
+		return false
+	}
+	cmd := strings.ToUpper(parts[idx])
+	return cmd == "PRIVMSG" || cmd == "NOTICE"
 }
 
 // isDuplicateNick returns true if this NICK event is a duplicate of one
