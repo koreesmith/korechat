@@ -3870,21 +3870,25 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
 
     // JOIN/QUIT/PART/KICK/MODE events are filtered from BNC ring buffer replay
     // (no accurate timestamp at replay time) but are persisted in the log DB.
-    // Fetch them separately for the ring buffer time window so they appear in
-    // the channel view at their correct logged timestamps.
-    if (oldestExisting !== null) {
-      // Use oldestExisting - 1ms so the since param (which adds 1ms) lands
-      // exactly at oldestExisting, returning events from that point forward.
-      const sinceTs = new Date(oldestExisting - 1).toISOString();
+    // Fetch them for the relevant window so they appear in the channel view at
+    // their correct logged timestamps.  Always run this fetch:
+    //  • If we have messages, fetch from oldestExisting so events interleave
+    //    correctly with the chat history.
+    //  • If the ring buffer was empty (inactive channel), fall back to the
+    //    last 24 hours so recent joins/parts are still visible.
+    if (isChannel) {
+      const fallbackSince = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const sinceTs = oldestExisting !== null
+        ? new Date(oldestExisting - 1).toISOString()  // -1ms so boundary is inclusive
+        : fallbackSince;
       const mParams = new URLSearchParams({
         network_id: netId,
         membership_only: "true",
         since: sinceTs,
         order: "asc",
         limit: "500",
+        channel: chan,
       });
-      if (isChannel) mParams.set("channel", chan);
-      else if (isDM)  mParams.set("nick", chan);
       fetch(`/api/v1/logs?${mParams}`, { credentials:"include" })
         .then(r => (r.ok ? r.json() : null))
         .then(data => {
