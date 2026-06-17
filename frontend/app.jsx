@@ -4206,6 +4206,13 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             }, 500);
             break;
           }
+          // channels:<#chan1> [<#chan2> ...] — pre-announce all joined channels so
+          // they appear immediately on subscribe, before any replay messages arrive.
+          // Without this, quiet channels (no ring-buffer messages) are invisible.
+          if (text.startsWith("channels:")) {
+            text.slice(9).trim().split(/\s+/).filter(Boolean).forEach(chan => ensureChan(netId, chan));
+            break;
+          }
           // Reconnect notices: suppress "Reconnecting in 5s… (attempt 1)" to avoid
           // alarming the user on brief hiccups. Show from attempt 2 onwards.
           if (text.startsWith("Reconnecting in ")) {
