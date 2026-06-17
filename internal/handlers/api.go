@@ -310,6 +310,7 @@ func (a *API) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		SidebarNetworkOrder string `json:"sidebar_network_order"`
 		SidebarStarred      string `json:"sidebar_starred"`
 		SidebarMuted        string `json:"sidebar_muted"`
+		SidebarIgnored      string `json:"sidebar_ignored"`
 		DefaultChannels     string `json:"default_channels"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -347,6 +348,10 @@ func (a *API) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 	if body.SidebarMuted != "" {
 		patch.SidebarMuted = body.SidebarMuted
+	}
+
+	if body.SidebarIgnored != "" {
+		patch.SidebarIgnored = body.SidebarIgnored
 	}
 
 	if body.DefaultChannels != "" {

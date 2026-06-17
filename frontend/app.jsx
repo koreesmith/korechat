@@ -689,13 +689,15 @@ function reducer(s, a) {
       // Deduplicate by msgid — prevents server history replay from re-adding
       // messages already in our ring buffer or already shown this session
       if (a.msg.id && s.seenMsgIds[a.msg.id]) return s;
-      // Content fingerprint dedup — catches echo-message reflections where the
-      // server assigns a new msgid to a PRIVMSG we already added optimistically.
-      // Only checks the 30 most-recent messages (echo arrives within ms).
+      // Content fingerprint dedup — catches echo-message reflections and duplicate
+      // ring-buffer replays on servers without msgid (e.g. Undernet).
+      // During replay check all existing messages; outside replay only last 30
+      // (echo-message arrives within ms so a narrow window is fine and fast).
       const existing=s.messages[k]||[];
       if (existing.length) {
         const fp=`${a.msg.nick}|${a.msg.time?new Date(a.msg.time).toISOString().slice(0,16):""}|${(a.msg.text||"").slice(0,40)}`;
-        const recent=existing.length>30?existing.slice(-30):existing;
+        const isReplayingNow=s.replaying.has(a.netId);
+        const recent=isReplayingNow?existing:existing.length>30?existing.slice(-30):existing;
         if (recent.some(m=>{
           const t=m.time?new Date(m.time).toISOString().slice(0,16):"";
           return `${m.nick}|${t}|${(m.text||"").slice(0,40)}`===fp;
@@ -3621,7 +3623,22 @@ function KoreChat({ currentUser: _currentUser, onLogout, onAdmin, appTheme, appT
   const [draggingNetId, setDraggingNetId] = useState(null);
   const [dragOverNetId, setDragOverNetId] = useState(null);
   const [userMenu,     setUserMenu]     = useState(null); // {nick, pfx, x, y, chan, netId}
-  const [ignoredNicks, setIgnoredNicks] = useState(new Set()); // client-side ignore list
+  const [ignoredNicks, setIgnoredNicks] = useState(() => {
+    try { return new Set(JSON.parse(_currentUser?.sidebar_ignored || "[]")); } catch { return new Set(); }
+  }); // client-side ignore list — persisted to user profile
+  const _ignoredMounted = React.useRef(false);
+  React.useEffect(() => {
+    if (!_ignoredMounted.current) { _ignoredMounted.current = true; return; }
+    const t = setTimeout(() => {
+      fetch("/api/v1/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sidebar_ignored: JSON.stringify([...ignoredNicks]) }),
+        credentials: "include",
+      }).catch(() => {});
+    }, 800);
+    return () => clearTimeout(t);
+  }, [ignoredNicks]);
   const [showLogs,     setShowLogs]     = useState(false);
   const [settingsInitTab, setSettingsInitTab] = useState("browse");
 
@@ -3705,6 +3722,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
   const namesBufRef  = useRef({});  // netId+chan → {nick: prefix} accumulator for 353/366
   const motdBufRef   = useRef({});  // netId → string[] accumulator for 375/372 → 376 grouping
   const whoisBufRef  = useRef({});  // netId → {nick, lines[]} accumulator for WHOIS response grouping
+  const monitorUnsupportedRef = useRef({});  // netId → true if server returned 421 for MONITOR
   const bottomRef    = useRef(null);
   const msgsRef      = useRef(null);
 
@@ -3742,7 +3760,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
     dispatch({ type:"CHAN_JOIN", netId, chan });
     if (chan !== STATUS_CHAN && !chan.startsWith("#")) {
       const conn = connections.current[netId];
-      if (conn?.ready) conn.send(`MONITOR + ${chan}`);
+      if (conn?.ready && !monitorUnsupportedRef.current[netId]) conn.send(`MONITOR + ${chan}`);
     }
   }, []);
 
@@ -3968,7 +3986,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
             .filter(k=>k.startsWith(netId+"::"))
             .map(k=>k.split("::")[1])
             .filter(n=>n!==STATUS_CHAN&&!n.startsWith("#"));
-          if (existingDMs.length) {
+          if (existingDMs.length && !monitorUnsupportedRef.current[netId]) {
             const conn=connections.current[netId];
             if (conn?.ready) conn.send(`MONITOR + ${existingDMs.join(",")}`);
           }
@@ -4412,6 +4430,19 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
         break;
       }
       case "732": case "733": break; // MONITOR list / list-full — ignore
+      case "421": {
+        // Unknown command — suppress 421 for MONITOR (server doesn't support it)
+        // and disable MONITOR for this network so we stop sending it.
+        const unknownCmd = params.length > 2 ? params[params.length - 2].toUpperCase() : "";
+        if (unknownCmd === "MONITOR") {
+          monitorUnsupportedRef.current[netId] = true;
+          break;
+        }
+        // All other 421s — show in status channel
+        const text421 = params[params.length - 1] || "";
+        if (text421 && text421 !== me) { ensureChan(netId, STATUS_CHAN); sys(STATUS_CHAN, text421); }
+        break;
+      }
       case "ERROR":
         dispatch({ type:"NET_STATUS", id:netId, status:"error", msg:params[0]||"" });
         ensureChan(netId,STATUS_CHAN); sys(STATUS_CHAN,`ERROR: ${params[0]||""}`);
@@ -5296,7 +5327,7 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
               setDmCtxMenu(null);
             }}/>
             <CtxItem icon="🗑" label="Close" color={T.textDim} onClick={()=>{
-              connections.current[dmCtxMenu.netId]?.send(`MONITOR - ${dmCtxMenu.nick}`);
+              if (!monitorUnsupportedRef.current[dmCtxMenu.netId]) connections.current[dmCtxMenu.netId]?.send(`MONITOR - ${dmCtxMenu.nick}`);
               dispatch({type:"CHAN_PART_REMOVE",netId:dmCtxMenu.netId,chan:dmCtxMenu.nick});
               setDmCtxMenu(null);
             }}/>

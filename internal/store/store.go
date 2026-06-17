@@ -245,6 +245,13 @@ func (s *DB) migrate() error {
 		return fmt.Errorf("migrate v14 (message_logs_dedup_v2): %w", err)
 	}
 
+	// v15: per-user ignored nicks list (idempotent)
+	if _, err := s.db.Exec(
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS sidebar_ignored TEXT NOT NULL DEFAULT '[]'`,
+	); err != nil {
+		return fmt.Errorf("migrate v15 (sidebar_ignored): %w", err)
+	}
+
 	log.Printf("store: migrations OK")
 	return nil
 }
@@ -290,7 +297,7 @@ func (s *DB) CreateUser(u *users.User) (*users.User, error) {
 // GetUserByID fetches a user by primary key.
 func (s *DB) GetUserByID(id string) (*users.User, error) {
 	return s.scanUser(s.db.QueryRow(
-		`SELECT id, username, password_hash, display_name, avatar_url, theme, sidebar_collapsed, sidebar_network_order, sidebar_starred, sidebar_muted, default_channels, role, created_at, updated_at
+		`SELECT id, username, password_hash, display_name, avatar_url, theme, sidebar_collapsed, sidebar_network_order, sidebar_starred, sidebar_muted, sidebar_ignored, default_channels, role, created_at, updated_at
 		 FROM users WHERE id = $1`, id,
 	))
 }
@@ -298,7 +305,7 @@ func (s *DB) GetUserByID(id string) (*users.User, error) {
 // GetUserByUsername fetches a user by username (case-insensitive).
 func (s *DB) GetUserByUsername(username string) (*users.User, error) {
 	return s.scanUser(s.db.QueryRow(
-		`SELECT id, username, password_hash, display_name, avatar_url, theme, sidebar_collapsed, sidebar_network_order, sidebar_starred, sidebar_muted, default_channels, role, created_at, updated_at
+		`SELECT id, username, password_hash, display_name, avatar_url, theme, sidebar_collapsed, sidebar_network_order, sidebar_starred, sidebar_muted, sidebar_ignored, default_channels, role, created_at, updated_at
 		 FROM users WHERE LOWER(username) = LOWER($1)`, username,
 	))
 }
@@ -318,7 +325,7 @@ func (s *DB) GetUserByIRCNick(ircNick string) (*users.User, error) {
 // ListUsers returns all users, ordered by created_at.
 func (s *DB) ListUsers() ([]*users.User, error) {
 	rows, err := s.db.Query(
-		`SELECT id, username, password_hash, display_name, avatar_url, theme, sidebar_collapsed, sidebar_network_order, sidebar_starred, sidebar_muted, default_channels, role, created_at, updated_at
+		`SELECT id, username, password_hash, display_name, avatar_url, theme, sidebar_collapsed, sidebar_network_order, sidebar_starred, sidebar_muted, sidebar_ignored, default_channels, role, created_at, updated_at
 		 FROM users ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -367,13 +374,16 @@ func (s *DB) UpdateUser(id string, patch *users.User) (*users.User, error) {
 	if patch.SidebarMuted != "" {
 		u.SidebarMuted = patch.SidebarMuted
 	}
+	if patch.SidebarIgnored != "" {
+		u.SidebarIgnored = patch.SidebarIgnored
+	}
 	if patch.DefaultChannels != "" {
 		u.DefaultChannels = patch.DefaultChannels
 	}
 	u.UpdatedAt = time.Now()
 	_, err = s.db.Exec(
-		`UPDATE users SET display_name=$1, role=$2, password_hash=$3, theme=$4, sidebar_collapsed=$5, sidebar_network_order=$6, sidebar_starred=$7, sidebar_muted=$8, default_channels=$9, updated_at=$10 WHERE id=$11`,
-		u.DisplayName, u.Role, u.PasswordHash, u.Theme, u.SidebarCollapsed, u.SidebarNetworkOrder, u.SidebarStarred, u.SidebarMuted, u.DefaultChannels, u.UpdatedAt, u.ID,
+		`UPDATE users SET display_name=$1, role=$2, password_hash=$3, theme=$4, sidebar_collapsed=$5, sidebar_network_order=$6, sidebar_starred=$7, sidebar_muted=$8, sidebar_ignored=$9, default_channels=$10, updated_at=$11 WHERE id=$12`,
+		u.DisplayName, u.Role, u.PasswordHash, u.Theme, u.SidebarCollapsed, u.SidebarNetworkOrder, u.SidebarStarred, u.SidebarMuted, u.SidebarIgnored, u.DefaultChannels, u.UpdatedAt, u.ID,
 	)
 	if err != nil {
 		return nil, err
@@ -590,7 +600,7 @@ type scannable interface {
 
 func (s *DB) scanUser(row scannable) (*users.User, error) {
 	u := &users.User{}
-	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.AvatarURL, &u.Theme, &u.SidebarCollapsed, &u.SidebarNetworkOrder, &u.SidebarStarred, &u.SidebarMuted, &u.DefaultChannels, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.AvatarURL, &u.Theme, &u.SidebarCollapsed, &u.SidebarNetworkOrder, &u.SidebarStarred, &u.SidebarMuted, &u.SidebarIgnored, &u.DefaultChannels, &u.Role, &u.CreatedAt, &u.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errors.New("user not found")
 	}
@@ -599,7 +609,7 @@ func (s *DB) scanUser(row scannable) (*users.User, error) {
 
 func (s *DB) scanUserRow(rows *sql.Rows) (*users.User, error) {
 	u := &users.User{}
-	err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.AvatarURL, &u.Theme, &u.SidebarCollapsed, &u.SidebarNetworkOrder, &u.SidebarStarred, &u.SidebarMuted, &u.DefaultChannels, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+	err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.AvatarURL, &u.Theme, &u.SidebarCollapsed, &u.SidebarNetworkOrder, &u.SidebarStarred, &u.SidebarMuted, &u.SidebarIgnored, &u.DefaultChannels, &u.Role, &u.CreatedAt, &u.UpdatedAt)
 	return u, err
 }
 
