@@ -1005,7 +1005,14 @@ func (c *Conn) intercept(line string) {
 		for ch := range c.joinedChans {
 			prevChans = append(prevChans, ch)
 		}
-		c.joinedChans = make(map[string]bool) // reset; will repopulate on JOIN
+		// Re-seed joinedChans from prevChans immediately so that any Subscribe
+		// call during the reconnect window (before JOIN confirmations arrive)
+		// still announces the full channel list.  JOIN confirmations are
+		// idempotent; PART/KICK will correct any channels that fail to rejoin.
+		c.joinedChans = make(map[string]bool)
+		for _, ch := range prevChans {
+			c.joinedChans[ch] = true
+		}
 		// Clear the server message buffer so replayed welcome/MOTD sequences
 		// from a previous connection session don't accumulate alongside the
 		// fresh session's messages. Per-channel buffers are preserved.
