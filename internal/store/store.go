@@ -64,6 +64,17 @@ func (s *DB) RawDB() *sql.DB { return s.db }
 // ─── Migrations ───────────────────────────────────────────────────────────────
 
 func (s *DB) migrate() error {
+	// Tracks one-shot migrations that are too expensive (e.g. a full
+	// message_logs table scan) to safely re-run on every startup.
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version    INTEGER PRIMARY KEY,
+			applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)
+	`); err != nil {
+		return fmt.Errorf("migrate: schema_migrations: %w", err)
+	}
+
 	// v1: base tables
 	if _, err := s.db.Exec(`
 	CREATE TABLE IF NOT EXISTS users (
@@ -212,17 +223,28 @@ func (s *DB) migrate() error {
 	// v13: dedup index for message_logs so chathistory re-inserts are safe.
 	// First remove any duplicate rows that accumulated before this migration
 	// (keep the row with the lowest id), then create the unique index.
-	if _, err := s.db.Exec(`
-		DELETE FROM message_logs
-		WHERE id NOT IN (
-			SELECT MIN(id)
-			FROM message_logs
-			GROUP BY user_id, network_id, lower(channel), nick, timestamp
-		);
-		CREATE UNIQUE INDEX IF NOT EXISTS message_logs_dedup
-		  ON message_logs(user_id, network_id, lower(channel), nick, timestamp)
-	`); err != nil {
-		return fmt.Errorf("migrate v13 (message_logs_dedup): %w", err)
+	// Guarded by schema_migrations — the DELETE does a full-table GROUP BY
+	// scan that gets too slow to repeat on every startup once message_logs
+	// has real production volume, and re-running it added no value since
+	// v14 immediately re-dedups under a wider key anyway.
+	if applied, err := s.migrationApplied(13); err != nil {
+		return err
+	} else if !applied {
+		if _, err := s.db.Exec(`
+			DELETE FROM message_logs
+			WHERE id NOT IN (
+				SELECT MIN(id)
+				FROM message_logs
+				GROUP BY user_id, network_id, lower(channel), nick, timestamp
+			);
+			CREATE UNIQUE INDEX IF NOT EXISTS message_logs_dedup
+			  ON message_logs(user_id, network_id, lower(channel), nick, timestamp)
+		`); err != nil {
+			return fmt.Errorf("migrate v13 (message_logs_dedup): %w", err)
+		}
+		if err := s.markMigrationApplied(13); err != nil {
+			return fmt.Errorf("migrate v13: mark applied: %w", err)
+		}
 	}
 
 	// v14: widen dedup index to include type + left(text,200) so that
@@ -230,19 +252,27 @@ func (s *DB) migrate() error {
 	// not incorrectly collapsed.  The v13 index only keyed on timestamp,
 	// which caused three PRIVMSG lines sent within the same second to be
 	// deduped to one row.  Drop the old index, dedup existing rows under the
-	// new wider key, then recreate.
-	if _, err := s.db.Exec(`
-		DELETE FROM message_logs
-		WHERE id NOT IN (
-			SELECT MIN(id)
-			FROM message_logs
-			GROUP BY user_id, network_id, lower(channel), nick, timestamp, type, left(text, 200)
-		);
-		DROP INDEX IF EXISTS message_logs_dedup;
-		CREATE UNIQUE INDEX IF NOT EXISTS message_logs_dedup
-		  ON message_logs(user_id, network_id, lower(channel), nick, timestamp, type, left(text, 200))
-	`); err != nil {
-		return fmt.Errorf("migrate v14 (message_logs_dedup_v2): %w", err)
+	// new wider key, then recreate.  Same one-shot guard as v13 — this is
+	// also a full-table scan.
+	if applied, err := s.migrationApplied(14); err != nil {
+		return err
+	} else if !applied {
+		if _, err := s.db.Exec(`
+			DELETE FROM message_logs
+			WHERE id NOT IN (
+				SELECT MIN(id)
+				FROM message_logs
+				GROUP BY user_id, network_id, lower(channel), nick, timestamp, type, left(text, 200)
+			);
+			DROP INDEX IF EXISTS message_logs_dedup;
+			CREATE UNIQUE INDEX IF NOT EXISTS message_logs_dedup
+			  ON message_logs(user_id, network_id, lower(channel), nick, timestamp, type, left(text, 200))
+		`); err != nil {
+			return fmt.Errorf("migrate v14 (message_logs_dedup_v2): %w", err)
+		}
+		if err := s.markMigrationApplied(14); err != nil {
+			return fmt.Errorf("migrate v14: mark applied: %w", err)
+		}
 	}
 
 	// v15: per-user ignored nicks list (idempotent)
@@ -254,6 +284,23 @@ func (s *DB) migrate() error {
 
 	log.Printf("store: migrations OK")
 	return nil
+}
+
+// migrationApplied reports whether a one-shot migration has already run.
+func (s *DB) migrationApplied(version int) (bool, error) {
+	var exists bool
+	err := s.db.QueryRow(
+		`SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version = $1)`, version,
+	).Scan(&exists)
+	return exists, err
+}
+
+// markMigrationApplied records that a one-shot migration has completed.
+func (s *DB) markMigrationApplied(version int) error {
+	_, err := s.db.Exec(
+		`INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING`, version,
+	)
+	return err
 }
 
 // ─── Setup check ─────────────────────────────────────────────────────────────
