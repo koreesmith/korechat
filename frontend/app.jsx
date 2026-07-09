@@ -4203,7 +4203,13 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
               const openKeys = Object.keys(channelsRef.current).filter(k =>
                 k.startsWith(chanPrefix) && !k.endsWith("::" + STATUS_CHAN)
               );
-              const conn = connections.current[netId];
+              // Stagger the NAMES requests instead of firing them all in the same
+              // tick. Servers with strict command-flood protection (e.g. UnrealIRCd's
+              // default anti-flood class) can silently drop or badly delay some
+              // requests in a synchronous burst, which was leaving quiet channels
+              // stuck showing "0 users" forever since this is their only source of
+              // membership data.
+              let namesDelay = 0;
               openKeys.forEach(k => {
                 const chan = k.slice(chanPrefix.length);
                 loadChannelHistory(netId, chan);
@@ -4211,7 +4217,12 @@ const [msgNickMenu, setMsgNickMenu] = useState(null); // {x,y,netId,nick} nick c
                 // may reflect a stale snapshot (e.g. before ChanServ restored
                 // modes), and the corrective MODE lines are suppressed during
                 // replay. Sending NAMES now gets the authoritative current list.
-                if (chan.startsWith("#") && conn?.ready) conn.send(`NAMES ${chan}`);
+                if (chan.startsWith("#")) {
+                  setTimeout(() => {
+                    if (connections.current[netId]?.ready) connections.current[netId].send(`NAMES ${chan}`);
+                  }, namesDelay);
+                  namesDelay += 250;
+                }
               });
               // During BNC replay the nick is unknown until replay-done arrives, so
               // the JOIN handler's from===me guard never fires and SET_ACTIVE_CHAN is
