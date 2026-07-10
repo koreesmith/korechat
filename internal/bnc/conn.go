@@ -210,7 +210,20 @@ func (c *Conn) Stop() {
 		c.sendRaw("QUIT :KoreChat shutting down")
 		tc.Close()
 	}
-	c.store.SetStatus(c.net.ID, networks.StatusDisconnected, "")
+	c.setStatus(networks.StatusDisconnected, "")
+}
+
+// setStatus persists the network status and fans it out live to every
+// subscribed browser session. Previously status changes after the initial
+// dial (reconnect attempts, TLS/dial failures, upstream disconnects) were
+// only persisted to the store and picked up on the next Subscribe — a
+// browser tab left open across a failed reconnect (e.g. an expired TLS
+// certificate that fails on every retry) would keep showing a stale
+// "connected" badge indefinitely, with channels silently starved of
+// updates and no indication anything was wrong.
+func (c *Conn) setStatus(status networks.Status, msg string) {
+	c.store.SetStatus(c.net.ID, status, msg)
+	c.fanOut(fmt.Sprintf(":*bnc* NOTICE * :status:%s", status))
 }
 
 // parseTimeTag extracts the @time= timestamp from an IRCv3-tagged line.
@@ -507,7 +520,7 @@ func (c *Conn) connectLoop() {
 
 		// Exponential backoff
 		log.Printf("bnc[%s]: reconnecting in %v (attempt %d)", c.net.ID, backoff, retry)
-		c.store.SetStatus(c.net.ID, networks.StatusConnecting,
+		c.setStatus(networks.StatusConnecting,
 			fmt.Sprintf("reconnecting in %v… (attempt %d)", backoff, retry))
 		c.notice(fmt.Sprintf("Reconnecting in %v… (attempt %d)", backoff, retry))
 
@@ -528,7 +541,7 @@ func (c *Conn) connectLoop() {
 
 func (c *Conn) dial() {
 	addr := c.net.Addr()
-	c.store.SetStatus(c.net.ID, networks.StatusConnecting, "")
+	c.setStatus(networks.StatusConnecting, "")
 	proto := "TCP"
 	if c.net.TLS {
 		proto = "TLS"
@@ -555,7 +568,7 @@ func (c *Conn) dial() {
 	if err != nil {
 		msg := fmt.Sprintf("Failed to connect to %s: %v", addr, err)
 		log.Printf("bnc[%s]: %s", c.net.ID, msg)
-		c.store.SetStatus(c.net.ID, networks.StatusError, msg)
+		c.setStatus(networks.StatusError, msg)
 		c.notice(msg)
 		return
 	}
@@ -711,11 +724,11 @@ func (c *Conn) readLoop(tc net.Conn) {
 	if err := scanner.Err(); err != nil {
 		msg := fmt.Sprintf("Connection to %s lost: %v", c.net.Name, err)
 		log.Printf("bnc[%s]: %s", c.net.ID, msg)
-		c.store.SetStatus(c.net.ID, networks.StatusError, msg)
+		c.setStatus(networks.StatusError, msg)
 		c.notice(msg)
 	} else {
 		log.Printf("bnc[%s]: upstream closed connection cleanly", c.net.ID)
-		c.store.SetStatus(c.net.ID, networks.StatusDisconnected, "")
+		c.setStatus(networks.StatusDisconnected, "")
 		c.notice("Connection to " + c.net.Name + " closed.")
 	}
 
@@ -1019,13 +1032,12 @@ func (c *Conn) intercept(line string) {
 		c.buffers["__server__"] = newRingBuffer(BufferSize)
 		c.mu.Unlock()
 
-		c.store.SetStatus(c.net.ID, networks.StatusConnected, "")
 		log.Printf("bnc[%s]: registered on %s as %s", c.net.ID, c.net.Name, nick)
-		// Notify all currently-connected browser sessions that the upstream
-		// is now connected. Without this, sessions that were open during a
-		// BNC reconnect never learn the connection came back up — their UI
+		// setStatus notifies all currently-connected browser sessions that the
+		// upstream is now connected. Without this, sessions that were open during
+		// a BNC reconnect never learn the connection came back up — their UI
 		// stays stuck showing "disconnected" even though the WS is alive.
-		c.fanOut(fmt.Sprintf(":*bnc* NOTICE * :status:connected"))
+		c.setStatus(networks.StatusConnected, "")
 		c.fanOut(fmt.Sprintf(":*bnc* NOTICE * :replay-done nick:%s", nick))
 
 		// Execute OnConnect perform commands, then rejoin all channels.
@@ -1193,7 +1205,7 @@ func (c *Conn) intercept(line string) {
 
 	case "ERROR":
 		log.Printf("bnc[%s]: server ERROR: %s", c.net.ID, line)
-		c.store.SetStatus(c.net.ID, networks.StatusError, line)
+		c.setStatus(networks.StatusError, line)
 	}
 }
 
